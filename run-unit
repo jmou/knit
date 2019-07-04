@@ -1,0 +1,13 @@
+#!/bin/bash -e
+
+set -o pipefail
+
+for unit in "$@"; do
+    job_id=$(./unit-to-job < "$unit" | ./kgit hash-object -w --stdin)
+    if ! ./kgit rev-parse --verify -q refs/job-result/$job_id; then
+        echo Running unit $unit [$job_id] >&2
+        result_id=$(./kgit cat-file blob $job_id | ./run-job | ./knit hash-object -w --stdin)
+        ./kgit update-ref refs/job-result/$job_id $result_id
+        echo $result_id
+    fi
+done

@@ -1,0 +1,6 @@
+#!/bin/bash -e
+
+# does the wrong thing with globbing
+IFS=$'\n'
+# this seems like too much nesting
+exec env $(cat) bash -c 'exec bash -c "$command"'

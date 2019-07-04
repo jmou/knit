@@ -1,0 +1,22 @@
+#!/usr/bin/python3
+
+# should canonicalize, e.g., sort
+
+import subprocess
+import sys
+from pathlib import Path
+
+for line in sys.stdin:
+    key, value = line.rstrip().split('=', 1)
+    if key.startswith('#'):
+        continue
+    elif key.startswith('input_'):
+        inputid = subprocess.run(value, check=True, stdout=subprocess.PIPE,
+                                 shell=True).stdout.strip().decode('ascii')
+        assert len(inputid) == 40 and int(inputid, 16)
+        input_path = Path('gen') / inputid
+        subprocess.run(['./kgit', 'cat-file', 'blob', inputid],
+                       stdout=input_path.open('w'), check=True)
+        print(f'{key[6:]}={input_path}')
+    else:
+        print(f'{key}={value}')

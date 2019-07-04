@@ -1,0 +1,1 @@
+command=curl -fs https://s3.amazonaws.com/nyc-tlc/misc/taxi+_zone_lookup.csv

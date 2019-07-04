@@ -1,0 +1,5 @@
+#!/bin/bash -e
+
+cd "${BASH_SOURCE%/*}"/gen/repo
+[[ -d .git ]] || git init -q
+exec git "$@"
