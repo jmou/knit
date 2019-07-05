@@ -1,6 +1,12 @@
 #!/bin/bash -e
 
+cat > gen/job.tmp
+
+grep ^input_ gen/job.tmp | cut -d= -f2 | while read inputid; do
+    ./knit cat-file blob $inputid > gen/$inputid
+done
+
 # does the wrong thing with globbing
 IFS=$'\n'
 # this seems like too much nesting
-exec env $(cat) bash -c 'exec bash -c "$command"'
+exec env $(<gen/job.tmp) bash -c 'exec bash -c "$command"'
