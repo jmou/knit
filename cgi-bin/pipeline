@@ -1,0 +1,19 @@
+#!/bin/bash -e
+
+IFS=/ read -r empty pipeline_id <<< "$PATH_INFO"
+
+echo Content-Type: text/html
+echo
+
+echo '<html><body>'
+
+./kgit cat-file blob $pipeline_id | while read job_id result_id unit; do
+    echo "<p><a href=\"/cgi-bin/cas/text/$job_id\">$unit</a> [<a href=\"/cgi-bin/cas/text/$result_id\">result</a>]"
+    ./kgit cat-file blob $job_id | while IFS== read key value; do
+        if [[ $key =~ input_* ]]; then
+            echo "<br><a href=\"/cgi-bin/cas/text/$value\">$key</a>"
+        fi
+    done
+done
+
+echo '</body></html>'

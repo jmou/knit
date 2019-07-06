@@ -1,0 +1,14 @@
+#!/bin/bash -e
+
+IFS=/ read -r empty type sha1 <<< "$PATH_INFO"
+
+case $type in
+    text) type='text/plain';;
+    html) type='text/html';;
+    csv) type='text/csv';;
+esac
+
+echo "Content-type: $type"
+echo
+
+./kgit cat-file blob $sha1

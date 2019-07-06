@@ -4,7 +4,11 @@ set -o pipefail
 
 unit="$1"
 job_id=$(./unit-to-job < "$unit" | ./kgit hash-object -w --stdin)
-if ! ./kgit rev-parse --verify -q refs/job-result/$job_id; then
+if [[ -n $TRACING ]]; then
+    result_id=$(./kgit rev-parse --verify -q refs/job-result/$job_id)
+    echo $job_id $result_id $unit >&2
+    echo $result_id
+elif ! ./kgit rev-parse --verify -q refs/job-result/$job_id; then
     echo Running unit $unit [$job_id] >&2
     result_id=$(./kgit cat-file blob $job_id | ./run-job | ./kgit hash-object -w --stdin)
     ./kgit update-ref refs/job-result/$job_id $result_id

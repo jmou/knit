@@ -1,0 +1,9 @@
+#!/bin/bash -e
+
+for unit in "$@"; do
+    ./run-unit "$unit" > /dev/null
+done
+
+for unit in "$@"; do
+    TRACING=1 ./run-unit "$unit"
+done 2>&1 > /dev/null | ./kgit hash-object -w --stdin
