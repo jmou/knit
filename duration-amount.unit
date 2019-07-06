@@ -1,0 +1,3 @@
+command=ln -sf $input_input gen/input.csv && sqlite3 < gen/$input_stdin
+input_stdin=./kgit hash-object -w --stdin < duration-amount.sql
+input_input=./run-unit duration-fare.unit

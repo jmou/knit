@@ -3,7 +3,7 @@
 cat > gen/job.tmp
 
 grep ^input_ gen/job.tmp | cut -d= -f2 | while read inputid; do
-    ./knit cat-file blob $inputid > gen/$inputid
+    ./kgit cat-file blob $inputid > gen/$inputid
 done
 
 # does the wrong thing with globbing

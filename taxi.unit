@@ -1,0 +1,3 @@
+command=bash gen/$input_html gen/$input_duration_amount
+input_duration_amount=./run-unit duration-amount.unit
+input_html=./kgit hash-object -w --stdin < taxi.html

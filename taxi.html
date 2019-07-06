@@ -1,0 +1,30 @@
+cat <<EOF
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.8.0/dist/Chart.min.js"></script>
+</head>
+<body>
+
+<canvas id="myChart" width="400" height="400"></canvas>
+<script>
+var input = \`
+$(<$1)
+\`;
+input = input.split('\n').slice(2, -1).map(x => x.split(','));
+var data = input.map(x => parseFloat(x[2]));
+var ctx = document.getElementById('myChart').getContext('2d');
+var myChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: input.map(x => x[0]),
+        datasets: [{
+            label: 'fare',
+            data: data,
+        }]
+    }
+});
+</script>
+
+</body>
+</html>
+EOF

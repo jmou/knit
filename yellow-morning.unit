@@ -1,0 +1,3 @@
+command=ln -sf $input_tripdata gen/tripdata.csv && sqlite3 < gen/$input_stdin
+input_stdin=./kgit hash-object -w --stdin < yellow-morning.sql
+input_tripdata=./run-unit yellow-tripdata.unit

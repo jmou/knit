@@ -1,0 +1,1 @@
+command=curl -fs https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2018-12.csv
