@@ -1,14 +1,18 @@
 #!/bin/bash -e
 
 read -N $CONTENT_LENGTH content
-pipeline_id=$(python3 <(cat <<EOF
+read pipeline_id resource <<< "$(python3 <(cat <<EOF
 import sys
 import urllib.parse
 form = urllib.parse.parse_qs(sys.argv[1])
-print(form['pipeline_id'][0])
+print(form['pipeline_id'][0], form['resource'][0])
 EOF
-) "$content")
+) "$content")"
 
 sid=$(./kgit cat-file blob $pipeline_id | ./pipeline-to-session)
 
-bash cgi-bin/redirect.sh /cgi-bin/session/$sid
+if [[ -z $resource ]]; then
+    bash cgi-bin/redirect.sh /cgi-bin/session/$sid
+else
+    bash cgi-bin/redirect.sh /cgi-bin/session/$sid/resource/"$resource"
+fi

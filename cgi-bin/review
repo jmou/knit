@@ -30,6 +30,11 @@ echo
 
 echo '<html><body>'
 
+echo '<form method=post action="/cgi-bin/new-session">'
+echo "<input type=hidden name=pipeline_id value=$pipeline_id>"
+echo "<input type=hidden name=resource value=\"$resource\">"
+echo '<input type=submit value=edit></form>'
+
 echo '<pre>'
 
 ./kgit cat-file blob $resource_id | html_escape

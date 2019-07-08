@@ -33,11 +33,12 @@ echo '<html><body>'
 
 echo "<iframe src=\"$SCRIPT_NAME$PATH_INFO/result\" style=\"width: 100%; height: 65%; border: 1px solid black\"></iframe>"
 
+./kgit cat-file blob $pipeline_id | DOT_PIPELINE=$pipeline_id ./pipeline-to-dot | dot -Tsvg | sed 's/^<svg .*$/<svg width="100%"/'
+
 echo '<form method=post action="/cgi-bin/new-session">'
 echo "<input type=hidden name=pipeline_id value=$pipeline_id>"
+echo "<input type=hidden name=resource>"
 echo '<input type=submit value=edit></form>'
-
-./kgit cat-file blob $pipeline_id | DOT_PIPELINE=$pipeline_id ./pipeline-to-dot | dot -Tsvg | sed 's/^<svg .*$/<svg width="100%"/'
 
 ./kgit cat-file blob $pipeline_id | while read input_id resource_id resource; do
     echo "<p><a href=\"/cgi-bin/review/$pipeline_id/$resource\">$resource</a>"
