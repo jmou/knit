@@ -3,6 +3,13 @@
 set -o pipefail
 
 unit="$1"
+
+# This pretty hackily lets us modify results in editing sessions.
+if [[ -f ${unit%.unit}.result ]]; then
+    ./register-resource ${unit%.unit}.result
+    exit
+fi
+
 unit_id=$(./kgit hash-object -w --stdin < "$unit")
 job_id=$(./kgit cat-file blob $unit_id | ./unit-to-job | ./kgit hash-object -w --stdin)
 if ! result_id=$(./kgit rev-parse --verify -q refs/job-result/$job_id); then

@@ -2,12 +2,26 @@
 
 set -o pipefail
 
-IFS=/ read -r empty pipeline_id <<< "$PATH_INFO"
+IFS=/ read -r empty pipeline_id is_result <<< "$PATH_INFO"
+
+if [[ -n $is_result ]]; then
+    result_id=$(./kgit cat-file blob $pipeline_id | tail -n1 | cut -d' ' -f2)
+    echo Content-Type: text/html
+    echo
+    if [[ $(./kgit cat-file -s $result_id) -gt 1000000 ]]; then
+        echo "<a href=\"/cgi-bin/cas/html/$result_id\">load</a>"
+    else
+        ./kgit cat-file blob $result_id
+    fi
+    exit
+fi
 
 echo Content-Type: text/html
 echo
 
 echo '<html><body>'
+
+echo "<iframe src=\"$SCRIPT_NAME$PATH_INFO/result\" style=\"width: 100%; height: 65%; border: 1px solid black\"></iframe>"
 
 echo '<form method=post action="/cgi-bin/new-session">'
 echo "<input type=hidden name=pipeline_id value=$pipeline_id>"
