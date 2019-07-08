@@ -2,9 +2,9 @@
 
 set -o pipefail
 
-IFS=/ read -r empty pipeline_id is_result <<< "$PATH_INFO"
+IFS=/ read -r empty pipeline_id sub_action <<< "$PATH_INFO"
 
-if [[ -n $is_result ]]; then
+if [[ $sub_action == result ]]; then
     result_id=$(./kgit cat-file blob $pipeline_id | tail -n1 | cut -d' ' -f2)
     echo Content-Type: text/html
     echo
@@ -13,6 +13,16 @@ if [[ -n $is_result ]]; then
     else
         ./kgit cat-file blob $result_id
     fi
+    exit
+elif [[ $sub_action == env-run ]]; then
+    sid=$(./kgit cat-file blob $pipeline_id | ./pipeline-to-session)
+    (
+        cd gen/session/$sid
+        target="$(python3 ../../../cgi-bin/form_to_env.py)"
+        pipeline_id=$(./run-pipeline "$target")
+        bash ../../../cgi-bin/redirect.sh /cgi-bin/pipeline/$pipeline_id
+    )
+    rm -rf "gen/session/$sid"
     exit
 fi
 

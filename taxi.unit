@@ -1,3 +1,4 @@
-command=bash gen/$input_html gen/$input_duration_amount
+command=IFS=$'\n'; env $(<gen/$input_env) bash gen/$input_html gen/$input_duration_amount
 input_duration_amount=./run-unit duration-amount.unit
+input_env=./register-resource taxi-values.env
 input_html=./register-resource taxi.html

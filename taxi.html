@@ -6,20 +6,31 @@ cat <<EOF
 </head>
 <body>
 
+<form method=post action="env-run" target=_top>
+    <input type=hidden name="_resource" value="taxi-values.env">
+    <input type=hidden name="_target" value="taxi.unit">
+    <select name=column>
+        <option value=total_amount $([[ $column == total_amount ]] && echo selected)>fare $</option>
+        <option value=trip_distance $([[ $column == trip_distance ]] && echo selected)>miles</option>
+    </select>
+    <label> max minutes: <input type=text name=max_duration_m value=$max_duration_m></label>
+    <input type=submit value=update>
+</form>
+
 <script>
 var input = \`
 $(<$1)
 \`;
 
 input = input.split('\n').slice(2, -1).map(x => x.split(','));
-var data = input.map(x => ({x: parseInt(x[0]), y: parseFloat(x[2])}));
+var data = input.map(x => ({x: parseInt(x[0]), y: parseFloat(x[1])}));
 
 const margin = { top: 20, right: 30, bottom: 30, left: 40 };
 const width = 800;
 const height = 500;
 
 const x = d3.scaleLinear()
-    .domain([0, d3.max(data, d => d.x)])
+    .domain([0, d3.max(data, d => d.x)]).nice()
     .range([margin.left, width - margin.right]);
 
 const y = d3.scaleLinear()
