@@ -6,4 +6,4 @@ done
 
 for unit in "$@"; do
     TRACING=1 ./run-unit "$unit"
-done 2>&1 > /dev/null | ./kgit hash-object -w --stdin
+done 2>&1 > /dev/null | awk '!seen[$0]++' | ./kgit hash-object -w --stdin

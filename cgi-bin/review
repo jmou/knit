@@ -1,0 +1,51 @@
+#!/bin/bash -e
+
+set -o pipefail
+
+IFS=/ read -r empty pipeline_id resource <<< "$PATH_INFO"
+
+if [[ $REQUEST_METHOD == POST ]]; then
+    read -N $CONTENT_LENGTH content
+    comment=$(python3 <(cat <<EOF
+import sys
+import urllib.parse
+form = urllib.parse.parse_qs(sys.argv[1])
+print(form['comment'][0])
+EOF
+    ) "$content")
+    mkdir -p gen/comment/$pipeline_id/$resource
+    echo "$comment" > gen/comment/$pipeline_id/$resource/$(date -Isec)
+    bash cgi-bin/redirect.sh $SCRIPT_NAME$PATH_INFO
+    exit
+fi
+
+html_escape() {
+    python3 -c 'import html; import sys; print(html.escape(sys.stdin.read()), end="")'
+}
+
+resource_id=$(./kgit cat-file blob $pipeline_id | grep -F " $resource" | cut -d' ' -f2)
+
+echo 'Content-Type: text/html'
+echo
+
+echo '<html><body>'
+
+echo '<pre>'
+
+./kgit cat-file blob $resource_id | html_escape
+
+echo '</pre>'
+
+for comment in $(ls gen/comment/$pipeline_id/$resource/* 2> /dev/null | sort); do
+    echo '<div>'
+    cat $comment | html_escape
+    echo '<date>'
+    date -d ${comment##*/}
+    echo '</date>'
+    echo '</div>'
+done
+
+echo '<form method=post><textarea name=comment style="width: 70%"></textarea><br>'
+echo '<input type=submit value=comment></form>'
+
+echo '</body></html>'
