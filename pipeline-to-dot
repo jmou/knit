@@ -1,0 +1,44 @@
+#!/bin/bash -e
+
+# this file is really hacky
+
+echo digraph G {
+echo 'node [style=filled,fillcolor=white];'
+while read source_id resource_id resource; do
+    if [[ $resource =~ \.(unit|job)$ ]]; then
+        continue
+    fi
+    num_comments=
+    if [[ -n $DOT_PIPELINE ]]; then
+        num_comments=$(ls "gen/comment/$DOT_PIPELINE/$resource" 2> /dev/null | wc -l || true)
+    fi
+    if [[ $resource =~ \.result$ ]]; then
+        ./kgit cat-file blob $source_id 2> /dev/null | grep ^input_ | cut -d= -f2 | while read input_id; do
+            extra=
+            [[ -n $DOT_PIPELINE ]] && extra="href=\"/cgi-bin/review/$DOT_PIPELINE/$resource\""
+            if [[ $num_comments -gt 0 ]]; then
+                extra="$extra,label=\"[$num_comments]\""
+            fi
+            echo "\"$resource_id\" -> \"$input_id\" [$extra];"
+        done || true
+    fi
+    extra=
+    labelextra=
+    if [[ $resource =~ \.result$ ]]; then
+        resource="${resource%.result}.unit"
+    else
+        extra=,shape=box
+    fi
+    num_comments=
+    if [[ -n $DOT_PIPELINE ]]; then
+        num_comments=$(ls "gen/comment/$DOT_PIPELINE/$resource" 2> /dev/null | wc -l || true)
+    fi
+    if [[ -n $DOT_PIPELINE ]]; then
+        extra="$extra,href=\"/cgi-bin/review/$DOT_PIPELINE/$resource\""
+    fi
+    if [[ $num_comments -gt 0 ]]; then
+        labelextra=" [$num_comments]"
+    fi
+    echo "\"$resource_id\" [label=\"$resource$labelextra\"$extra];"
+done
+echo }

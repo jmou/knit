@@ -37,6 +37,8 @@ echo '<form method=post action="/cgi-bin/new-session">'
 echo "<input type=hidden name=pipeline_id value=$pipeline_id>"
 echo '<input type=submit value=edit></form>'
 
+./kgit cat-file blob $pipeline_id | DOT_PIPELINE=$pipeline_id ./pipeline-to-dot | dot -Tsvg | sed 's/^<svg .*$/<svg width="100%"/'
+
 ./kgit cat-file blob $pipeline_id | while read input_id resource_id resource; do
     echo "<p><a href=\"/cgi-bin/review/$pipeline_id/$resource\">$resource</a>"
     if [[ $input_id != 0000000000000000000000000000000000000000 ]]; then
