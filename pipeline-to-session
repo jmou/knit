@@ -1,0 +1,15 @@
+#!/bin/bash -e
+
+sid=$(uuidgen)
+mkdir -p gen/session/$sid
+ln -st gen/session/$sid ../../../{gen,kgit,register-resource,run-job,run-pipeline,run-unit,unit-to-job}
+
+cat > gen/session/$sid/manifest
+
+while read input_id resource_id resource; do
+    if [[ $input_id == 0000000000000000000000000000000000000000 ]]; then
+        ./kgit cat-file blob $resource_id > "gen/session/$sid/$resource"
+    fi
+done < gen/session/$sid/manifest
+
+echo $sid

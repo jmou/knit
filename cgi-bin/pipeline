@@ -9,13 +9,17 @@ echo
 
 echo '<html><body>'
 
+echo '<form method=post action="/cgi-bin/new-session">'
+echo "<input type=hidden name=pipeline_id value=$pipeline_id>"
+echo '<input type=submit value=edit></form>'
+
 ./kgit cat-file blob $pipeline_id | while read job_id result_id unit; do
     if [[ $job_id == 0000000000000000000000000000000000000000 ]]; then
         echo "<p><a href=\"/cgi-bin/cas/text/$result_id\">$unit</a>"
     else
         echo "<p><a href=\"/cgi-bin/cas/text/$job_id\">$unit</a> [<a href=\"/cgi-bin/cas/text/$result_id\">result</a>]"
         ./kgit cat-file blob $job_id | while IFS== read key value; do
-            if [[ $key =~ input_* ]]; then
+            if [[ $key =~ ^input_ ]]; then
                 echo "<br><a href=\"/cgi-bin/cas/text/$value\">$key</a>"
             fi
         done

@@ -1,0 +1,14 @@
+#!/bin/bash -e
+
+read -N $CONTENT_LENGTH content
+pipeline_id=$(python3 <(cat <<EOF
+import sys
+import urllib.parse
+form = urllib.parse.parse_qs(sys.argv[1])
+print(form['pipeline_id'][0])
+EOF
+) "$content")
+
+sid=$(./kgit cat-file blob $pipeline_id | ./pipeline-to-session)
+
+bash cgi-bin/redirect.sh /cgi-bin/session/$sid
