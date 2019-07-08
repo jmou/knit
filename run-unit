@@ -3,14 +3,18 @@
 set -o pipefail
 
 unit="$1"
-job_id=$(./unit-to-job < "$unit" | ./kgit hash-object -w --stdin)
-if [[ -n $TRACING ]]; then
-    result_id=$(./kgit rev-parse --verify -q refs/job-result/$job_id)
-    echo $job_id $result_id $unit >&2
-    echo $result_id
-elif ! ./kgit rev-parse --verify -q refs/job-result/$job_id; then
-    echo Running unit $unit [$job_id] >&2
+unit_id=$(./kgit hash-object -w --stdin < "$unit")
+job_id=$(./kgit cat-file blob $unit_id | ./unit-to-job | ./kgit hash-object -w --stdin)
+if ! result_id=$(./kgit rev-parse --verify -q refs/job-result/$job_id); then
+    echo Running unit "$unit" [$job_id] >&2
     result_id=$(./kgit cat-file blob $job_id | ./run-job | ./kgit hash-object -w --stdin)
     ./kgit update-ref refs/job-result/$job_id $result_id
-    echo $result_id
 fi
+
+if [[ -n $TRACING ]]; then
+    echo 0000000000000000000000000000000000000000 $unit_id "$unit" >&2
+    echo $unit_id $job_id "${unit%.unit}.job" >&2
+    echo $job_id $result_id "${unit%.unit}.result" >&2
+fi
+
+echo $result_id
