@@ -1,0 +1,22 @@
+// gvpr -c 'N[$.name=="kgit"]{delete(root, $)}' commands.dot | dot -Tx11
+
+digraph G {
+    subgraph cluster_root {
+        forget;
+        "pipeline-to-dot" -> kgit;
+        "pipeline-to-session" -> kgit;
+        "register-resource" -> kgit;
+        "run-job" -> kgit;
+        "run-pipeline" -> { "run-unit" kgit };
+        "run-unit" -> { "register-resource" kgit "unit-to-job" "run-job"};
+    }
+
+    subgraph cluster_cgibin {
+        cas -> kgit;
+        "new-session" -> { kgit "pipeline-to-session" "redirect.sh" };
+        pipeline -> { kgit "pipeline-to-session" "form_to_env.py" "run-pipeline" "redirect.sh" "pipeline-to-dot" };
+        review -> { "redirect.sh" kgit };
+        session -> { "redirect.sh" "session_resource.py" };
+        "session_resource.py" -> kgit;
+    }
+}
