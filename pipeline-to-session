@@ -8,6 +8,7 @@ cat > gen/session/$sid/manifest
 
 while read input_id resource_id resource; do
     if [[ $input_id == 0000000000000000000000000000000000000000 ]]; then
+        mkdir -p "$(dirname "gen/session/$sid/$resource")"
         ./kgit cat-file blob $resource_id > "gen/session/$sid/$resource"
     fi
 done < gen/session/$sid/manifest

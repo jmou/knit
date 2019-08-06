@@ -1,3 +1,0 @@
-command=ln -sf $input_input gen/input.csv && sqlite3 < gen/$input_stdin
-input_stdin=./run-unit duration-amount-sql.unit
-input_input=./run-unit duration-fare.unit

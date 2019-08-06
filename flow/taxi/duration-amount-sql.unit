@@ -1,0 +1,3 @@
+command=IFS=$'\n'; env $(<gen/$input_env) bash gen/$input_sql
+input_env=./register-resource flow/taxi/taxi-values.env
+input_sql=./register-resource flow/taxi/duration-amount.sql

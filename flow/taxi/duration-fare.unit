@@ -1,0 +1,3 @@
+command=ln -sf $input_tripdata gen/tripdata.csv && sqlite3 < gen/$input_stdin
+input_stdin=./register-resource flow/taxi/duration-fare.sql
+input_tripdata=./run-unit flow/taxi/yellow-morning.unit

@@ -17,6 +17,7 @@ if os.environ['REQUEST_METHOD'] == 'GET':
             for line in f:
                 _, resource_id, this_resource = line.strip().split(' ', 2)
                 if this_resource == resource:
+                    os.makedirs(resource_path.parent(), exist_ok=True)
                     subprocess.run(f'./kgit cat-file blob {resource_id} > {resource_path}', shell=True, check=True)
                     break
 

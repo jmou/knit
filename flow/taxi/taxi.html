@@ -7,8 +7,8 @@ cat <<EOF
 <body>
 
 <form method=post action="env-run" target=_top>
-    <input type=hidden name="_resource" value="taxi-values.env">
-    <input type=hidden name="_target" value="taxi.unit">
+    <input type=hidden name="_resource" value="flow/taxi/taxi-values.env">
+    <input type=hidden name="_target" value="flow/taxi/taxi.unit">
     <select name=column>
         <option value=total_amount $([[ $column == total_amount ]] && echo selected)>fare $</option>
         <option value=trip_distance $([[ $column == trip_distance ]] && echo selected)>miles</option>

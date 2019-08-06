@@ -1,0 +1,3 @@
+command=ln -sf $input_input gen/input.csv && sqlite3 < gen/$input_stdin
+input_stdin=./run-unit flow/taxi/duration-amount-sql.unit
+input_input=./run-unit flow/taxi/duration-fare.unit

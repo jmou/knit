@@ -1,3 +1,0 @@
-command=IFS=$'\n'; env $(<gen/$input_env) bash gen/$input_sql
-input_env=./register-resource taxi-values.env
-input_sql=./register-resource duration-amount.sql
