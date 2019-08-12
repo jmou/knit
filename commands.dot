@@ -9,6 +9,7 @@ digraph G {
         "run-job" -> kgit;
         "run-pipeline" -> { "run-unit" kgit };
         "run-unit" -> { "register-resource" kgit "unit-to-job" "run-job"};
+        "unit-to-job" -> { "register-resource" "run-unit" } [style=dashed];
     }
 
     subgraph cluster_cgibin {

@@ -13,7 +13,7 @@ Actions: publish, Slack.
 
 ## Asynchronicity
 
-Manual: QA, closed data analysis, Mechanical Turk.
+Manual: QA, closed data analysis, Excel, Mechanical Turk.
 Long-running operations.
 Convergent operations: model training.
 
@@ -23,6 +23,8 @@ Defined by flow?
 vs directories.
 
 ## Resource abstractions (unit, job result, direct inputs)
+
+Interplay between data and code change. Backtesting. Regression tracking.
 
 ## Non-materialized transforms
 
@@ -49,7 +51,20 @@ Open-closed principle. Composition (trait-like) vs overrides (OOP-like).
 
 Runtime vs top-down dynamic vs static.
 
-## Inter-flow dependencies
+## Inter-module dependencies
+
+## Failure handling
+
+Testing.
+
+## Metadata
+
+Data format. Taints (e.g., PII). Access control. Documentation.
+Run time/duration?
+Propagation.
+Access revocation. Mutable?
+Readable by commands?
+vs parameterization.
 
 # TODO
 
