@@ -66,6 +66,10 @@ Access revocation. Mutable?
 Readable by commands?
 vs parameterization.
 
+## Determinism
+
+Resolve jobs to resources. Execution nonce in job. Execution epoch (single job type, inconsistencies possible). Triple (job, epoch, resource).
+
 # TODO
 
 ## Demo features

@@ -1,0 +1,2 @@
+command=tac gen/$input_data
+input_data=unit:flow/basic/source.unit

@@ -1,0 +1,29 @@
+#!/usr/bin/python3
+
+# should canonicalize, e.g., sort
+
+import subprocess
+import sys
+
+for line in sys.stdin:
+    key, value = line.rstrip().split('=', 1)
+    if key.startswith('#'):
+        continue
+    elif key.startswith('input_'):
+        input_type, input_path = value.split(':', 1)
+        if input_type == 'file':
+            inputid = subprocess.run(['./file-to-tree', input_path], check=True,
+                                     stdout=subprocess.PIPE).stdout.strip().decode('ascii')
+        else:
+            assert input_type == 'unit'
+            with open(input_path) as input_f:
+                tree = subprocess.Popen(['./unit-to-tree'], stdin=input_f,
+                                        stdout=subprocess.PIPE)
+                treeid = subprocess.Popen(['./kgit', 'hash-object', '-w', '--stdin'],
+                                         stdin=tree.stdout, stdout=subprocess.PIPE)
+                assert treeid.wait() == 0
+                inputid = treeid.communicate()[0].strip().decode('ascii')
+        assert len(inputid) == 40 and int(inputid, 16)
+        print(f'{key}=tree:{inputid}')
+    else:
+        print(f'{key}={value}')

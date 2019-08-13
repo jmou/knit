@@ -1,5 +1,6 @@
 #!/bin/bash -e
 
+# TODO broken by restructure
 # this file is really hacky
 
 echo digraph G {

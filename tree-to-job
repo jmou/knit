@@ -1,0 +1,16 @@
+#!/bin/bash -e
+
+die() {
+    echo "$@" >&2
+    exit 1
+}
+
+while IFS== read -r key value; do
+    if [[ $key == input_* ]]; then
+        IFS=: read -r dep_type dep_tree <<< "$value"
+        [[ $dep_type == tree ]] || die non-tree input
+        value=$(grep ^$dep_tree gen/completed | cut -d' ' -f4)
+        [[ -n $value ]] || die unexecuted dependency
+    fi
+    echo "$key=$value"
+done

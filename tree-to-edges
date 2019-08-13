@@ -1,0 +1,13 @@
+#!/bin/bash -e
+
+tree=$1
+
+./kgit cat-file blob $tree | grep ^input_ | cut -d= -f2 | while read dep; do
+    if [[ $dep != tree:* ]]; then
+        echo dep not a tree >&2
+        exit 1
+    fi
+    dep=${dep#tree:}
+    echo $tree $dep
+    ./tree-to-edges $dep
+done

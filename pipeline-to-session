@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+# TODO broken by restructure
+
 sid=$(uuidgen)
 mkdir -p gen/session/$sid
 ln -st gen/session/$sid ../../../{gen,kgit,register-resource,run-job,run-pipeline,run-unit,unit-to-job}

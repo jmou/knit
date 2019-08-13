@@ -1,0 +1,22 @@
+#!/usr/bin/python3
+
+completed = {}
+for line in open('gen/completed'):
+    job, invocation, output = line.strip().split(' ', 2)
+    completed[job] = (invocation, output)
+
+candidates = set()
+for line in open('gen/plan'):
+    job, dep = line.strip().split(' ', 1)
+    candidates.add(job)
+    candidates.add(dep)
+
+candidates.difference_update(completed.keys())
+
+for line in open('gen/plan'):
+    job, dep = line.strip().split(' ', 1)
+    if dep not in completed:
+        candidates.discard(job)
+
+for job in sorted(candidates):
+    print(job)

@@ -1,0 +1,6 @@
+#!/bin/bash -e
+
+resource="$1"
+resource_id=$(./kgit hash-object -w --stdin < "$resource")
+
+./kgit hash-object -w --stdin <<< "output=$resource_id"

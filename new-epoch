@@ -1,0 +1,3 @@
+#!/bin/bash -e
+
+./kgit hash-object -w --stdin <<< "executed_at=$(date -Ins)"

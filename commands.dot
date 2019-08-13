@@ -5,11 +5,14 @@ digraph G {
         forget;
         "pipeline-to-dot" -> kgit;
         "pipeline-to-session" -> kgit;
-        "register-resource" -> kgit;
+        "new-epoch" -> kgit;
+        "file-to-tree" -> kgit;
         "run-job" -> kgit;
-        "run-pipeline" -> { "run-unit" kgit };
-        "run-unit" -> { "register-resource" kgit "unit-to-job" "run-job"};
-        "unit-to-job" -> { "register-resource" "run-unit" } [style=dashed];
+        "job-to-epoch-output" -> { kgit "run-job" };
+        "unit-to-tree" -> { "unit-to-tree" "file-to-tree" kgit };
+        "tree-to-edges" -> { kgit "tree-to-edges" };
+        "tree-to-plan" -> { "tree-to-edges" "new-epoch" };
+        "run-flow" -> { "unit-to-tree" kgit "tree-to-plan" "plan-to-frontier" "tree-to-job" "job-to-epoch-output" };
     }
 
     subgraph cluster_cgibin {
