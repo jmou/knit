@@ -1,0 +1,31 @@
+#!/bin/bash -e
+
+set -o pipefail
+
+while true; do
+    ./plan-to-frontier > gen/frontier
+    [[ $(wc -l < gen/frontier) -eq 0 ]] && break
+    # TODO allow manual jobs
+    tree=$(head -n1 gen/frontier)
+    ./kgit cat-file blob $tree | ./tree-to-job > gen/job
+
+    # TODO more nuanced caching policy
+    cachekey=$(./kgit hash-object --stdin < gen/job)
+    if output=$(./kgit rev-parse --verify -q refs/job/$cachekey/last); then
+        job=$(./kgit symbolic-ref refs/job/$cachekey/last | cut -d/ -f4)
+    else
+        if ! output=$(grep -oP '(?<=^output=).*$' gen/job); then
+            echo "epoch=$(<gen/epoch)" >> gen/job
+            echo Running job:$job tree:$tree >&2 # can get source from tree
+            output=$(./run-job < gen/job | ./kgit hash-object -w --stdin)
+        fi
+        job=$(./kgit hash-object -w --stdin < gen/job)
+        ./kgit update-ref refs/job/$cachekey/$job $output
+        ./kgit symbolic-ref refs/job/$cachekey/last refs/job/$cachekey/$job
+    fi
+
+    echo $tree $job $output >> gen/completed
+done
+
+# should canonicalize ordering
+cat gen/completed | ./kgit hash-object -w --stdin

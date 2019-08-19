@@ -2,19 +2,6 @@
 
 unit="$1"
 
-set -o pipefail
-
 tree=$(./unit-to-tree "$unit" | ./kgit hash-object -w --stdin)
 ./tree-to-plan $tree
-
-while true; do
-    ./plan-to-frontier > gen/frontier
-    [[ $(wc -l < gen/frontier) -eq 0 ]] && break
-    # TODO allow manual jobs
-    tree=$(head -n1 gen/frontier)
-    job=$(./kgit cat-file blob $tree | ./tree-to-job | ./kgit hash-object -w --stdin)
-    epoch_output=$(./job-to-epoch-output $job)
-    echo $tree $job $epoch_output >> gen/completed
-done
-
-sort gen/completed | ./kgit hash-object -w --stdin
+./continue-flow

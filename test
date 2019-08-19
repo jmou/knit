@@ -1,0 +1,12 @@
+#!/bin/bash -ex
+
+manifest=$(./run-flow flow/basic/tac.unit)
+# difficult way to get the output
+result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
+diff - <(./kgit cat-file blob $result) <<EOF
+3
+2
+1
+EOF
+
+echo OK

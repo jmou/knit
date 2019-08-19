@@ -8,11 +8,11 @@ digraph G {
         "new-epoch" -> kgit;
         "file-to-tree" -> kgit;
         "run-job" -> kgit;
-        "job-to-epoch-output" -> { kgit "run-job" };
         "unit-to-tree" -> { "unit-to-tree" "file-to-tree" kgit };
         "tree-to-edges" -> { kgit "tree-to-edges" };
         "tree-to-plan" -> { "tree-to-edges" "new-epoch" };
-        "run-flow" -> { "unit-to-tree" kgit "tree-to-plan" "plan-to-frontier" "tree-to-job" "job-to-epoch-output" };
+        "run-flow" -> { "unit-to-tree" kgit "tree-to-plan" "continue-flow" };
+        "continue-flow" -> { kgit "plan-to-frontier" "tree-to-job" "run-job" };
     }
 
     subgraph cluster_cgibin {
