@@ -5,7 +5,10 @@
 import subprocess
 import sys
 
-for line in sys.stdin:
+_, unit = sys.argv
+print(f'_source=unit:{unit}')
+
+for line in open(unit):
     key, value = line.rstrip().split('=', 1)
     if key.startswith('#'):
         continue
@@ -16,13 +19,12 @@ for line in sys.stdin:
                                      stdout=subprocess.PIPE).stdout.strip().decode('ascii')
         else:
             assert input_type == 'unit'
-            with open(input_path) as input_f:
-                tree = subprocess.Popen(['./unit-to-tree'], stdin=input_f,
-                                        stdout=subprocess.PIPE)
-                treeid = subprocess.Popen(['./kgit', 'hash-object', '-w', '--stdin'],
-                                         stdin=tree.stdout, stdout=subprocess.PIPE)
-                assert treeid.wait() == 0
-                inputid = treeid.communicate()[0].strip().decode('ascii')
+            tree = subprocess.Popen(['./unit-to-tree', input_path], stdout=subprocess.PIPE)
+            treeid = subprocess.Popen(['./kgit', 'hash-object', '-w', '--stdin'],
+                                     stdin=tree.stdout, stdout=subprocess.PIPE)
+            assert treeid.wait() == 0
+            assert tree.wait() == 0
+            inputid = treeid.communicate()[0].strip().decode('ascii')
         assert len(inputid) == 40 and int(inputid, 16)
         print(f'{key}=tree:{inputid}')
     else:

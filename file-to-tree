@@ -3,4 +3,7 @@
 resource="$1"
 resource_id=$(./kgit hash-object -w --stdin < "$resource")
 
-./kgit hash-object -w --stdin <<< "output=$resource_id"
+./kgit hash-object -w --stdin <<EOF
+_source=file:$resource
+output=$resource_id
+EOF

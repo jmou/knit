@@ -6,7 +6,9 @@ die() {
 }
 
 while IFS== read -r key value; do
-    if [[ $key == input_* ]]; then
+    if [[ $key == _* ]]; then
+        continue
+    elif [[ $key == input_* ]]; then
         IFS=: read -r dep_type dep_tree <<< "$value"
         [[ $dep_type == tree ]] || die non-tree input
         value=$(grep ^$dep_tree gen/completed | cut -d' ' -f4)

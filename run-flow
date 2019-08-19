@@ -2,7 +2,9 @@
 
 unit="$1"
 
-tree=$(./unit-to-tree < "$unit" | ./kgit hash-object -w --stdin)
+set -o pipefail
+
+tree=$(./unit-to-tree "$unit" | ./kgit hash-object -w --stdin)
 ./tree-to-plan $tree
 
 while true; do
