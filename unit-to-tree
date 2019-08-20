@@ -8,7 +8,7 @@ import sys
 _, unit = sys.argv
 print(f'_source=unit:{unit}')
 
-lines = subprocess.run(f'cpp -P -I. -nostdinc {unit}', shell=True, check=True,
+lines = subprocess.run(f'cpp -C -P -I. -nostdinc {unit}', shell=True, check=True,
                        stdout=subprocess.PIPE).stdout.decode('ascii').splitlines()
 replacements = {}
 for line in lines:

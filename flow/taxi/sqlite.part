@@ -1,0 +1,3 @@
+command=ln -sf $input_csv csv && sqlite3 < $input_sql
+input_csv=param:csv
+input_sql=param:sql

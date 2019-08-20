@@ -1,6 +1,6 @@
 .mode csv
 .headers on
-.import gen/tripdata.csv tripdata
+.import csv tripdata
 
 SELECT tpep_pickup_datetime, tpep_dropoff_datetime, trip_distance, PULocationID, DOLocationID, total_amount
 FROM tripdata

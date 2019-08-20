@@ -1,6 +1,6 @@
 .mode csv
 .headers on
-.import gen/zones.csv zones
+.import csv zones
 
 SELECT LocationID, Borough
 FROM zones;

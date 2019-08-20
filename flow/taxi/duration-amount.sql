@@ -1,7 +1,7 @@
 cat <<EOF
 .mode csv
 .headers on
-.import gen/input.csv input
+.import csv input
 
 SELECT duration_s / 60 AS duration_m, AVG($column) AS $column
 FROM input

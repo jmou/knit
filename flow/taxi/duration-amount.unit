@@ -1,3 +1,3 @@
-command=ln -sf $input_input input.csv && sqlite3 < $input_stdin
-input_stdin=unit:flow/taxi/duration-amount-sql.unit
-input_input=unit:flow/taxi/duration-fare.unit
+.replace param:sql unit:flow/taxi/duration-amount-sql.unit
+.replace param:csv unit:flow/taxi/duration-fare.unit
+#include "flow/taxi/sqlite.part"

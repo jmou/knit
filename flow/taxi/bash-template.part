@@ -1,0 +1,3 @@
+command=IFS=$'\n'; env $(<$input_params) bash $input_template
+input_params=param:params
+input_template=param:template

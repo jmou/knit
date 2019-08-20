@@ -19,7 +19,7 @@ cat <<EOF
 
 <script>
 var input = \`
-$(<$1)
+$(<$input_duration_amount)
 \`;
 
 input = input.split('\n').slice(2, -1).map(x => x.split(','));
