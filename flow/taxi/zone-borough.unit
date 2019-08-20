@@ -1,3 +1,3 @@
-command=ln -sf $input_lookup gen/zones.csv && sqlite3 < gen/$input_stdin
+command=ln -sf $input_lookup zones.csv && sqlite3 < $input_stdin
 input_stdin=file:flow/taxi/zone-borough.sql
 input_lookup=unit:flow/taxi/taxi-zone-lookup.unit

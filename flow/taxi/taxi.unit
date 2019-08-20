@@ -1,4 +1,4 @@
-command=IFS=$'\n'; env $(<gen/$input_env) bash gen/$input_html gen/$input_duration_amount
+command=IFS=$'\n'; env $(<$input_env) bash $input_html $input_duration_amount
 input_duration_amount=unit:flow/taxi/duration-amount.unit
 input_env=file:flow/taxi/taxi-values.env
 input_html=file:flow/taxi/taxi.html

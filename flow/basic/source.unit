@@ -1,2 +1,2 @@
-command=cat gen/$input_file
+command=cat $input_file
 input_file=file:flow/basic/source.txt

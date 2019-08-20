@@ -1,10 +1,14 @@
 #!/bin/bash -e
 
-cat > gen/job.tmp
+workdir=$(mktemp -d gen/job-XXXXXX)
 
-grep ^input_ gen/job.tmp | cut -d= -f2 | while read inputid; do
-    ./kgit cat-file blob $inputid > gen/$inputid
+cat > $workdir/job
+
+grep ^input_ $workdir/job | cut -d= -f2 | while read inputid; do
+    ./kgit cat-file blob $inputid > $workdir/$inputid
 done
 
 IFS=$'\n'
-exec env $(<gen/job.tmp) bash -c 'exec bash -c "$command"'
+env -C $workdir $(<$workdir/job) bash -c 'exec bash -c "$command"'
+
+rm -rf $workdir
