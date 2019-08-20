@@ -1,0 +1,24 @@
+#!/bin/bash -e
+
+IFS=: read obj_type object <<< "$*"
+
+case $obj_type in
+    manifest)
+        ./kgit cat-file blob $object | while read tree job output; do
+            source=$(./kgit cat-file blob $tree | grep ^_source= | cut -d= -f2)
+            echo $source
+            echo "  tree:$tree"
+            echo "  job:$job"
+            echo "  output:$output"
+        done
+        ;;
+    tree|job|output)
+        ./kgit cat-file blob $object
+        ;;
+    file|unit)
+        cat $object
+        ;;
+    *)
+        echo unknown object type >&2
+        exit 1
+esac
