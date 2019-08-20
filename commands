@@ -1,0 +1,29 @@
+#!/bin/bash -e
+
+# ./commands | grep -v -e cgi-bin -e kgit | dot -Tx11
+# gvpr -c 'N[$.name=="kgit"]{delete(root, $)}' commands.dot | dot -Tx11
+
+# edge heuristics don't completely work for cgi-bin
+
+echo digraph G {
+
+# pass 1: get nodes in directory order and emit clusters
+prevdir=
+cluster=1
+# prepend / to path so directories sort first
+git grep -o '\./\w[a-z_/.-]*' | sed 's#:\./#\n#' | sed '/\//s:^:/:' | sort -u | while read path; do
+    dir=$(dirname $path)
+    if [[ $dir != $prevdir ]]; then
+        [[ -n $prevdir ]] && echo }
+        echo subgraph cluster_$cluster {
+        prevdir=$dir
+        let cluster++
+    fi
+    echo "\"${path#/}\" [label=\"$(basename $path)\"];"
+done
+echo }
+
+# pass 2: emit edges
+git grep -o '\./\w[a-z_/.-]*' | sort -u | sed 's#:\./#" -> "#;s/^/"/;s/$/";/'
+
+echo }
