@@ -1,0 +1,9 @@
+#!/bin/bash -e
+
+for opencmd in xdg-open open start; do
+    type $opencmd &> /dev/null && break
+done
+
+out=$(mktemp --suffix .svg)
+dot -Tsvg -o$out "$@"
+$opencmd $out

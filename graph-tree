@@ -1,0 +1,18 @@
+#!/bin/bash -e
+
+if [[ -z $graphnested ]]; then
+    echo digraph G {
+    graphnested=1 ./graph-tree "$@"
+    echo }
+    exit
+fi
+
+tree=$1
+
+while IFS== read -r key value; do
+    case $key in
+        _source|command) declare $key="$value" ;;
+        input_*) ./graph-tree $value && echo "\"$tree\" -> \"$value\";" ;;
+    esac
+done < <(./pretty $tree) # avoid subshelling while so vars are exposed
+echo "\"$tree\" [label=\"$_source\",tooltip=\"$command\"];"
