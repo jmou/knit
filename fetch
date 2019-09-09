@@ -1,0 +1,7 @@
+#!/bin/bash -e
+
+./kgit fetch git@github.com:jmou/knit-repo.git refs/heads/repo/*:refs/heads/repo/* refs/job/*:refs/job/*
+
+./kgit for-each-ref refs/heads/repo/* | while read sha1 type ref; do
+    ./kgit log --pretty=format:'%s %S' $ref
+done

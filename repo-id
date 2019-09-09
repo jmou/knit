@@ -1,0 +1,7 @@
+#!/bin/bash -e
+
+if [[ ! -f gen/repo-id ]]; then
+    echo ${HOSTNAME%%.*}-$(uuidgen) > gen/repo-id
+fi
+
+exec cat gen/repo-id

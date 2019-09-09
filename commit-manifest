@@ -1,0 +1,19 @@
+#!/bin/bash -e
+
+manifest=$1
+
+rm -f gen/repo/.git/index
+
+./kgit cat-file blob $manifest | while read tree job result; do
+    echo $tree
+    echo $job
+    echo $result
+    # not needed, these will be in other manifest entries
+    # ./kgit cat-file blob $tree | grep -oP '(?<=^input_[^=]*=tree:).*$'
+    ./kgit cat-file blob $job | grep '^(input_[^=]*|epoch)=' | cut -d= -f2
+done | sort -u | while read sha1; do
+    echo -e "100644 blob $sha1\t$sha1"
+done | ./kgit update-index --index-info
+
+echo -e "100644 blob $manifest\t$manifest" | ./kgit update-index --index-info
+./kgit commit --allow-empty -m "manifest $manifest"

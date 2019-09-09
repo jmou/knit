@@ -1,0 +1,5 @@
+#!/bin/bash -e
+
+# TODO lastjob easily conflicts, no resolution
+
+./kgit push git@github.com:jmou/knit-repo.git refs/heads/master:refs/heads/repo/$(./repo-id) refs/job/*:refs/job/*

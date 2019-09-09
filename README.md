@@ -60,7 +60,7 @@ Testing.
 ## Metadata
 
 Data format. Taints (e.g., PII). Access control. Documentation.
-Run time/duration?
+Run time/duration, commit?
 Propagation.
 Access revocation. Mutable?
 Readable by commands?
@@ -69,6 +69,11 @@ vs parameterization.
 ## Determinism
 
 Resolve jobs to resources. Execution nonce in job. Execution epoch (single job type, inconsistencies possible). Triple (job, epoch, resource).
+
+## Environment separation
+
+Don't transform within prod databases.
+Control w/ metadata?
 
 # TODO
 

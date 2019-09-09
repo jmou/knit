@@ -11,8 +11,8 @@ while true; do
 
     # TODO more nuanced caching policy
     cachekey=$(./kgit hash-object --stdin < gen/job)
-    if output=$(./kgit rev-parse --verify -q refs/job/$cachekey/last); then
-        job=$(./kgit symbolic-ref refs/job/$cachekey/last | cut -d/ -f4)
+    if job=$(./kgit rev-parse --verify -q refs/job/$cachekey/lastjob); then
+        output=$(./kgit rev-parse --verify -q refs/job/$cachekey/$job)
     else
         if ! output=$(grep -oP '(?<=^output=).*$' gen/job); then
             echo "epoch=$(<gen/epoch)" >> gen/job
@@ -21,7 +21,7 @@ while true; do
         fi
         job=$(./kgit hash-object -w --stdin < gen/job)
         ./kgit update-ref refs/job/$cachekey/$job $output
-        ./kgit symbolic-ref refs/job/$cachekey/last refs/job/$cachekey/$job
+        ./kgit update-ref refs/job/$cachekey/lastjob $job
     fi
 
     echo $tree $job $output >> gen/completed
