@@ -1,7 +1,0 @@
-#!/bin/bash -e
-
-unit="$1"
-
-output=$(./kgit hash-object -w --stdin)
-mkdir -p "$(dirname "$unit")"
-echo "output=$output" > "$unit.unit"

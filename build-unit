@@ -1,16 +1,89 @@
 #!/bin/bash -e
 
-workdir=$(mktemp -d gen/build-XXXXXX)
+if [[ $1 == start ]]; then
+    workdir=$(mktemp -d gen/build-XXXXXX)
+    mkdir $workdir/{exec,input}
+    touch $workdir/{after,copy}
+    echo $workdir
+    exit
+fi
 
-export KNITROOT="$PWD"
+if [[ $1 != --build ]]; then
+    echo specify start or --build >&2
+    exit 1
+fi
+workdir="$2"
+shift; shift
 
-ln -s "$KNITROOT/build" $workdir/build
-mkdir $workdir/.build
+subcommand="$1"
+shift
 
-echo 'Building a unit file. `./build/require-unit <unit>` to use results' >&2
-echo 'from other units. `./build/run` to run a command.' >&2
-echo '`./build/commit <unit>` to save the results' >&2
-
-(cd $workdir && exec bash)
-
-rm -rf "$workdir"
+case $subcommand in
+    start)
+        echo do not use --build with start >&2
+        exit 1
+        ;;
+    copy)
+        src="${1?}"
+        name="${2?}"
+        cp "$src" "$workdir/input/$name"
+        echo "$name" >> "$workdir/copy"
+        echo "$src available as \$input_$name" >&2
+        ;;
+    after)
+        unit="${1?}"
+        name="${2?}"
+        manifest=$(./run-flow "$unit")
+        result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
+        ./kgit cat-file blob $result > "$workdir/input/$name"
+        echo "$name $unit" >> "$workdir/after"
+        echo "output of $unit available as \$input_$name" >&2
+        ;;
+    run)
+        cmd="${1?}"
+        for name in "$workdir"/input/*; do
+            name="$(basename "$name")"
+            declare input_$name=../input/$name
+        done
+        echo "$cmd" >> "$workdir/run"
+        cd "$workdir/exec"
+        eval $cmd
+        ;;
+    commit)
+        unit="${1?}"
+        mkdir -p "$unit.d"
+        if [[ $(wc -l < "$workdir/run") -le 1 ]]; then # single line command
+            echo "command=$(<"$workdir/run")" > "$unit"
+        else # multi-line command
+            cp "$workdir/run" "$unit.d/run"
+            echo 'command=bash -e $input_run' > "$unit"
+            echo "input_run=file:$unit.d/run" >> "$unit"
+        fi
+        while read name; do
+            cp "$workdir/input/$name" "$unit.d/$name"
+            echo "input_$name=file:$unit.d/$name" >> "$unit"
+        done < "$workdir/copy"
+        while read name dep; do
+            echo "input_$name=unit:$dep" >> "$unit"
+        done < "$workdir/after"
+        rmdir "$unit.d" &> /dev/null || true # remove if empty
+        rm -rf "$workdir"
+        echo "Wrote $unit" >&2
+        ;;
+    discard)
+        rm -r "$workdir"
+        ;;
+    help)
+        echo '  start' >&2
+        echo '  --build [build] copy [src] [name]' >&2
+        echo '  --build [build] after [unit] [name]' >&2
+        echo '  --build [build] run [command]' >&2
+        echo '  --build [build] commit [unit]' >&2
+        exit 1
+        ;;
+    *)
+        echo "unknown command $subcommand" >&2
+        echo >&2
+        exec "$0" help
+        ;;
+esac

@@ -24,4 +24,27 @@ b
 c
 EOF
 
+header build
+rm -rf gen/flow
+build=$(./build-unit start)
+./build-unit --build $build copy /dev/stdin 123 <<EOF
+1
+2
+3
+EOF
+./build-unit --build $build run 'cat $input_123'
+./build-unit --build $build commit gen/flow/123.unit
+build=$(./build-unit start)
+./build-unit --build $build after gen/flow/123.unit 123
+./build-unit --build $build run 'tac $input_123'
+./build-unit --build $build commit gen/flow/tac.unit
+manifest=$(./run-flow gen/flow/tac.unit)
+# difficult way to get the output
+result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
+diff - <(./kgit cat-file blob $result) <<EOF
+3
+2
+1
+EOF
+
 header PASS

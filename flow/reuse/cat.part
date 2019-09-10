@@ -1,2 +1,2 @@
-command=cat gen/$input_data
+command=cat $input_data
 input_data=param:data
