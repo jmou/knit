@@ -18,5 +18,7 @@ for line in open('gen/plan'):
     if dep not in completed:
         candidates.discard(job)
 
+candidates.discard('0000000000000000000000000000000000000000')
+
 for job in sorted(candidates):
     print(job)

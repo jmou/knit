@@ -1,0 +1,16 @@
+#!/bin/bash -e
+
+workdir=$(mktemp -d gen/build-XXXXXX)
+
+export KNITROOT="$PWD"
+
+ln -s "$KNITROOT/build" $workdir/build
+mkdir $workdir/.build
+
+echo 'Building a unit file. `./build/require-unit <unit>` to use results' >&2
+echo 'from other units. `./build/run` to run a command.' >&2
+echo '`./build/commit <unit>` to save the results' >&2
+
+(cd $workdir && exec bash)
+
+rm -rf "$workdir"

@@ -1,0 +1,3 @@
+command=bash -e $input_commands
+input_632c95a1ca4be2599dc0457280a69e5d7a9aff3f=unit:flow/construct/123.unit
+input_commands=unit:flow/construct/tac.commands.unit

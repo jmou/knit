@@ -1,0 +1,3 @@
+#!/bin/bash -e
+
+(cd "$KNITROOT" && exec find flow -name '*.unit') | sed -e 's/\.unit$//' | sort

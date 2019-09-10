@@ -1,0 +1,19 @@
+#!/bin/bash -e
+
+unit="$1"
+filename="${2-$(basename "$unit")}"
+
+workdir="$PWD"
+input=$(git hash-object --stdin <<< "$unit")
+
+if grep -qs ^input_$input= .build/unit; then
+    echo unit already used >&2
+    exit 1
+fi
+
+cd "$KNITROOT"
+manifest=$(./run-flow "$unit.unit")
+result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
+echo "input_$input=unit:$unit.unit" >> "$workdir/.build/unit"
+echo "mv \$input_$input '$filename'" >> "$workdir/.build/commands"
+./kgit cat-file blob $result > "$workdir/$filename"

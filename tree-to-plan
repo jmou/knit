@@ -1,5 +1,6 @@
 #!/bin/bash -e
 
-./tree-to-edges $1 | sort -u > gen/plan
+echo 0000000000000000000000000000000000000000 $1 > gen/plan
+./tree-to-edges $1 | sort -u >> gen/plan
 > gen/completed
 ./new-epoch > gen/epoch

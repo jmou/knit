@@ -1,0 +1,15 @@
+#!/bin/bash -e
+
+unit="$1"
+
+workdir="$PWD"
+cd "$KNITROOT"
+
+./stdin-to-unit "$unit.commands" < $workdir/.build/commands
+
+cat - $workdir/.build/unit <<EOF | sort > "$unit.unit"
+command=bash -e \$input_commands
+input_commands=unit:$unit.commands.unit
+EOF
+
+echo "Wrote $unit.unit. \`exit\` the shell to complete" >&2
