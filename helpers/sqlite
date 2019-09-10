@@ -1,0 +1,12 @@
+#!/bin/bash -e
+
+(
+echo .mode csv
+echo .headers on
+for arg in "$@"; do
+    table="${arg%%=*}"
+    csv="${arg#*=}"
+    echo ".import '$csv' $table"
+done
+cat
+) | sqlite3

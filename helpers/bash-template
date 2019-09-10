@@ -1,0 +1,5 @@
+#!/bin/bash -e
+
+IFS=$'\n'; env $(<$2) bash -c "cat <<EOF
+$(<$1)
+EOF"

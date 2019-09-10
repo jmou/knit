@@ -41,6 +41,7 @@ case $subcommand in
         ;;
     run)
         cmd="${1?}"
+        shopt -s nullglob
         for name in "$workdir"/input/*; do
             name="$(basename "$name")"
             declare input_$name=../input/$name
