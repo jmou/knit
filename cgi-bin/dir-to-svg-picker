@@ -1,0 +1,20 @@
+#!/bin/bash -e
+
+IFS=/ read -r empty dir <<< "$PATH_INFO"
+
+# https://stackoverflow.com/a/3919908
+saveIFS=$IFS
+IFS='=&'
+parm=($QUERY_STRING)
+IFS=$saveIFS
+for ((i=0; i<${#parm[@]}; i+=2))
+do
+    declare var_${parm[i]}=${parm[i+1]}
+done
+
+echo 'Content-Type: image/svg+xml '
+echo
+
+[[ -n $var_create ]] && begin="BEG_G{node_t n=node($,'$var_create');n.label='new';n.style='filled';n.fillcolor='white'}"
+
+bash -e ./cgi-bin/dir-to-dot.sh "$dir" | gvpr -c "$begin N[name=='$var_highlight']{fillcolor='lightyellow'}N{href=sprintf(\"javascript:window.parent.svgPicker('$var_tag', '%s')\", \$.name)}" | dot -Tsvg

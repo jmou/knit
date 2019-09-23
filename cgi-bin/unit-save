@@ -1,0 +1,31 @@
+#!/usr/bin/python3
+
+import io
+import os
+import subprocess
+import sys
+import urllib.parse
+
+form = sys.stdin.read(int(os.environ['CONTENT_LENGTH']))
+form = urllib.parse.parse_qs(form)
+unit = form["unit"][0]
+
+build = subprocess.run(['./build-unit', 'start'], stdout=subprocess.PIPE, check=True).stdout.strip().decode('ascii')
+for key, value in form.items():
+    if '_' not in key:
+        continue
+    value = value[0]
+    prefix, _input, key = key.split('_', 2)
+    assert _input == 'input'
+    if prefix == 'filename':
+        assert '/' not in value
+        with open('gen/filedata', 'w+') as data:
+            data.write(form['filedata_input_' + key][0].replace('\r', ''))
+            data.seek(0)
+            subprocess.run(['./build-unit', '--build', build, 'copy', 'gen/filedata', value], check=True)
+    elif prefix == 'unit':
+        subprocess.run(['./build-unit', '--build', build, 'after', value, key], check=True)
+subprocess.run(['./build-unit', '--build', build, 'run', form['command'][0]], check=True)
+subprocess.run(['./build-unit', '--build', build, 'commit', unit], check=True)
+
+subprocess.run(f'bash ./cgi-bin/redirect.sh /cgi-bin/unit/{unit}', shell=True)

@@ -1,0 +1,49 @@
+#!/bin/bash -e
+
+if [[ -n $* ]]; then # inline
+    input="$*"
+else # AJAX
+    IFS=/ read -r empty input <<< "$PATH_INFO"
+
+    # https://stackoverflow.com/a/3919908
+    saveIFS=$IFS
+    IFS='=&'
+    parm=($QUERY_STRING)
+    IFS=$saveIFS
+    for ((i=0; i<${#parm[@]}; i+=2))
+    do
+        declare var_${parm[i]}=${parm[i+1]}
+    done
+
+    echo 'Content-Type: text/html'
+    echo
+fi
+
+htmlescape() {
+    # https://stackoverflow.com/a/12873723
+    sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g'
+}
+
+IFS== read -r key value <<< "$input"
+IFS=: read -r type path <<< "$value"
+case $type in
+    file)
+        echo "<label id=label_$key>file ${path#$var_unit.d/}:"
+        echo " <a href='javascript:removeInput(\"$key\")'>remove</a>"
+        echo "<input type=hidden name=filename_$key value='${path#$var_unit.d/}'>"
+        echo "<textarea name=filedata_$key>"
+        htmlescape < $path
+        echo '</textarea></label>'
+        ;;
+    unit)
+        echo "<label id=label_$key>unit ${key#input_}:"
+        echo " <a href='javascript:removeInput(\"$key\")'>remove</a>"
+        echo "<input id=input_$key type=hidden name=unit_$key value='$path'>"
+        # path should be URL escaped
+        echo "<object id=svg_$key data=\"/cgi-bin/dir-to-svg-picker/$(dirname "$path")/?tag=$key&highlight=$path\"></object>"
+        echo '</label>'
+        ;;
+    *)
+        echo unknown type
+        ;;
+esac

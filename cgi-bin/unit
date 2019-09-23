@@ -1,0 +1,80 @@
+#!/bin/bash -e
+
+IFS=/ read -r empty unit <<< "$PATH_INFO"
+
+[[ -z $unit ]] && exec bash ./cgi-bin/redirect.sh $SCRIPT_NAME/gen/web.unit
+
+htmlescape() {
+    # https://stackoverflow.com/a/12873723
+    sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g'
+}
+
+echo 'Content-Type: text/html'
+echo
+
+cat <<EOF
+<html><head><style>
+body { padding-bottom: 100% } /* hack to prevent scroll jitter */
+input:not([type]) { width: 80ex }
+textarea { display: block; width: 95%; height: 20em }
+label, object { display: block }
+</style><script>
+function removeInput(key) {
+    let elem = document.getElementById('label_' + key);
+    elem.parentNode.removeChild(elem);
+}
+function addInput(input) {
+    let xhr = new XMLHttpRequest();
+    xhr.open('GET', '/cgi-bin/input-to-html/' + encodeURI(input) + '?unit=' + encodeURI('$unit'));
+    xhr.onload = function (e) {
+        if (this.status == 200) {
+            let elem = document.createElement('div');
+            document.getElementById('inputs').appendChild(elem);
+            elem.outerHTML = this.response;
+        }
+    };
+    xhr.send();
+}
+function addClicked() {
+    let add_name = document.getElementById('add_name');
+    let name = add_name.value;
+    let type = document.getElementById('add_type').value;
+    let path = type == 'file' ? '$unit.d/' + name : document.getElementById('input_.add').value;
+    if (!name || !path) return;
+    addInput('input_' + name + '=' + type + ':' + path);
+    add_name.value = '';
+}
+function svgPicker(tag, unit) {
+    if (tag == '.open') {
+        location.href = '/cgi-bin/unit/' + unit;
+    } else {
+        let svg = document.getElementById('svg_' + tag);
+        svg.data = svg.data.substr(0, svg.data.lastIndexOf('=')+1) + encodeURI(unit);
+        document.getElementById('input_' + tag).value = unit;
+    }
+}
+</script></head><body>
+<form id=inputs method=post action="/cgi-bin/unit-save">
+$(true highlight should be url escaped)
+<object data="/cgi-bin/dir-to-svg-picker/$(dirname "$unit")/?tag=.open&create=$(dirname "$unit")/new.unit&highlight=$unit"></object>
+<input type=submit value=save>
+<label>unit: <input name=unit value="$unit"></label>
+<label>command: <input name=command value="$(grep -s ^command= "$unit" | cut -d= -f2- | htmlescape)"></label>
+EOF
+grep -s ^input_ "$unit" | while IFS== read -r input; do
+    var_unit=$unit ./cgi-bin/input-to-html "$input"
+done
+cat <<EOF
+</form>
+<div>
+    <input type=button value="add" onclick="addClicked()">
+    <select id=add_type onchange="document.getElementById('svg_.add').style.display = this.value == 'unit' ? 'block' : 'none'">
+        <option selected>file</option>
+        <option>unit</option>
+    </select>
+    <input id=add_name>
+    <input id="input_.add" type=hidden>
+    <object id="svg_.add" style="display: none" data="/cgi-bin/dir-to-svg-picker/$(dirname "$unit")/?tag=.add&highlight="></object>
+</div>
+</body></html>
+EOF

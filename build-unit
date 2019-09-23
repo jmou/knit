@@ -26,7 +26,7 @@ case $subcommand in
     copy)
         src="${1?}"
         name="${2?}"
-        cp "$src" "$workdir/input/$name"
+        cp --no-preserve=mode,ownership,timestamps "$src" "$workdir/input/$name"
         echo "$name" >> "$workdir/copy"
         echo "$src available as \$input_$name" >&2
         ;;
