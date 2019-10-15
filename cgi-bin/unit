@@ -18,6 +18,11 @@ body { padding-bottom: 100% } /* hack to prevent scroll jitter */
 input:not([type]) { width: 80ex }
 textarea { display: block; width: 95%; height: 20em }
 label, object { display: block }
+.hidable { display: none; }
+.expander { cursor: pointer; }
+.expander::before { content: "\\25b6"; }
+.expanded > .hidable { display: block; }
+.expanded > .expander::before { content: "\\25bc"; }
 </style><script>
 function removeInput(key) {
     let elem = document.getElementById('label_' + key);
@@ -53,6 +58,9 @@ function svgPicker(tag, unit) {
         document.getElementById('input_' + tag).value = unit;
     }
 }
+function toggleExpander(elem) {
+    elem.parentNode.className = elem.parentNode.className == 'expanded' ? '' : 'expanded';
+}
 </script></head><body>
 <form id=inputs method=post action="/cgi-bin/unit-save">
 $(true highlight should be url escaped)
@@ -76,5 +84,16 @@ cat <<EOF
     <input id="input_.add" type=hidden>
     <object id="svg_.add" style="display: none" data="/cgi-bin/dir-to-svg-picker/$(dirname "$unit")/?tag=.add&highlight="></object>
 </div>
-</body></html>
 EOF
+if [[ ${unit##*/} != new.unit ]]; then
+    cat <<EOF
+    <div class=expanded>
+    <span class=expander onclick="toggleExpander(this)">data</span>
+    <pre class=hidable>
+EOF
+    manifest=$(./run-flow "$unit")
+    result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
+    ./kgit cat-file blob $result | htmlescape
+    echo '</pre></div>'
+fi
+echo '</body></html>'

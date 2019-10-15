@@ -28,19 +28,21 @@ IFS== read -r key value <<< "$input"
 IFS=: read -r type path <<< "$value"
 case $type in
     file)
-        echo "<label id=label_$key>file ${path#$var_unit.d/}:"
+        echo "<label id=label_$key>"
+        echo "<span class=expander onclick=\"toggleExpander(this)\">file ${path#$var_unit.d/}:</span>"
         echo " <a href='javascript:removeInput(\"$key\")'>remove</a>"
         echo "<input type=hidden name=filename_$key value='${path#$var_unit.d/}'>"
-        echo "<textarea name=filedata_$key>"
+        echo "<textarea name=filedata_$key class=hidable>"
         htmlescape < $path
         echo '</textarea></label>'
         ;;
     unit)
-        echo "<label id=label_$key>unit ${key#input_}:"
+        echo "<label id=label_$key>"
+        echo "<span class=expander onclick=\"toggleExpander(this)\">unit ${key#input_}:</span>"
         echo " <a href='javascript:removeInput(\"$key\")'>remove</a>"
         echo "<input id=input_$key type=hidden name=unit_$key value='$path'>"
         # path should be URL escaped
-        echo "<object id=svg_$key data=\"/cgi-bin/dir-to-svg-picker/$(dirname "$path")/?tag=$key&highlight=$path\"></object>"
+        echo "<object id=svg_$key class=hidable data=\"/cgi-bin/dir-to-svg-picker/$(dirname "$path")/?tag=$key&highlight=$path\"></object>"
         echo '</label>'
         ;;
     *)
