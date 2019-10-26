@@ -1,4 +1,6 @@
 #!/bin/bash -e
+#
+# Resolve a tree's dependencies and emit it as a job.
 
 die() {
     echo "$@" >&2

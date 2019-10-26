@@ -1,4 +1,7 @@
 #!/bin/bash -e
+#
+# Wrapper around git; we only use cat-file and hash-object to store in its
+# object database.
 
 cd "${BASH_SOURCE%/*}"/gen/repo
 [[ -d .git ]] || git init -q

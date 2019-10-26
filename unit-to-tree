@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+#
+# Recursively convert a unit file and its dependencies to trees.
 
 # should canonicalize, e.g., sort
 

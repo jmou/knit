@@ -1,4 +1,6 @@
 #!/bin/bash -e
+#
+# Programmatically build unit files. See `test` for example usage.
 
 if [[ $1 == start ]]; then
     workdir=$(mktemp -d gen/build-XXXXXX)

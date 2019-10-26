@@ -1,4 +1,6 @@
 #!/bin/bash -e
+#
+# Make the current execution plan from a tree.
 
 echo 0000000000000000000000000000000000000000 $1 > gen/plan
 ./tree-to-edges $1 | sort -u >> gen/plan

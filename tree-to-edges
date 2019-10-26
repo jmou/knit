@@ -1,4 +1,6 @@
 #!/bin/bash -e
+#
+# Recursively emit all the dependency edges of a tree.
 
 tree=$1
 

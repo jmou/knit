@@ -1,4 +1,6 @@
 #!/bin/bash -e
+#
+# Run a target unit file and its dependencies.
 
 unit="$1"
 

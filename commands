@@ -1,7 +1,10 @@
 #!/bin/bash -e
-
-# ./commands | grep -v -e cgi-bin -e kgit | dot -Tx11
-# gvpr -c 'N[$.name=="kgit"]{delete(root, $)}' commands.dot | dot -Tx11
+#
+# Generate a graphviz visualization of how commands invoke each other using
+# simple heuristics.
+#
+# $ ./commands | grep -v -e cgi-bin -e kgit | dot -Tx11
+# $ gvpr -c 'N[$.name=="kgit"]{delete(root, $)}' commands.dot | dot -Tx11
 
 # edge heuristics don't completely work for cgi-bin
 

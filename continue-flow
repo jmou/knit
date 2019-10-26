@@ -1,4 +1,6 @@
 #!/bin/bash -e
+#
+# Continue running the current execution plan.
 
 set -o pipefail
 

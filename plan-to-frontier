@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+#
+# Find the next steps to execute in the current execution plan.
 
 completed = {}
 for line in open('gen/completed'):
