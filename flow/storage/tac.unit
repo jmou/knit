@@ -1,0 +1,4 @@
+command=grep -qxF format=text/plain $input_data && echo format=text/plain && grep -qxF store=fs $input_data && tac "$(grep ^path= $input_data | cut -d= -f2)" > output && chmod +x $input_fswrite && ./$input_fswrite output
+input_data=unit:flow/storage/fsimport.unit
+input_fsroot=file:flow/storage/fsroot.txt
+input_fswrite=file:flow/storage/fswrite.sh

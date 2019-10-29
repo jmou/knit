@@ -36,6 +36,9 @@ case $type in
         htmlescape < $path
         echo '</textarea></label>'
         ;;
+    inline)
+        echo TODO implement inline
+        ;;
     unit)
         echo "<label id=label_$key>"
         echo "<span class=expander onclick=\"toggleExpander(this)\">unit ${key#input_}:</span>"

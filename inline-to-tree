@@ -1,0 +1,9 @@
+#!/bin/bash -e
+
+value="$1"
+resource_id=$(./kgit hash-object -w --stdin <<< "$value")
+
+./kgit hash-object -w --stdin <<EOF
+_source=inline:
+output=$resource_id
+EOF

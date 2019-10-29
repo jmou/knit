@@ -27,6 +27,10 @@ for line in lines:
         if input_type == 'file':
             inputid = subprocess.run(['./file-to-tree', input_path], check=True,
                                      stdout=subprocess.PIPE).stdout.strip().decode('ascii')
+        elif input_type == 'inline':
+            # this tree seems pretty unnecessary
+            inputid = subprocess.run(['./inline-to-tree', input_path], check=True,
+                                     stdout=subprocess.PIPE).stdout.strip().decode('ascii')
         elif input_type == 'unit':
             tree = subprocess.Popen(['./unit-to-tree', input_path], stdout=subprocess.PIPE)
             treeid = subprocess.Popen(['./kgit', 'hash-object', '-w', '--stdin'],

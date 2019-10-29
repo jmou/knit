@@ -1,0 +1,5 @@
+command=echo "format=$(<$input_format)" && chmod +x $input_fswrite && ./$input_fswrite
+input_format=inline:text/plain
+input_fsroot=file:flow/storage/fsroot.txt
+input_fswrite=file:flow/storage/fswrite.sh
+input_source=file:flow/storage/source.txt

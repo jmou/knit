@@ -24,6 +24,21 @@ b
 c
 EOF
 
+header storage
+manifest=$(./run-flow flow/storage/tac.unit)
+# difficult way to get the output
+result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
+diff - <(./kgit cat-file blob $result) <<EOF
+format=text/plain
+path=/tmp/knit/9941e2c2869be9f6fef2250f3cd85527d059dadd
+store=fs
+EOF
+diff - /tmp/knit/9941e2c2869be9f6fef2250f3cd85527d059dadd <<EOF
+3
+2
+1
+EOF
+
 header build
 rm -rf gen/flow
 build=$(./build-unit start)
