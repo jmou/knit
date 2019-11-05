@@ -5,7 +5,7 @@
 if [[ $1 == start ]]; then
     workdir=$(mktemp -d gen/build-XXXXXX)
     mkdir $workdir/{exec,input}
-    touch $workdir/{after,copy}
+    touch $workdir/{after,copy,set}
     echo $workdir
     exit
 fi
@@ -32,6 +32,13 @@ case $subcommand in
         echo "$name" >> "$workdir/copy"
         echo "$src available as \$input_$name" >&2
         ;;
+    set)
+        name="${1?}"
+        value="${2?}"
+        echo "$value" > "$workdir/input/$name"
+        echo "input_$name=inline:$value" >> "$workdir/set"
+        echo "\"$value\" file contents available as \$input_$name" >&2
+        ;;
     after)
         unit="${1?}"
         name="${2?}"
@@ -46,7 +53,8 @@ case $subcommand in
         shopt -s nullglob
         for name in "$workdir"/input/*; do
             name="$(basename "$name")"
-            declare input_$name=../input/$name
+            # nop \ avoids command heuristic
+            declare input_$name=..\/input/$name
         done
         echo "$cmd" >> "$workdir/run"
         cd "$workdir/exec"
@@ -69,6 +77,8 @@ case $subcommand in
         while read name dep; do
             echo "input_$name=unit:$dep" >> "$unit"
         done < "$workdir/after"
+        cat "$workdir/set" >> "$unit"
+        # TODO sort unit?
         rmdir "$unit.d" &> /dev/null || true # remove if empty
         rm -rf "$workdir"
         echo "Wrote $unit" >&2

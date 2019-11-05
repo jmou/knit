@@ -30,10 +30,10 @@ manifest=$(./run-flow flow/storage/tac.unit)
 result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
 diff - <(./kgit cat-file blob $result) <<EOF
 format=text/plain
-path=/tmp/knit/9941e2c2869be9f6fef2250f3cd85527d059dadd
+path=/var/tmp/knit/9941e2c2869be9f6fef2250f3cd85527d059dadd
 store=fs
 EOF
-diff - /tmp/knit/9941e2c2869be9f6fef2250f3cd85527d059dadd <<EOF
+diff - /var/tmp/knit/9941e2c2869be9f6fef2250f3cd85527d059dadd <<EOF
 3
 2
 1
@@ -50,8 +50,13 @@ EOF
 ./build-unit --build $build run 'cat $input_123'
 ./build-unit --build $build commit gen/flow/123.unit
 build=$(./build-unit start)
+./build-unit --build $build set in abc
+./build-unit --build $build run 'cat $input_in'
+./build-unit --build $build commit gen/flow/abc.unit
+build=$(./build-unit start)
 ./build-unit --build $build after gen/flow/123.unit 123
-./build-unit --build $build run 'tac $input_123'
+./build-unit --build $build after gen/flow/abc.unit abc
+./build-unit --build $build run 'tac $input_123 $input_abc'
 ./build-unit --build $build commit gen/flow/tac.unit
 manifest=$(./run-flow gen/flow/tac.unit)
 # difficult way to get the output
@@ -60,6 +65,7 @@ diff - <(./kgit cat-file blob $result) <<EOF
 3
 2
 1
+abc
 EOF
 
 header build taxi
