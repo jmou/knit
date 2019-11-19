@@ -23,6 +23,8 @@ for key, value in form.items():
             data.write(form['filedata_input_' + key][0].replace('\r', ''))
             data.seek(0)
             subprocess.run(['./build-unit', '--build', build, 'copy', 'gen/filedata', value], check=True)
+    elif prefix == 'inline':
+        subprocess.run(['./build-unit', '--build', build, 'set', key, value], check=True)
     elif prefix == 'unit':
         subprocess.run(['./build-unit', '--build', build, 'after', value, key], check=True)
 subprocess.run(['./build-unit', '--build', build, 'run', form['command'][0]], check=True)
