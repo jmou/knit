@@ -1,0 +1,62 @@
+#!/usr/bin/python3
+#
+# Find the next steps to run in the current execution plan.
+
+import sys
+
+steps = {}
+
+class Step(object):
+    def __init__(self, lines):
+        self.stmt = dict(l.split('=', 1) for l in lines)
+        # Global magic
+        steps[self.stmt['_pos']] = self
+
+    @property
+    def output(self):
+        return self.stmt.get('_output')
+
+    @output.setter
+    def output(self, value):
+        self.stmt['_output'] = value
+
+    def resolve_inputs(self):
+        resolved = True
+        for key in [k for k in self.stmt if k.startswith('input_')]:
+            value = self.stmt[key]
+            if value.startswith('_pos:'):
+                pos = value.split(':', 1)[1]
+                if steps[pos].output:
+                    self.stmt[key] = steps[pos].output
+                else:
+                    resolved = False
+        return resolved
+
+    def save(self, fh):
+        for key, value in sorted(self.stmt.items()):
+            print(f'{key}={value}', file=fh)
+        print(file=fh)
+
+path = sys.argv[1]
+lines = []
+with open(path) as fh:
+    for line in fh:
+        line = line.rstrip('\n')
+        if line:
+            lines.append(line)
+        else:
+            Step(lines)
+            lines = []
+if lines:
+    Step(lines)
+
+# Optionally mark completed job.
+if len(sys.argv) > 2:
+    pos, output = sys.argv[2:]
+    steps[pos].output = output
+
+with open(path, 'w') as fh:
+    for pos, step in sorted(steps.items()):
+        if not step.output and step.resolve_inputs():
+            print(pos)
+        step.save(fh)

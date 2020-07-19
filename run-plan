@@ -1,15 +1,18 @@
 #!/bin/bash -e
 #
-# Continue running the current execution plan.
+# Run the current execution plan.
 
 set -o pipefail
 
+./schedule-step gen/plan > gen/next
 while true; do
-    ./plan-to-frontier > gen/frontier
-    [[ $(wc -l < gen/frontier) -eq 0 ]] && break
+    [[ $(wc -l < gen/next) -eq 0 ]] && break
     # TODO allow manual jobs
-    tree=$(head -n1 gen/frontier)
-    ./kgit cat-file blob $tree | ./tree-to-job > gen/job
+    pos=$(head -n1 gen/next)
+    # Extract a step and convert to a job.
+    awk "/(^|\\n)_pos=$pos\\n/{print}" RS= gen/plan | grep -v ^_ > gen/job
+    # Compatibility with trees and manifests.
+    tree=$(awk "/(^|\\n)_pos=$pos\\n/{print}" RS= gen/plan | grep ^_tree= | cut -d= -f2)
 
     # TODO more nuanced caching policy
     cachekey=$(./kgit hash-object --stdin < gen/job)
@@ -26,8 +29,9 @@ while true; do
         ./kgit update-ref refs/job/$cachekey/lastjob $job
     fi
 
-    echo $tree $job $output >> gen/completed
+    ./schedule-step gen/plan $pos $output > gen/next
+    echo $tree $job $output >> gen/manifest
 done
 
 # should canonicalize ordering
-cat gen/completed | ./kgit hash-object -w --stdin
+cat gen/manifest | ./kgit hash-object -w --stdin
