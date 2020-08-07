@@ -14,16 +14,6 @@ diff - <(./kgit cat-file blob $result) <<EOF
 1
 EOF
 
-header reuse
-manifest=$(./run-flow flow/reuse/abc.unit)
-# difficult way to get the output
-result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
-diff - <(./kgit cat-file blob $result) <<EOF
-a
-b
-c
-EOF
-
 header storage
 manifest=$(./run-flow flow/storage/tac.unit)
 # difficult way to get the output

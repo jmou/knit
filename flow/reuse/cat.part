@@ -1,2 +1,0 @@
-command=cat $input_data
-input_data=param:data
