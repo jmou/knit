@@ -2,7 +2,9 @@
 #
 # Find the next steps to run in the current execution plan.
 
+import subprocess
 import sys
+from datetime import datetime
 
 steps = {}
 
@@ -13,24 +15,45 @@ class Step(object):
         steps[self.stmt['_pos']] = self
 
     @property
-    def output(self):
-        return self.stmt.get('_output')
+    def invocation(self):
+        return self.stmt.get('_invocation')
 
-    @output.setter
-    def output(self, value):
-        self.stmt['_output'] = value
+    @staticmethod
+    def _make_invocation(invocation):
+        with open('gen/invocation', 'w') as fh:
+            for key, value in sorted(invocation.items()):
+                print(f'{key}={value}', file=fh)
+        return subprocess.check_output('./kgit hash-object -w --stdin < gen/invocation', shell=True, text=True).strip()
 
-    def resolve_inputs(self):
-        resolved = True
-        for key in [k for k in self.stmt if k.startswith('input_')]:
-            value = self.stmt[key]
+    def mark_complete(self, invocation):
+        self.stmt.update({k: v for k, v in invocation.items() if k.startswith('out/')})
+        cached_invocation = invocation.pop('_invocation', None)
+        # TODO this seems awkward
+        if cached_invocation:
+            self.stmt['_invocation'] = cached_invocation
+        else:
+            for key, value in self.stmt.items():
+                if key.startswith('_dep:') or key == '_source':
+                    invocation[key[1:]] = value
+            if 'source' not in invocation:
+                invocation['source'] = '_pos:' + self.stmt['_pos']
+            self.stmt['_invocation'] = self._make_invocation(invocation)
+
+    def resolve_dependencies(self):
+        """Build resources from input job dependencies"""
+        # Unexecuted dependencies?
+        if not all(steps[v.split(':', 2)[1]].invocation for k, v
+                   in self.stmt.items()
+                   if k.startswith('in/') and v.startswith('_pos:')):
+            return False
+        for inpath in [k for k in self.stmt if k.startswith('in/')]:
+            value = self.stmt[inpath]
             if value.startswith('_pos:'):
-                pos = value.split(':', 1)[1]
-                if steps[pos].output:
-                    self.stmt[key] = steps[pos].output
-                else:
-                    resolved = False
-        return resolved
+                _, pos, outpath = value.split(':', 2)
+                self.stmt[f'_dep:{inpath}'] = steps[pos].stmt['_invocation']
+                assert outpath.startswith('out/')
+                self.stmt[inpath] = steps[pos].stmt[outpath]
+        return True
 
     def save(self, fh):
         for key, value in sorted(self.stmt.items()):
@@ -52,11 +75,15 @@ if lines:
 
 # Optionally mark completed job.
 if len(sys.argv) > 2:
-    pos, output = sys.argv[2:]
-    steps[pos].output = output
+    invocation_path, = sys.argv[2:]
+    with open(invocation_path) as fh:
+        invocation = dict(line.rstrip('\n').split('=', 1) for line in fh)
+    if invocation:
+        pos = invocation.pop('_pos')
+        steps[pos].mark_complete(invocation)
 
 with open(path, 'w') as fh:
     for pos, step in sorted(steps.items()):
-        if not step.output and step.resolve_inputs():
+        if not step.invocation and step.resolve_dependencies():
             print(pos)
         step.save(fh)

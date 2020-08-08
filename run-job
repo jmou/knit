@@ -6,11 +6,42 @@ workdir=$(mktemp -d gen/job-XXXXXX)
 
 cat > $workdir/job
 
-grep ^input_ $workdir/job | cut -d= -f2 | while read inputid; do
-    ./kgit cat-file blob $inputid > $workdir/$inputid
-done
+if grep -qxF process=identity $workdir/job; then
+    grep ^in/ $workdir/job | sed -e 's:^in/:out/:'
+    rm -rf $workdir
+    exit
+fi
 
-IFS=$'\n'
-env -C $workdir $(<$workdir/job) bash -c 'exec bash -c "$command"'
+while IFS== read -r key value; do
+    if [[ $key = in/* ]]; then
+        mkdir -p "$(dirname "$workdir/$key")"
+        ./kgit cat-file blob $value > "$workdir/$key"
+    elif [[ $key = process ]]; then
+        IFS=: read -r process_type process_data <<< "$value"
+    else
+        echo Unknown job key "$key" >&2
+        exit 1
+    fi
+done < $workdir/job
+
+mkdir $workdir/out
+
+echo start_ts=$(date -Isec)
+if [[ $process_type = command ]]; then
+    (IFS=$'\n'; env -C $workdir $(<$workdir/job) bash -c "$process_data") > $workdir/log
+    find $workdir/out -type f | sort | while read -r path; do
+        cid=$(./kgit hash-object -w --stdin < "$path")
+        echo "${path#$workdir/}=$cid"
+    done
+else
+    echo Unknown process "$process" >&2
+    exit 1
+fi
+if [[ -s $workdir/log ]]; then
+    # Consider how to save logs with storage system.
+    log=$(./kgit hash-object -w --stdin < $workdir/log)
+    echo log=$log
+fi
+echo end_ts=$(date -Isec)
 
 rm -rf $workdir

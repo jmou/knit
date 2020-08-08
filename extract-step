@@ -1,0 +1,6 @@
+#!/bin/sh
+
+plan=$1
+pos=$2
+
+exec awk "/(^|\\n)_pos=$pos\\n/{print}" RS= $plan

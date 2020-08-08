@@ -1,0 +1,9 @@
+#!/bin/bash -e
+#
+# Show output from an invocation.
+
+invocation=$1
+path=$2
+
+cid=$(./kgit cat-file blob $invocation | grep "^$path=" | cut -d= -f2)
+./kgit cat-file blob $cid

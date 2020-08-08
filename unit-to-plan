@@ -1,0 +1,46 @@
+#!/usr/bin/python3
+#
+# Recursively convert unit file and dependencies to execution plan.
+
+import subprocess
+import sys
+
+pos = 0
+
+def translate(unit):
+    global pos
+    step = []
+    with open(unit) as fh:
+        for line in fh:
+            key, value = line.rstrip().split('=', 1)
+            if key.startswith('in/'):
+                input_type, input_path = value.split(':', 1)
+                if input_type == 'file' or input_type == 'inline':
+                    # This step only exists to propagate _source.
+                    print(f'_pos={pos}')
+                    print(f'_source={value}')
+                    print('process=identity')
+                    redirection = '<' if input_type == 'file' else '<<<'
+                    cid = subprocess.check_output(f'./kgit hash-object -w --stdin {redirection} "{input_path}"', shell=True, text=True).strip()
+                    print(f'in/_={cid}')
+                    print()
+                    value = f'_pos:{pos}:out/_'
+                    pos += 1
+                elif input_type == 'unit':
+                    unit_path, artifact_path = input_path.split(':', 1)
+                    dep = translate(unit_path)
+                    value = f'_pos:{dep}:{artifact_path}'
+                else:
+                    assert input_type == 'param'
+                    raise Exception('missing param', input_path)
+            step.append(f'{key}={value}')
+    print(f'_pos={pos}')
+    print(f'_source=unit:{unit}')
+    for line in step:
+        print(line)
+    print()
+    pos += 1
+    return pos - 1
+
+_, unit = sys.argv
+translate(unit)

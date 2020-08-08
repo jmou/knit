@@ -1,4 +1,4 @@
-.replace param:params file:flow/taxi/taxi-values.env
-.replace param:template file:flow/taxi/taxi.html
-#include "flow/taxi/bash-template.part"
-input_duration_amount=unit:flow/taxi/duration-amount.unit
+process=command:IFS=$'\n'; env $(<in/params) bash in/template > out/_
+in/duration_amount=unit:flow/taxi/duration-amount.unit:out/_
+in/params=file:flow/taxi/taxi-values.env
+in/template=file:flow/taxi/taxi.html

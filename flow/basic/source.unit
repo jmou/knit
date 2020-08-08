@@ -1,2 +1,2 @@
-command=cat $input_file
-input_file=file:flow/basic/source.txt
+process=command:cat in/file > out/_
+in/file=file:flow/basic/source.txt

@@ -1,3 +1,3 @@
-.replace param:sql unit:flow/taxi/duration-amount-sql.unit
-.replace param:csv unit:flow/taxi/duration-fare.unit
-#include "flow/taxi/sqlite.part"
+process=command:ln -sf in/csv csv && sqlite3 < in/sql > out/_
+in/csv=unit:flow/taxi/duration-fare.unit:out/_
+in/sql=unit:flow/taxi/duration-amount-sql.unit:out/_

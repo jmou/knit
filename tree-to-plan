@@ -1,7 +1,0 @@
-#!/bin/bash -e
-#
-# Make the current execution plan from a tree.
-
-./flatten-tree $1 > gen/plan
-> gen/manifest
-./new-epoch > gen/epoch

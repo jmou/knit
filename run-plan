@@ -1,37 +1,41 @@
 #!/bin/bash -e
 #
-# Run the current execution plan.
+# Run an execution plan.
+
+plan=$1
 
 set -o pipefail
 
-./schedule-step gen/plan > gen/next
+./schedule-step $plan > gen/next
 while true; do
     [[ $(wc -l < gen/next) -eq 0 ]] && break
     # TODO allow manual jobs
     pos=$(head -n1 gen/next)
-    # Extract a step and convert to a job.
-    awk "/(^|\\n)_pos=$pos\\n/{print}" RS= gen/plan | grep -v ^_ > gen/job
-    # Compatibility with trees and manifests.
-    tree=$(awk "/(^|\\n)_pos=$pos\\n/{print}" RS= gen/plan | grep ^_tree= | cut -d= -f2)
 
+    ./extract-step $plan $pos > gen/step
+    source=$(grep ^_source= gen/step | cut -d= -f2)
+    # Convert step to job.
+    grep -v ^_ gen/step > gen/job
     # TODO more nuanced caching policy
-    cachekey=$(./kgit hash-object --stdin < gen/job)
-    if job=$(./kgit rev-parse --verify -q refs/job/$cachekey/lastjob); then
-        output=$(./kgit rev-parse --verify -q refs/job/$cachekey/$job)
+    job=$(./kgit hash-object -w --stdin < gen/job)
+
+    # TODO invocation interface to schedule-step is awkward
+    echo -e "_pos=$pos\njob=$job" > gen/invocation.$$
+    if invocation=$(./kgit rev-parse --verify -q refs/job/$job/lastinvocation); then
+        ./kgit cat-file blob $invocation | grep ^out/ >> gen/invocation.$$
+        echo _invocation=$invocation >> gen/invocation.$$
+        ./schedule-step $plan gen/invocation.$$ > gen/next
     else
-        if ! output=$(grep -oP '(?<=^output=).*$' gen/job); then
-            echo "epoch=$(<gen/epoch)" >> gen/job
-            echo Running job:$job tree:$tree >&2 # can get source from tree
-            output=$(./run-job < gen/job | ./kgit hash-object -w --stdin)
-        fi
-        job=$(./kgit hash-object -w --stdin < gen/job)
-        ./kgit update-ref refs/job/$cachekey/$job $output
-        ./kgit update-ref refs/job/$cachekey/lastjob $job
+        echo Running job:$job $source >&2
+        ./run-job < gen/job >> gen/invocation.$$
+        ./schedule-step $plan gen/invocation.$$ > gen/next
+        invocation=$(./extract-step $plan $pos | grep ^_invocation= | cut -d= -f2)
+        ./kgit update-ref refs/job/$job/lastinvocation $invocation
     fi
 
-    ./schedule-step gen/plan $pos $output > gen/next
-    echo $tree $job $output >> gen/manifest
+    ./kgit update-ref refs/lastinvocation $invocation
 done
 
-# should canonicalize ordering
-cat gen/manifest | ./kgit hash-object -w --stdin
+rm gen/invocation.$$
+
+echo $invocation

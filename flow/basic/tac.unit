@@ -1,2 +1,2 @@
-command=tac $input_data
-input_data=unit:flow/basic/source.unit
+process=command:tac in/data > out/_
+in/data=unit:flow/basic/source.unit:out/_

@@ -4,6 +4,5 @@
 
 unit="$1"
 
-tree=$(./unit-to-tree "$unit" | ./kgit hash-object -w --stdin)
-./tree-to-plan $tree
-./run-plan
+./unit-to-plan "$unit" > gen/plan
+./run-plan gen/plan

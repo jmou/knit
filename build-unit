@@ -4,7 +4,7 @@
 
 if [[ $1 == start ]]; then
     workdir=$(mktemp -d gen/build-XXXXXX)
-    mkdir $workdir/{exec,input}
+    mkdir -p $workdir/{exec/out,input}
     touch $workdir/{after,copy,set}
     echo $workdir
     exit
@@ -42,26 +42,21 @@ case $subcommand in
         name="${1?}"
         value="${2?}"
         echo "$value" > "$workdir/input/$name"
-        echo "input_$name=inline:$value" >> "$workdir/set"
-        echo "\"$value\" file contents available as \$input_$name" >&2
+        echo "in/$name=inline:$value" >> "$workdir/set"
+        echo "\"$value\" file contents available as in/$name" >&2
         ;;
     after)
         unit="${1?}"
-        name="${2?}"
-        manifest=$(./run-flow "$unit")
-        result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
-        ./kgit cat-file blob $result > "$workdir/input/$name"
-        echo "$name $unit" >> "$workdir/after"
-        echo "output of $unit available as \$input_$name" >&2
+        path="${2?}"
+        name="${3?}"
+        invocation=$(./run-flow "$unit")
+        ./show-output $invocation $path > "$workdir/input/$name"
+        echo "$name $unit $path" >> "$workdir/after"
+        echo "output of $unit available as in/$name" >&2
         ;;
     run)
         cmd="${1?}"
-        shopt -s nullglob
-        for name in "$workdir"/input/*; do
-            name="$(basename "$name")"
-            # nop \ avoids command heuristic
-            declare input_$name=..\/input/$name
-        done
+        cp -R "$workdir"/input "$workdir"/exec/in
         echo "$cmd" >> "$workdir/run"
         cd "$workdir/exec"
         eval $cmd
@@ -70,18 +65,18 @@ case $subcommand in
         unit="${1?}"
         mkdir -p "$unit.d"
         if [[ $(wc -l < "$workdir/run") -le 1 ]]; then # single line command
-            echo "command=$(<"$workdir/run")" > "$unit"
+            echo "process=command:$(<"$workdir/run")" > "$unit"
         else # multi-line command
             cp "$workdir/run" "$unit.d/run"
-            echo 'command=bash -e $input_run' > "$unit"
-            echo "input_run=file:$unit.d/run" >> "$unit"
+            echo 'process=command:bash -e in/run' > "$unit"
+            echo "in/run=file:$unit.d/run" >> "$unit"
         fi
         while read name; do
             cp "$workdir/input/$name" "$unit.d/$name"
-            echo "input_$name=file:$unit.d/$name" >> "$unit"
+            echo "in/$name=file:$unit.d/$name" >> "$unit"
         done < "$workdir/copy"
-        while read name dep; do
-            echo "input_$name=unit:$dep" >> "$unit"
+        while read name dep path; do
+            echo "in/$name=unit:$dep:$path" >> "$unit"
         done < "$workdir/after"
         cat "$workdir/set" >> "$unit"
         # TODO sort unit?
