@@ -1,4 +1,6 @@
 process=nested:bash -e in/inputs-to-steps.sh
+# Just to simplify bootstrapping notebooks.
+in/cells=file:flow/nested/cells
 in/inputs-to-steps.sh=file:flow/nested/inputs-to-steps.sh
 # TODO mode are unused
 in/inputs/=unit:flow/nested/inputs.unit:out/

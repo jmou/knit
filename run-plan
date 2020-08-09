@@ -13,7 +13,7 @@ while true; do
     pos=$(head -n1 gen/next)
 
     ./extract-step $plan $pos > gen/step
-    source=$(grep ^_source= gen/step | cut -d= -f2)
+    source=$(grep ^_source= gen/step | cut -d= -f2) || true
     # Convert step to job.
     grep -v ^_ gen/step > gen/job
     # TODO more nuanced caching policy

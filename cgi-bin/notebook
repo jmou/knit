@@ -1,0 +1,183 @@
+#!/bin/bash -e
+
+IFS=/ read -r empty notebook <<< "$PATH_INFO"
+
+[[ -z $notebook ]] && exec bash ./cgi-bin/redirect.sh $SCRIPT_NAME/refs/notebooks/default
+
+htmlescape() {
+    # https://stackoverflow.com/a/12873723
+    sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g; s/'"'"'/\&#39;/g'
+}
+
+echo 'Content-Type: text/html'
+echo
+
+cat <<EOF
+<html><head><style>
+body, input, select { font-family: Helvetica, Arial; }
+textarea { display: block; width: 100%; background: #eee; padding: .5ex; border: 1px solid gray; border-radius: 5px; resize: none; }
+pre { margin: 0; }
+header > input:not([type]) { width: 12em; margin-bottom: .3em; font-size: 180%; font-weight: bold; }
+header > input[type=submit] { visibility: hidden; }
+header > input.changed + input[type=submit] { visibility: visible; }
+.cell { display: grid; grid-template-columns: min-content auto; padding: .5ex; padding-bottom: 0; border: 2px dashed transparent; border-radius: 5px; }
+.selected { border-style: solid; border-color: gray; }
+.cell > div:first-child { grid-row: 1 / 3; }
+.out { grid-column: 2; padding: .5ex; border: 1px solid transparent; }
+input:not([type]) { width: 10em; margin-right: .5ex; padding: .5ex; border: 1px solid transparent; border-radius: 5px; }
+select { border: 1px solid transparent; border-radius: 5px; -moz-appearance: none; background: transparent; color: gray; }
+input:not([type]):hover, select:hover { border-color: lightgray; }
+input:not([type]):focus, select:focus { border-color: gray; }
+</style>
+<script>
+function adjustSelection(from, initial_selector) {
+    let elem = document.querySelector('.selected');
+    if (elem) {
+        from(elem)?.querySelector('textarea').focus();
+    } else {
+        document.querySelector(initial_selector).querySelector('textarea').focus();
+    }
+}
+function select(event) {
+    document.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
+    let cell = event.currentTarget.closest('.cell');
+    cell.classList.add('selected');
+    document.querySelector('form').className = 'selected-' + cell.dataset.invocation;
+}
+function onload() {
+    document.querySelectorAll('.cell').forEach(el => el.addEventListener('click', select));
+    document.querySelectorAll('input, textarea, select').forEach(el => el.addEventListener('focus', select));
+    document.querySelectorAll('textarea').forEach(el => el.addEventListener('input', function() {
+        this.style.height = 0;
+        this.style.height = this.scrollHeight + 2 + 'px';
+    }));
+    document.querySelectorAll('textarea').forEach(el => el.dispatchEvent(new Event('input')));
+    document.addEventListener('keydown', e => {
+        if (!e.altKey && e.ctrlKey && !e.metaKey && !e.shiftKey) {
+            switch (event.key) {
+                case 'ArrowUp':
+                    adjustSelection(el => el.previousElementSibling, '.cell:last-child')
+                    break;
+                case 'ArrowDown':
+                    adjustSelection(el => el.nextElementSibling, '.cell')
+                    break;
+                case 'Enter':
+                    // TODO try moving back to event listener so it will work with button
+                    window.localStorage.setItem('scrollPosition', window.scrollY);
+                    window.localStorage.setItem('cellIndex', [...document.querySelectorAll('.cell')].indexOf(document.querySelector('.selected')));
+                    document.querySelector('form').submit();
+                    break;
+            }
+        } else if (!e.altKey && e.ctrlKey && !e.metaKey && e.shiftKey) {
+            switch (event.key) {
+                case 'ArrowUp':
+                    document.querySelectorAll('.selected').forEach(el => el.parentNode.insertBefore(el, el.previousElementSibling));
+                    break;
+                case 'ArrowDown':
+                    document.querySelectorAll('.selected').forEach(el => el.nextElementSibling.insertAdjacentElement('afterend', el));
+                    break;
+            }
+        }
+    });
+    const scrollPosition = window.localStorage.getItem('scrollPosition');
+    if (scrollPosition != null) {
+        window.scroll({top: scrollPosition});
+    }
+    const cellIndex = window.localStorage.getItem('cellIndex');
+    if (cellIndex != null) {
+        let cell = document.querySelectorAll('.cell')[cellIndex];
+        cell.querySelector('textarea').focus();
+    }
+    window.localStorage.clear();
+}
+</script>
+</head><body onload='onload()'><form method="post" action="/cgi-bin/notebook-save">
+<input type=hidden name=notebook value="$notebook">
+<header>
+EOF
+
+if [[ $notebook = refs/notebooks/* ]]; then
+    notebook_name=${notebook#refs/notebooks/}
+fi
+echo "<input name=notebook_name value='$notebook_name' placeholder='(unnamed notebook)' oninput='this.className=this.value&&this.value!=this.defaultValue?\"changed\":\"\"'>"
+echo '<input type=submit value='
+if [[ -n $notebook_name ]]; then
+    echo fork
+else
+    echo save
+fi
+echo '></header>'
+
+if invocation=$(./kgit rev-parse --verify -q $notebook); then
+    nested=$(./kgit cat-file blob $invocation | grep ^nested= | cut -d= -f2)
+    echo '<style>'
+    ./kgit cat-file blob $nested | grep ^dep: | cut -d= -f2 | while read -r cell; do
+        ./kgit cat-file blob $cell | grep ^dep:in/inputs/ | cut -d= -f2 | sort -u | while read -r dep; do
+            echo ".selected-$cell #invocation-$dep { border-color: #aaf; }"
+            echo ".selected-$dep #invocation-$cell { border-color: #fca; }"
+        done
+    done
+    echo '</style>'
+    job=$(./kgit cat-file blob $invocation | grep ^job= | cut -d= -f2)
+    cells=$(./kgit cat-file blob $job | grep ^in/cells= | cut -d= -f2)
+    # Align all the information for cells by name, then sort by order.
+    paste <(./kgit cat-file blob $cells | nl -w1 | sort -k2) \
+            <(./kgit cat-file blob $nested | grep ^dep: | cut -d= -f2) \
+            <(./kgit cat-file blob $job | grep '^in/inputs/.*/mode=' | sed -e 's/=/ /') \
+            <(./kgit cat-file blob $job | grep '^in/inputs/.*/script=' | sed -e 's/=/ /') \
+            <(./kgit cat-file blob $invocation | grep ^out/ | sed -e 's/=/ /') |
+            sort -n | while read -r _order _name \
+            id \
+            modepath mode \
+            inpath in \
+            outpath out; do
+        name=${outpath#out/}
+        if [[ $modepath != in/inputs/$name/mode || $inpath != in/inputs/$name/script ]]; then
+            echo Path mismatch: $modepath vs $inpath vs $outpath >&2
+            exit 1
+        fi
+        mode="$(./kgit cat-file blob $mode)"
+        cat <<EOF
+        <div class=cell id=invocation-$id data-invocation=$id>
+            <div>
+                <input type=hidden name=cells value=$name>
+                <input name=${name}_name value=$name>
+                <select name=${name}_mode>
+                    <option></option>
+                    <option $([[ $mode = bash ]] && echo selected)>bash</option>
+                    <option $([[ $mode = python ]] && echo selected) value=python>Python</option>
+                </select>
+            </div>
+            <textarea name=${name}_text spellcheck=false>$(./kgit cat-file blob $in | htmlescape)</textarea>
+            <pre class=out>$(./kgit cat-file blob $out | htmlescape)</pre>
+        </div>
+EOF
+    done
+fi
+
+cat <<EOF
+<div class=cell>
+    <div>
+        <input type=hidden name=cells value=_add>
+        <input name=_add_name placeholder=name>
+        <select name=_add_mode>
+            <option selected></option>
+            <option>bash</option>
+            <option value=python>Python</option>
+        </select>
+    </div>
+    <textarea name=_add_text spellcheck=false></textarea>
+</div>
+</form><footer>
+EOF
+
+if [[ -f gen/repo/.git/logs/$notebook ]]; then
+    echo '<h3>History</h3>'
+    # Can't use git reflog because we're not storing commits
+    tac gen/repo/.git/logs/$notebook | while read -r _old commit rest; do
+        read -r ts _tz msg <<< "${rest#*> }"
+        echo "<a href=/cgi-bin/notebook/$commit>$(date -d @$ts)</a> $msg<br>"
+    done
+fi
+
+echo '</footer></body></html>'

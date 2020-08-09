@@ -1,0 +1,60 @@
+#!/usr/bin/python3
+
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import urllib.parse
+from functools import lru_cache
+
+form = sys.stdin.read(int(os.environ['CONTENT_LENGTH']))
+form = urllib.parse.parse_qs(form, keep_blank_values=True)
+notebook = form['notebook'][0]
+notebook_name = form['notebook_name'][0]
+name_to_elem = {form[f'{elem}_name'][0]: elem for elem in form['cells']}
+
+@lru_cache
+def modehash(mode):
+    return subprocess.check_output(f"echo -n '{mode}' | ./kgit hash-object -w --stdin", shell=True, text=True).strip()
+
+with open('gen/plan', 'w') as fh:
+    print('_pos=inputs', file=fh)
+    print('process=identity', file=fh)
+    order_input = []
+    # TODO handle empty form
+    for name in name_to_elem:
+        elem = name_to_elem[name]
+        mode, text = form[f'{elem}_mode'][0], form[f'{elem}_text'][0]
+        if not name or not mode:
+            continue
+        with tempfile.NamedTemporaryFile('w+') as data:
+            data.write(text.replace('\r', ''))
+            # TODO is this a flush?
+            data.seek(0)
+            cell_input = subprocess.check_output(f'./kgit hash-object -w --stdin < {data.name}', shell=True, text=True).strip()
+        order_input.append(f'{name}\n')
+        print(f'in/inputs/{name}/mode={modehash(mode)}', file=fh)
+        print(f'in/inputs/{name}/script={cell_input}', file=fh)
+    order = subprocess.check_output(['./kgit', 'hash-object', '-w', '--stdin'], input=''.join(order_input), text=True).strip()
+    print(f'in/cells={order}', file=fh)
+    print(file=fh)
+
+    # TODO this is quite frankenstein, but unit-to-plan maps inputs more conveniently
+    compute_unit = subprocess.check_output('grep -ve ^in/cells= -e ^in/inputs/= -e ^inref/inputs/= flow/nested/compute.unit > gen/compute.unit', shell=True, text=True)
+    with open('gen/compute.unit', 'a') as unit:
+        print('in/cells=_pos:inputs:out/cells', file=unit)
+        print('in/inputs/=_pos:inputs:out/inputs/', file=unit)
+        print('inref/inputs/=_pos:inputs:out/inputs/', file=unit)
+    subprocess.run(['./unit-to-plan', 'gen/compute.unit'], check=True, stdout=fh)
+
+invocation = subprocess.check_output(['./run-plan', 'gen/plan'], text=True).strip()
+msg = 'user save'
+if notebook_name and notebook != f'refs/notebooks/{notebook_name}':
+    msg = 'forked' if notebook.startswith('refs/') else 'initial save'
+    notebook = f'refs/notebooks/{notebook_name}'
+if notebook.startswith('refs/'):
+    subprocess.run(f'./kgit update-ref -m "{msg}" --create-reflog {notebook} {invocation}', check=True, shell=True)
+    subprocess.run(f'bash ./cgi-bin/redirect.sh /cgi-bin/notebook/{notebook}', shell=True)
+else:
+    subprocess.run(f'bash ./cgi-bin/redirect.sh /cgi-bin/notebook/{invocation}', shell=True)

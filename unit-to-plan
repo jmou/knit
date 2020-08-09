@@ -50,6 +50,9 @@ def translate(unit):
                     unit_path, artifact_path = input_path.split(':', 1)
                     dep = translate(unit_path)
                     value = f'_pos:{dep}:{artifact_path}'
+                elif input_type == '_pos':
+                    print(f'warning: passing through _pos input in {unit}',
+                          file=sys.stderr)
                 else:
                     assert input_type == 'param'
                     raise Exception('missing param', input_path)
