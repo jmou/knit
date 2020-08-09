@@ -1,5 +1,8 @@
 #!/bin/bash -ex
 
+mv gen/repo/.git/refs/job/ gen/jobcache.$$
+trap "rm -rf gen/repo/.git/refs/job && mv gen/jobcache.$$ gen/repo/.git/refs/job" EXIT
+
 header() {
     echo -e "\n\033[32m$@\033[0m"
 }
@@ -11,6 +14,9 @@ diff - <(./show-output $invocation out/_) <<EOF
 2
 1
 EOF
+
+header cache
+[[ $(./run-flow flow/basic/tac.unit) = $invocation ]]
 
 header storage
 invocation=$(./run-flow flow/storage/tac.unit)
@@ -100,4 +106,18 @@ tail -n+2 flow/taxi/taxi.html | head -n-1 | ./build-unit --build $build copy /de
 ./build-unit --build $build run 'input_duration_amount=$(<in/duration_amount) bash -e in/bt in/html /dev/null > out/_'
 ./build-unit --build $build commit gen/flow/taxi.unit
 
+header nested
+invocation=$(./run-flow flow/nested/compute.unit)
+diff - <(./show-output $invocation out/abc) <<EOF
+a
+b
+c
+EOF
+diff - <(./show-output $invocation out/tac) <<EOF
+c
+b
+a
+EOF
+
+set +x
 header PASS

@@ -1,0 +1,23 @@
+#!/usr/bin/python3
+
+import ast
+
+def load(path):
+    with open(path) as fh:
+        return fh.read()
+
+with open('in/script') as fh:
+    source = ast.parse(fh.read())
+expr = None
+if source.body and isinstance(source.body[-1], ast.Expr):
+    expr = ast.Expression(source.body.pop().value)
+
+context = {'load': load}
+result = None
+eval(compile(source, '<string>', 'exec'), context)
+if expr:
+    result = eval(compile(expr, '<string>', 'eval'), context)
+
+with open('out/_', 'w') as fh:
+    if result:
+        fh.write(str(result))

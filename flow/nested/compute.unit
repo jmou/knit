@@ -1,0 +1,6 @@
+process=nested:bash -e in/inputs-to-steps.sh
+in/inputs-to-steps.sh=file:flow/nested/inputs-to-steps.sh
+# TODO mode are unused
+in/inputs/=unit:flow/nested/inputs.unit:out/
+inref/drivers/=file:flow/nested/drivers/
+inref/inputs/=unit:flow/nested/inputs.unit:out/

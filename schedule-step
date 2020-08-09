@@ -41,18 +41,26 @@ class Step(object):
 
     def resolve_dependencies(self):
         """Build resources from input job dependencies"""
+        depkeys = [k for k in self.stmt
+                   if k.startswith('in/') or k.startswith('inref/')]
         # Unexecuted dependencies?
-        if not all(steps[v.split(':', 2)[1]].invocation for k, v
-                   in self.stmt.items()
-                   if k.startswith('in/') and v.startswith('_pos:')):
+        depvalues = [self.stmt[k].split(':') for k in depkeys]
+        if not all(steps[v[1]].invocation for v in depvalues if v[0] == '_pos'):
             return False
-        for inpath in [k for k in self.stmt if k.startswith('in/')]:
+        for inpath in depkeys:
             value = self.stmt[inpath]
             if value.startswith('_pos:'):
                 _, pos, outpath = value.split(':', 2)
                 self.stmt[f'_dep:{inpath}'] = steps[pos].stmt['_invocation']
                 assert outpath.startswith('out/')
-                self.stmt[inpath] = steps[pos].stmt[outpath]
+                if inpath.endswith('/') and outpath.endswith('/'):
+                    del self.stmt[inpath]
+                    # Map dependency outpath to inpath.
+                    self.stmt.update({inpath + k[len(outpath):]: v
+                                      for k, v in steps[pos].stmt.items()
+                                      if k.startswith(outpath)})
+                else:
+                    self.stmt[inpath] = steps[pos].stmt[outpath]
         return True
 
     def save(self, fh):

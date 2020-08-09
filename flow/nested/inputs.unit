@@ -1,0 +1,5 @@
+process=identity
+in/abc/mode=inline:bash
+in/abc/script=file:flow/nested/inputs.d/abc
+in/tac/mode=inline:bash
+in/tac/script=file:flow/nested/inputs.d/tac

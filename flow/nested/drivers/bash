@@ -1,0 +1,3 @@
+#!/bin/bash
+
+exec bash -e in/script > out/_

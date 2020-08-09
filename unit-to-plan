@@ -2,30 +2,50 @@
 #
 # Recursively convert unit file and dependencies to execution plan.
 
+import os
 import subprocess
 import sys
 
 pos = 0
+
+# This may emit redundant steps, which should be deduplicated by the job cache.
+def emit_identity_step(input_type, input_path):
+    global pos
+    # This step only exists to propagate _source.
+    print(f'_pos={pos}')
+    print(f'_source={input_type}:{input_path}')
+    print('process=identity')
+    redirection = '<' if input_type == 'file' else '<<<'
+    cid = subprocess.check_output(f'./kgit hash-object -w --stdin {redirection} "{input_path}"', shell=True, text=True).strip()
+    print(f'in/_={cid}')
+    print()
+    value = f'_pos:{pos}:out/_'
+    pos += 1
+    return value
 
 def translate(unit):
     global pos
     step = []
     with open(unit) as fh:
         for line in fh:
+            if line.startswith('#'):
+                continue
             key, value = line.rstrip().split('=', 1)
-            if key.startswith('in/'):
+            if key.startswith('in/') or key.startswith('inref/'):
                 input_type, input_path = value.split(':', 1)
-                if input_type == 'file' or input_type == 'inline':
-                    # This step only exists to propagate _source.
-                    print(f'_pos={pos}')
-                    print(f'_source={value}')
-                    print('process=identity')
-                    redirection = '<' if input_type == 'file' else '<<<'
-                    cid = subprocess.check_output(f'./kgit hash-object -w --stdin {redirection} "{input_path}"', shell=True, text=True).strip()
-                    print(f'in/_={cid}')
-                    print()
-                    value = f'_pos:{pos}:out/_'
-                    pos += 1
+                if input_type == 'file':
+                    if key.endswith('/') and input_path.endswith('/'):  # directory
+                        for dirpath, _, filenames in os.walk(input_path):
+                            for filename in filenames:
+                                filepath = os.path.join(dirpath, filename)
+                                assert filepath.startswith(input_path)
+                                outkey = key + filepath[len(input_path):]
+                                value = emit_identity_step(input_type, filepath)
+                                step.append(f'{outkey}={value}')
+                        continue  # elide directory
+                    value = emit_identity_step(input_type, input_path)
+                elif input_type == 'inline':
+                    value = emit_identity_step(input_type, input_path)
                 elif input_type == 'unit':
                     unit_path, artifact_path = input_path.split(':', 1)
                     dep = translate(unit_path)

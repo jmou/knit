@@ -16,6 +16,9 @@ while IFS== read -r key value; do
     if [[ $key = in/* ]]; then
         mkdir -p "$(dirname "$workdir/$key")"
         ./kgit cat-file blob $value > "$workdir/$key"
+    elif [[ $key = inref/* ]]; then
+        mkdir -p "$(dirname "$workdir/$key")"
+        echo $value > "$workdir/$key"
     elif [[ $key = process ]]; then
         IFS=: read -r process_type process_data <<< "$value"
     else
@@ -24,15 +27,35 @@ while IFS== read -r key value; do
     fi
 done < $workdir/job
 
-mkdir $workdir/out
-
 echo start_ts=$(date -Isec)
 if [[ $process_type = command ]]; then
+    if [[ -d $workdir/inref ]]; then
+        echo 'warning: inref used in command process' >&2
+    fi
+    mkdir $workdir/out
     (IFS=$'\n'; env -C $workdir $(<$workdir/job) bash -c "$process_data") > $workdir/log
     find $workdir/out -type f | sort | while read -r path; do
         cid=$(./kgit hash-object -w --stdin < "$path")
         echo "${path#$workdir/}=$cid"
     done
+elif [[ $process_type = nested ]]; then
+    mkdir $workdir/steps
+    (IFS=$'\n'; env -C $workdir $(<$workdir/job) bash -c "$process_data") > $workdir/log
+    find $workdir/steps -type f | sort | while read -r path; do
+        echo _pos=${path#$workdir/steps/}
+        echo _source=nested:_pos:${path#$workdir/steps/}
+        cat $path
+        echo
+    done > $workdir/plan
+    # all is hardcoded as the nested flow terminal pos.
+    ./check-plan $workdir/plan all
+    initial_plan=$(./kgit hash-object -w --stdin < $workdir/plan)
+    # TODO merge plan?
+    invocation=$(./run-plan $workdir/plan)
+    echo nested=$invocation
+    echo final_plan=$(./kgit hash-object -w --stdin < $workdir/plan)
+    echo initial_plan=$initial_plan
+    ./kgit cat-file blob $invocation | grep ^out/
 else
     echo Unknown process "$process" >&2
     exit 1
