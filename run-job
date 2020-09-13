@@ -52,10 +52,10 @@ elif [[ $process_type = nested ]]; then
     done > $workdir/plan
     # all is hardcoded as the nested flow terminal pos.
     ./check-plan $workdir/plan all
-    outcome=$(./run-plan $workdir/plan)
-    invocation=$(./kgit cat-file blob $outcome | grep ^invocation= | cut -d= -f2)
-    echo outcome=$outcome
-    ./kgit cat-file blob $invocation | grep ^out/
+    invocation=$(./run-plan $workdir/plan)
+    completion=$(./kgit cat-file blob $invocation | grep ^completion= | cut -d= -f2)
+    echo invocation=$invocation
+    ./kgit cat-file blob $completion | grep ^out/
 else
     echo Unknown process "$process" >&2
     exit 1

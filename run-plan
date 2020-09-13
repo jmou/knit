@@ -20,27 +20,27 @@ while true; do
     # TODO more nuanced caching policy
     job=$(./kgit hash-object -w --stdin < gen/job)
 
-    # TODO invocation interface to schedule-step is awkward
-    echo -e "_pos=$pos\njob=$job" > gen/invocation.$$
-    if invocation=$(./kgit rev-parse --verify -q refs/job/$job/lastinvocation); then
-        ./kgit cat-file blob $invocation | grep ^out/ >> gen/invocation.$$ || true
-        echo _invocation=$invocation >> gen/invocation.$$
-        ./schedule-step $plan gen/invocation.$$ > gen/next
+    # TODO completion interface to schedule-step is awkward
+    echo -e "_pos=$pos\njob=$job" > gen/completion.$$
+    if completion=$(./kgit rev-parse --verify -q refs/job/$job/lastcompletion); then
+        ./kgit cat-file blob $completion | grep ^out/ >> gen/completion.$$ || true
+        echo _completion=$completion >> gen/completion.$$
+        ./schedule-step $plan gen/completion.$$ > gen/next
     else
         echo Running job:$job $source >&2
-        ./run-job < gen/job >> gen/invocation.$$
-        ./schedule-step $plan gen/invocation.$$ > gen/next
-        invocation=$(./extract-step $plan $pos | grep ^_invocation= | cut -d= -f2)
-        ./kgit update-ref refs/job/$job/lastinvocation $invocation
+        ./run-job < gen/job >> gen/completion.$$
+        ./schedule-step $plan gen/completion.$$ > gen/next
+        completion=$(./extract-step $plan $pos | grep ^_completion= | cut -d= -f2)
+        ./kgit update-ref refs/job/$job/lastcompletion $completion
     fi
 
-    ./kgit update-ref refs/lastinvocation $invocation
+    ./kgit update-ref refs/lastcompletion $completion
 done
 
-rm gen/invocation.$$
+rm gen/completion.$$
 
 ./kgit hash-object -w --stdin <<EOF
 _annotated_plan=$(./kgit hash-object -w --stdin < $plan)
-invocation=$invocation
+completion=$completion
 plan=$initial_plan
 EOF

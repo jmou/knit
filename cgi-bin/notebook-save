@@ -48,13 +48,13 @@ with open('gen/plan', 'w') as fh:
         print('inref/inputs/=_pos:inputs:out/inputs/', file=unit)
     subprocess.run(['./unit-to-plan', 'main', 'gen/compute.unit'], check=True, stdout=fh)
 
-outcome = subprocess.check_output(['./run-plan', 'gen/plan'], text=True).strip()
+invocation = subprocess.check_output(['./run-plan', 'gen/plan'], text=True).strip()
 msg = 'user save'
 if notebook_name and notebook != f'refs/notebooks/{notebook_name}':
     msg = 'forked' if notebook.startswith('refs/') else 'initial save'
     notebook = f'refs/notebooks/{notebook_name}'
 if notebook.startswith('refs/'):
-    subprocess.run(f'./kgit update-ref -m "{msg}" --create-reflog {notebook} {outcome}', check=True, shell=True)
+    subprocess.run(f'./kgit update-ref -m "{msg}" --create-reflog {notebook} {invocation}', check=True, shell=True)
     subprocess.run(f'bash ./cgi-bin/redirect.sh /cgi-bin/notebook/{notebook}', shell=True)
 else:
-    subprocess.run(f'bash ./cgi-bin/redirect.sh /cgi-bin/notebook/{outcome}', shell=True)
+    subprocess.run(f'bash ./cgi-bin/redirect.sh /cgi-bin/notebook/{invocation}', shell=True)
