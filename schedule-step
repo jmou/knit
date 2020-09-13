@@ -2,6 +2,7 @@
 #
 # Find the next steps to run in the current execution plan.
 
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -90,8 +91,10 @@ if len(sys.argv) > 2:
         pos = invocation.pop('_pos')
         steps[pos].mark_complete(invocation)
 
-with open(path, 'w') as fh:
+tmp_path = f'{path}.{os.getpid()}'
+with open(tmp_path, 'w') as fh:
     for pos, step in sorted(steps.items()):
         if not step.invocation and step.resolve_dependencies():
             print(pos)
         step.save(fh)
+os.rename(tmp_path, path)
