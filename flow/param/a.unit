@@ -1,0 +1,3 @@
+process=command:cat in/a1 in/a2 > out/_
+in/a1=inline:a1
+in/a2=param:out/x

@@ -1,0 +1,2 @@
+process=command:cat in/b1 > out/_
+in/b1=param:out/y

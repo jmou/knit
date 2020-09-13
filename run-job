@@ -39,6 +39,9 @@ if [[ $process_type = command ]]; then
         echo "${path#$workdir/}=$cid"
     done
 elif [[ $process_type = nested ]]; then
+    # Nested flows don't really need parameterization because the command can
+    # wire inputs as parameters. But it's natural to consider if params should
+    # be exposed in some consistent way here.
     mkdir $workdir/steps
     (IFS=$'\n'; env -C $workdir $(<$workdir/job) bash -c "$process_data") > $workdir/log
     find $workdir/steps -type f | sort | while read -r path; do
@@ -50,6 +53,7 @@ elif [[ $process_type = nested ]]; then
     # all is hardcoded as the nested flow terminal pos.
     ./check-plan $workdir/plan all
     initial_plan=$(./kgit hash-object -w --stdin < $workdir/plan)
+    # TODO restructure run-plan to emit a "session?"
     # TODO merge plan?
     invocation=$(./run-plan $workdir/plan)
     echo nested=$invocation

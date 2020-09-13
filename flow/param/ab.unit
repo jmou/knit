@@ -1,0 +1,3 @@
+process=command:cat in/a in/b > out/_
+in/a=unit:flow/param/a.unit:out/_
+in/b=unit:flow/param/b.unit:out/_

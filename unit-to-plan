@@ -11,24 +11,25 @@ pos = 0
 # This may emit redundant steps, which should be deduplicated by the job cache.
 def emit_identity_step(input_type, input_path):
     global pos
+    mypos = f'{root_pos}@{pos}'
     # This step only exists to propagate _source.
-    print(f'_pos={pos}')
+    print(f'_pos={mypos}')
     print(f'_source={input_type}:{input_path}')
     print('process=identity')
     redirection = '<' if input_type == 'file' else '<<<'
     cid = subprocess.check_output(f'./kgit hash-object -w --stdin {redirection} "{input_path}"', shell=True, text=True).strip()
     print(f'in/_={cid}')
     print()
-    value = f'_pos:{pos}:out/_'
+    value = f'_pos:{mypos}:out/_'
     pos += 1
     return value
 
-def translate(unit):
+def translate(unit, appendsuffix=True):
     global pos
     step = []
     with open(unit) as fh:
         for line in fh:
-            if line.startswith('#'):
+            if line.startswith('#') or line.isspace():
                 continue
             key, value = line.rstrip().split('=', 1)
             if key.startswith('in/') or key.startswith('inref/'):
@@ -53,17 +54,19 @@ def translate(unit):
                 elif input_type == '_pos':
                     print(f'warning: passing through _pos input in {unit}',
                           file=sys.stderr)
+                elif input_type == 'param':
+                    value = f'_pos:_param:{input_path}'
                 else:
-                    assert input_type == 'param'
-                    raise Exception('missing param', input_path)
+                    raise Exception('unknown input type', input_type)
             step.append(f'{key}={value}')
-    print(f'_pos={pos}')
+    mypos = f'{root_pos}@{pos}' if appendsuffix else root_pos
+    print(f'_pos={mypos}')
     print(f'_source=unit:{unit}')
     for line in step:
         print(line)
     print()
     pos += 1
-    return pos - 1
+    return mypos
 
-_, unit = sys.argv
-translate(unit)
+_, root_pos, unit = sys.argv
+translate(unit, appendsuffix=False)

@@ -46,7 +46,7 @@ with open('gen/plan', 'w') as fh:
         print('in/cells=_pos:inputs:out/cells', file=unit)
         print('in/inputs/=_pos:inputs:out/inputs/', file=unit)
         print('inref/inputs/=_pos:inputs:out/inputs/', file=unit)
-    subprocess.run(['./unit-to-plan', 'gen/compute.unit'], check=True, stdout=fh)
+    subprocess.run(['./unit-to-plan', 'main', 'gen/compute.unit'], check=True, stdout=fh)
 
 invocation = subprocess.check_output(['./run-plan', 'gen/plan'], text=True).strip()
 msg = 'user save'

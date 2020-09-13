@@ -22,7 +22,7 @@ while true; do
     # TODO invocation interface to schedule-step is awkward
     echo -e "_pos=$pos\njob=$job" > gen/invocation.$$
     if invocation=$(./kgit rev-parse --verify -q refs/job/$job/lastinvocation); then
-        ./kgit cat-file blob $invocation | grep ^out/ >> gen/invocation.$$
+        ./kgit cat-file blob $invocation | grep ^out/ >> gen/invocation.$$ || true
         echo _invocation=$invocation >> gen/invocation.$$
         ./schedule-step $plan gen/invocation.$$ > gen/next
     else
