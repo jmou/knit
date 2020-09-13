@@ -1,9 +1,14 @@
 #!/bin/bash -e
 #
-# Show output from an invocation.
+# Show output from an invocation or outcome.
 
-invocation=$1
+invocation_or_outcome=$1
 path=$2
+
+invocation=$(./kgit cat-file blob $invocation_or_outcome | grep ^invocation= | cut -d= -f2)
+if [[ -z $invocation ]]; then
+    invocation=$invocation_or_outcome
+fi
 
 cid=$(./kgit cat-file blob $invocation | grep "^$path=" | cut -d= -f2)
 ./kgit cat-file blob $cid

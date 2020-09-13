@@ -108,8 +108,10 @@ else
 fi
 echo '></header>'
 
-if invocation=$(./kgit rev-parse --verify -q $notebook); then
-    nested=$(./kgit cat-file blob $invocation | grep ^nested= | cut -d= -f2)
+if outcome=$(./kgit rev-parse --verify -q $notebook); then
+    invocation=$(./kgit cat-file blob $outcome | grep ^invocation= | cut -d= -f2)
+    nested_outcome=$(./kgit cat-file blob $invocation | grep ^outcome= | cut -d= -f2)
+    nested=$(./kgit cat-file blob $nested_outcome | grep ^invocation= | cut -d= -f2)
     echo '<style>'
     ./kgit cat-file blob $nested | grep ^dep: | cut -d= -f2 | while read -r cell; do
         ./kgit cat-file blob $cell | grep ^dep:in/inputs/ | cut -d= -f2 | sort -u | while read -r dep; do

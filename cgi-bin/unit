@@ -92,6 +92,7 @@ if [[ ${unit##*/} != new.unit ]]; then
     <pre class=hidable>
 EOF
     manifest=$(./run-flow "$unit")
+    # TODO this is broken
     result=$(./kgit cat-file blob $manifest | tail -n1 | cut -d' ' -f3)
     ./kgit cat-file blob $result | htmlescape
     echo '</pre></div>'

@@ -52,13 +52,9 @@ elif [[ $process_type = nested ]]; then
     done > $workdir/plan
     # all is hardcoded as the nested flow terminal pos.
     ./check-plan $workdir/plan all
-    initial_plan=$(./kgit hash-object -w --stdin < $workdir/plan)
-    # TODO restructure run-plan to emit a "session?"
-    # TODO merge plan?
-    invocation=$(./run-plan $workdir/plan)
-    echo nested=$invocation
-    echo final_plan=$(./kgit hash-object -w --stdin < $workdir/plan)
-    echo initial_plan=$initial_plan
+    outcome=$(./run-plan $workdir/plan)
+    invocation=$(./kgit cat-file blob $outcome | grep ^invocation= | cut -d= -f2)
+    echo outcome=$outcome
     ./kgit cat-file blob $invocation | grep ^out/
 else
     echo Unknown process "$process" >&2

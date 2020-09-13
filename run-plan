@@ -6,6 +6,7 @@ plan=$1
 
 set -o pipefail
 
+initial_plan=$(./kgit hash-object -w --stdin < $plan)
 ./schedule-step $plan > gen/next
 while true; do
     [[ $(wc -l < gen/next) -eq 0 ]] && break
@@ -38,4 +39,8 @@ done
 
 rm gen/invocation.$$
 
-echo $invocation
+./kgit hash-object -w --stdin <<EOF
+_annotated_plan=$(./kgit hash-object -w --stdin < $plan)
+invocation=$invocation
+plan=$initial_plan
+EOF
