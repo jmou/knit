@@ -1,1 +1,1 @@
-tac in/inputs/abc
+perl -e 'print reverse <>' in/inputs/abc

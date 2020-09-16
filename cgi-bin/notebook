@@ -176,7 +176,7 @@ EOF
 if [[ -f gen/repo/.git/logs/$notebook ]]; then
     echo '<h3>History</h3>'
     # Can't use git reflog because we're not storing commits
-    tac gen/repo/.git/logs/$notebook | while read -r _old commit rest; do
+    perl -e 'print reverse <>' gen/repo/.git/logs/$notebook | while read -r _old commit rest; do
         read -r ts _tz msg <<< "${rest#*> }"
         echo "<a href=/cgi-bin/notebook/$commit>$(date -d @$ts)</a> $msg<br>"
     done

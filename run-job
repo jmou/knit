@@ -27,13 +27,13 @@ while IFS== read -r key value; do
     fi
 done < $workdir/job
 
-echo start_ts=$(date -Isec)
+echo start_ts=$(date +%FT%T%z)
 if [[ $process_type = command ]]; then
     if [[ -d $workdir/inref ]]; then
         echo 'warning: inref used in command process' >&2
     fi
     mkdir $workdir/out
-    (IFS=$'\n'; env -C $workdir $(<$workdir/job) bash -c "$process_data") > $workdir/log
+    (IFS=$'\n'; cd $workdir; env $(<job) bash -c "$process_data") > $workdir/log
     find $workdir/out -type f | sort | while read -r path; do
         cid=$(./kgit hash-object -w --stdin < "$path")
         echo "${path#$workdir/}=$cid"
@@ -43,7 +43,7 @@ elif [[ $process_type = nested ]]; then
     # wire inputs as parameters. But it's natural to consider if params should
     # be exposed in some consistent way here.
     mkdir $workdir/steps
-    (IFS=$'\n'; env -C $workdir $(<$workdir/job) bash -c "$process_data") > $workdir/log
+    (IFS=$'\n'; cd $workdir; env $(<job) bash -c "$process_data") > $workdir/log
     find $workdir/steps -type f | sort | while read -r path; do
         echo _pos=${path#$workdir/steps/}
         echo _source=nested:_pos:${path#$workdir/steps/}
@@ -65,6 +65,6 @@ if [[ -s $workdir/log ]]; then
     log=$(./kgit hash-object -w --stdin < $workdir/log)
     echo log=$log
 fi
-echo end_ts=$(date -Isec)
+echo end_ts=$(date +%FT%T%z)
 
 rm -rf $workdir

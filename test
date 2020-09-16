@@ -1,7 +1,9 @@
 #!/bin/bash -ex
 
-mv gen/repo/.git/refs/job/ gen/jobcache.$$
-trap "rm -rf gen/repo/.git/refs/job && mv gen/jobcache.$$ gen/repo/.git/refs/job" EXIT
+if [[ -d gen/repo/.git/refs/job/ ]]; then
+    mv gen/repo/.git/refs/job/ gen/jobcache.$$
+    trap "rm -rf gen/repo/.git/refs/job && mv gen/jobcache.$$ gen/repo/.git/refs/job" EXIT
+fi
 
 header() {
     echo -e "\n\033[32m$@\033[0m"
@@ -48,7 +50,7 @@ build=$(./build-unit start)
 build=$(./build-unit start)
 ./build-unit --build $build after gen/flow/123.unit out/_ 123
 ./build-unit --build $build after gen/flow/abc.unit out/_ abc
-./build-unit --build $build run 'tac in/123 in/abc > out/_'
+./build-unit --build $build run 'perl -e "print reverse <>" in/abc in/123 > out/_'
 ./build-unit --build $build commit gen/flow/tac.unit
 invocation=$(./run-flow gen/flow/tac.unit)
 diff - <(./show-output $invocation out/_) <<EOF

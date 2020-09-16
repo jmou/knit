@@ -33,7 +33,7 @@ case $subcommand in
         if [[ $src == /dev/stdin ]]; then
             cat > "$workdir/input/$name"
         else
-            cp --no-preserve=mode,ownership,timestamps "$src" "$workdir/input/$name"
+            cp "$src" "$workdir/input/$name"
         fi
         echo "$name" >> "$workdir/copy"
         echo "$src available as \$input_$name" >&2

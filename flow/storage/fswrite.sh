@@ -4,6 +4,6 @@ fsroot="$(<in/fsroot)"
 source="${1-in/source}"
 
 mkdir -p "$fsroot"
-path="$fsroot/$(sha1sum "$source" | cut -d' ' -f1)"
+path="$fsroot/$(openssl dgst -sha1 -binary "$source" | xxd -p)"
 cp "$source" "$path"
 echo -e "path=$path\nstore=fs"
