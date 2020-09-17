@@ -16,29 +16,29 @@ class Step(object):
         steps[self.stmt['_pos']] = self
 
     @property
-    def completion(self):
-        return self.stmt.get('_completion')
+    def dispatch(self):
+        return self.stmt.get('_dispatch')
 
     @staticmethod
-    def _make_completion(completion):
-        with open('gen/completion', 'w') as fh:
-            for key, value in sorted(completion.items()):
+    def _make_dispatch(dispatch):
+        with open('gen/dispatch', 'w') as fh:
+            for key, value in sorted(dispatch.items()):
                 print(f'{key}={value}', file=fh)
-        return subprocess.check_output('./kgit hash-object -w --stdin < gen/completion', shell=True, text=True).strip()
+        return subprocess.check_output('./kgit hash-object -w --stdin < gen/dispatch', shell=True, text=True).strip()
 
-    def mark_complete(self, completion):
-        self.stmt.update({k: v for k, v in completion.items() if k.startswith('out/')})
-        cached_completion = completion.pop('_completion', None)
+    def mark_complete(self, dispatch):
+        self.stmt.update({k: v for k, v in dispatch.items() if k.startswith('out/')})
+        cached_dispatch = dispatch.pop('_dispatch', None)
         # TODO this seems awkward
-        if cached_completion:
-            self.stmt['_completion'] = cached_completion
+        if cached_dispatch:
+            self.stmt['_dispatch'] = cached_dispatch
         else:
             for key, value in self.stmt.items():
                 if key.startswith('_dep:') or key == '_source':
-                    completion[key[1:]] = value
-            if 'source' not in completion:
-                completion['source'] = '_pos:' + self.stmt['_pos']
-            self.stmt['_completion'] = self._make_completion(completion)
+                    dispatch[key[1:]] = value
+            if 'source' not in dispatch:
+                dispatch['source'] = '_pos:' + self.stmt['_pos']
+            self.stmt['_dispatch'] = self._make_dispatch(dispatch)
 
     def resolve_dependencies(self):
         """Build resources from input job dependencies"""
@@ -46,13 +46,13 @@ class Step(object):
                    if k.startswith('in/') or k.startswith('inref/')]
         # Unexecuted dependencies?
         depvalues = [self.stmt[k].split(':') for k in depkeys]
-        if not all(steps[v[1]].completion for v in depvalues if v[0] == '_pos'):
+        if not all(steps[v[1]].dispatch for v in depvalues if v[0] == '_pos'):
             return False
         for inpath in depkeys:
             value = self.stmt[inpath]
             if value.startswith('_pos:'):
                 _, pos, outpath = value.split(':', 2)
-                self.stmt[f'_dep:{inpath}'] = steps[pos].stmt['_completion']
+                self.stmt[f'_dep:{inpath}'] = steps[pos].stmt['_dispatch']
                 assert outpath.startswith('out/')
                 if inpath.endswith('/') and outpath.endswith('/'):
                     del self.stmt[inpath]
@@ -84,17 +84,17 @@ if lines:
 
 # Optionally mark completed job.
 if len(sys.argv) > 2:
-    completion_path, = sys.argv[2:]
-    with open(completion_path) as fh:
-        completion = dict(line.rstrip('\n').split('=', 1) for line in fh)
-    if completion:
-        pos = completion.pop('_pos')
-        steps[pos].mark_complete(completion)
+    dispatch_path, = sys.argv[2:]
+    with open(dispatch_path) as fh:
+        dispatch = dict(line.rstrip('\n').split('=', 1) for line in fh)
+    if dispatch:
+        pos = dispatch.pop('_pos')
+        steps[pos].mark_complete(dispatch)
 
 tmp_path = f'{path}.{os.getpid()}'
 with open(tmp_path, 'w') as fh:
     for pos, step in sorted(steps.items()):
-        if not step.completion and step.resolve_dependencies():
+        if not step.dispatch and step.resolve_dependencies():
             print(pos)
         step.save(fh)
 os.rename(tmp_path, path)
