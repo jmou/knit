@@ -14,31 +14,47 @@ while ./schedule-step < $plan > gen/next; do
     ./extract-step $plan $pos > gen/step
     source=$(grep ^_source= gen/step | cut -d= -f2) || true
     # Convert step to job.
-    grep -v ^_ gen/step > gen/job
-    # TODO more nuanced caching policy
+    grep -v ^_ gen/step | sort > gen/job
     job=$(./kgit hash-object -w --stdin < gen/job)
 
-    # TODO complete-dispatch interface is awkward
-    echo -e "_pos=$pos\njob=$job" > gen/dispatch.$$
+    # TODO more nuanced caching policy
     if dispatch=$(./kgit rev-parse --verify -q refs/job/$job/lastdispatch); then
-        ./kgit cat-file blob $dispatch | grep ^out/ >> gen/dispatch.$$ || true
-        echo _dispatch=$dispatch >> gen/dispatch.$$
-        ./complete-dispatch $plan gen/dispatch.$$
+        ./kgit cat-file blob $dispatch > gen/dispatch.$$
     else
         echo Running job:$job $source >&2
-        ./run-job < gen/job >> gen/dispatch.$$
-        ./complete-dispatch $plan gen/dispatch.$$
-        dispatch=$(./extract-step $plan $pos | grep ^_dispatch= | cut -d= -f2)
+        ./run-job < gen/job > gen/dispatch.$$
+        echo -e "_source=$source\njob=$job" >> gen/dispatch.$$
+        ./extract-step $plan $pos | grep ^_dep: | sed s/^_// >> gen/dispatch.$$ || true
+        dispatch=$(sort gen/dispatch.$$ | ./kgit hash-object -w --stdin)
         ./kgit update-ref refs/job/$job/lastdispatch $dispatch
     fi
 
-    ./kgit update-ref refs/lastdispatch $dispatch
+    exit_code=$(grep ^exit_code= gen/dispatch.$$ | cut -d= -f2)
+    if [[ $exit_code -ne 0 ]]; then
+        echo Failed job:$job $source with exit code $exit_code >&2
+    fi
+
+    ./complete-dispatch $plan $pos $exit_code $dispatch gen/dispatch.$$ > $plan.$$
+    mv $plan.$$ $plan
 done
 
 rm gen/dispatch.$$
 
-./kgit hash-object -w --stdin <<EOF
-_annotated_plan=$(./kgit hash-object -w --stdin < $plan)
-dispatch=$dispatch
-plan=$initial_plan
-EOF
+./reduce-dispatches $plan > gen/roots.$$
+if [[ $(wc -l < gen/roots.$$) -eq 1 ]] && ./kgit cat-file blob $(<gen/roots.$$) | grep -qFx exit_code=0; then
+    echo status=ok
+    echo dispatch=$(<gen/roots.$$)
+else
+    code=1
+    echo status=fail
+    awk '{print "partial_dispatch:" NR "=" $0}' gen/roots.$$
+fi > gen/invocation.$$
+rm gen/roots.$$
+echo plan=$initial_plan >> gen/invocation.$$
+echo _annotated_plan=$(./kgit hash-object -w --stdin < $plan) >> gen/invocation.$$
+
+sort gen/invocation.$$ | ./kgit hash-object -w --stdin
+
+rm gen/invocation.$$
+
+exit $code

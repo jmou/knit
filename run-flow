@@ -5,12 +5,20 @@
 unit="$1"
 shift
 
-echo process=identity > gen/param.unit
-for paramline in "$@"; do
-    echo "$paramline"
-done >> gen/param.unit
-./unit-to-plan _param gen/param.unit > gen/plan
+./unit-to-plan main "$unit" > gen/plan
 
-./unit-to-plan main "$unit" >> gen/plan
-# TODO should prune plan, like unused _param
-./run-plan gen/plan
+# Avoid populating an orphan param step.
+if grep -qE '^in(ref)?/[^=]*=_pos:_param:' gen/plan; then
+    echo process=identity > gen/param.unit
+    for paramline in "$@"; do
+        echo "$paramline"
+    done >> gen/param.unit
+    ./unit-to-plan _param gen/param.unit >> gen/plan
+elif [[ $# -gt 1 ]]; then
+    echo warn: parameters specified for non-parameterized flow >&2
+fi
+
+if ! ./run-plan gen/plan; then
+    echo warn: some jobs failed >&2
+    exit 1
+fi

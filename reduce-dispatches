@@ -1,0 +1,19 @@
+#!/bin/bash -e
+#
+# Get the dispatch roots of an execution plan. These are the roots of all
+# executed dispatches. They are also the steps closest to the plan frontier. For
+# a successfully completed plan it should be a single terminal.
+
+plan=$1
+
+grep ^_dispatch= $plan | cut -d= -f2 | sort -u > gen/roots.$$
+
+while read -r dispatch; do
+    ./kgit cat-file blob $dispatch | grep ^dep: | cut -d= -f2 > gen/deps.$$
+    grep -Fxvf gen/deps.$$ gen/roots.$$ > gen/roots.$$.tmp
+    mv gen/roots.$$.tmp gen/roots.$$
+done < gen/roots.$$
+
+cat gen/roots.$$
+
+rm -f gen/deps.$$ gen/roots.$$

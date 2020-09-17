@@ -1,93 +1,36 @@
-#!/usr/bin/python3
+#!/usr/bin/perl -w
 #
-# Mark completed dispatch in execution plan.
+# Mark completed dispatch in execution plan and resolve dependency references.
 
-import os
-import subprocess
-import sys
-from datetime import datetime
+use strict;
 
-steps = {}
+my ($plan_path, $plan_pos, $exit_code, $dispatch, $dispatch_path) = @ARGV;
 
-class Step(object):
-    def __init__(self, lines):
-        self.stmt = dict(l.split('=', 1) for l in lines)
-        # Global magic
-        steps[self.stmt['_pos']] = self
+my %outs;
 
-    @property
-    def dispatch(self):
-        return self.stmt.get('_dispatch')
+open my $fh, "<$dispatch_path" or die;
+while (<$fh>) {
+    chomp;
+    my ($key, $value) = split /=/, $_, 2;
+    $outs{$key} = $value if $key =~ /^out\//;
+}
+close $fh or die;
 
-    @staticmethod
-    def _make_dispatch(dispatch):
-        with open('gen/dispatch', 'w') as fh:
-            for key, value in sorted(dispatch.items()):
-                print(f'{key}={value}', file=fh)
-        return subprocess.check_output('./kgit hash-object -w --stdin < gen/dispatch', shell=True, text=True).strip()
-
-    def mark_complete(self, dispatch):
-        self.stmt.update({k: v for k, v in dispatch.items() if k.startswith('out/')})
-        cached_dispatch = dispatch.pop('_dispatch', None)
-        # TODO this seems awkward
-        if cached_dispatch:
-            self.stmt['_dispatch'] = cached_dispatch
-        else:
-            for key, value in self.stmt.items():
-                if key.startswith('_dep:') or key == '_source':
-                    dispatch[key[1:]] = value
-            if 'source' not in dispatch:
-                dispatch['source'] = '_pos:' + self.stmt['_pos']
-            self.stmt['_dispatch'] = self._make_dispatch(dispatch)
-
-    def resolve_dependencies(self):
-        """Build resources from input job dependencies"""
-        depkeys = [k for k in self.stmt
-                   if k.startswith('in/') or k.startswith('inref/')]
-        for inpath in depkeys:
-            value = self.stmt[inpath]
-            if value.startswith('_pos:'):
-                _, pos, outpath = value.split(':', 2)
-                depdispatch = steps[pos].dispatch
-                if depdispatch:
-                    self.stmt[f'_dep:{inpath}'] = depdispatch
-                    assert outpath.startswith('out/')
-                    if inpath.endswith('/') and outpath.endswith('/'):
-                        del self.stmt[inpath]
-                        # Map dependency outpath to inpath.
-                        self.stmt.update({inpath + k[len(outpath):]: v
-                                          for k, v in steps[pos].stmt.items()
-                                          if k.startswith(outpath)})
-                    else:
-                        self.stmt[inpath] = steps[pos].stmt[outpath]
-
-    def save(self, fh):
-        for key, value in sorted(self.stmt.items()):
-            print(f'{key}={value}', file=fh)
-        print(file=fh)
-
-_, plan_path, dispatch_path = sys.argv
-lines = []
-with open(plan_path) as fh:
-    for line in fh:
-        line = line.rstrip('\n')
-        if line:
-            lines.append(line)
-        else:
-            Step(lines)
-            lines = []
-if lines:
-    Step(lines)
-
-with open(dispatch_path) as fh:
-    dispatch = dict(line.rstrip('\n').split('=', 1) for line in fh)
-pos = dispatch.pop('_pos')
-steps[pos].mark_complete(dispatch)
-
-tmp_path = f'{plan_path}.{os.getpid()}'
-with open(tmp_path, 'w') as fh:
-    for pos, step in sorted(steps.items()):
-        if not step.dispatch:
-            step.resolve_dependencies()
-        step.save(fh)
-os.rename(tmp_path, plan_path)
+open $fh, "<$plan_path" or die;
+while (<$fh>) {
+    if (/^_pos=\Q$plan_pos\E$/) {
+        print "_exit_code=$exit_code\n";
+        print "_dispatch=$dispatch\n";
+    } elsif ($exit_code == 0 && s/^(in(ref)?\/[^=]*)=\K(_pos:\Q$plan_pos\E:(out\/.*))$/$outs{$4} \/\/ $3/e) {
+        my ($in, $out) = ($1, $4);
+        print "_dep:$in=$dispatch\n";
+        if ($in =~ /\/$/ && $out =~ /\/$/) {
+            for (keys %outs) {
+                print "$in$1=$outs{$_}\n" if /^\Q$out\E(.*)$/;
+            }
+            next;
+        }
+    }
+    print;
+}
+close $fh or die;

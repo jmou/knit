@@ -8,6 +8,7 @@ cat > $workdir/job
 
 if grep -qxF process=identity $workdir/job; then
     grep ^in/ $workdir/job | sed -e 's:^in/:out/:'
+    echo exit_code=0
     rm -rf $workdir
     exit
 fi
@@ -33,7 +34,9 @@ if [[ $process_type = command ]]; then
         echo 'warning: inref used in command process' >&2
     fi
     mkdir $workdir/out
-    (IFS=$'\n'; cd $workdir; env $(<job) bash -c "$process_data") > $workdir/log
+    exit_code=0
+    (IFS=$'\n'; cd $workdir; env $(<job) bash -c "$process_data") > $workdir/log || exit_code=$?
+    echo exit_code=$exit_code
     find $workdir/out -type f | sort | while read -r path; do
         cid=$(./kgit hash-object -w --stdin < "$path")
         echo "${path#$workdir/}=$cid"
@@ -43,19 +46,27 @@ elif [[ $process_type = nested ]]; then
     # wire inputs as parameters. But it's natural to consider if params should
     # be exposed in some consistent way here.
     mkdir $workdir/steps
-    (IFS=$'\n'; cd $workdir; env $(<job) bash -c "$process_data") > $workdir/log
-    find $workdir/steps -type f | sort | while read -r path; do
-        echo _pos=${path#$workdir/steps/}
-        echo _source=nested:_pos:${path#$workdir/steps/}
-        cat $path
-        echo
-    done > $workdir/plan
-    # all is hardcoded as the nested flow terminal pos.
-    ./check-plan $workdir/plan all
-    invocation=$(./run-plan $workdir/plan)
-    dispatch=$(./kgit cat-file blob $invocation | grep ^dispatch= | cut -d= -f2)
-    echo invocation=$invocation
-    ./kgit cat-file blob $dispatch | grep ^out/
+    if (IFS=$'\n'; cd $workdir; env $(<job) bash -c "$process_data") > $workdir/log; then
+        find $workdir/steps -type f | sort | while read -r path; do
+            echo _pos=${path#$workdir/steps/}
+            echo _source=nested:_pos:${path#$workdir/steps/}
+            cat $path
+            echo
+        done > $workdir/plan
+        # all is hardcoded as the nested flow terminal pos.
+        ./check-plan $workdir/plan all
+        if invocation=$(./run-plan $workdir/plan); then
+            echo exit_code=0
+        else
+            # This is ambiguous with a failure in the nested process.
+            echo exit_code=1
+        fi
+        dispatch=$(./kgit cat-file blob $invocation | grep ^dispatch= | cut -d= -f2)
+        echo invocation=$invocation
+        ./kgit cat-file blob $dispatch | grep ^out/
+    else
+        echo exit_code=$?
+    fi
 else
     echo Unknown process "$process" >&2
     exit 1

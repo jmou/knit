@@ -1,0 +1,1 @@
+process=command:echo error >&2; false
