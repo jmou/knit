@@ -1,100 +1,31 @@
 #!/usr/bin/python3
 #
-# Find the next steps to run in the current execution plan.
+# Find next steps to run in the execution plan.
+# Non-zero exit status if there are no more steps to run.
 
-import os
-import subprocess
 import sys
-from datetime import datetime
 
-steps = {}
 
-class Step(object):
-    def __init__(self, lines):
-        self.stmt = dict(l.split('=', 1) for l in lines)
-        # Global magic
-        steps[self.stmt['_pos']] = self
+schedulable = False
 
-    @property
-    def dispatch(self):
-        return self.stmt.get('_dispatch')
-
-    @staticmethod
-    def _make_dispatch(dispatch):
-        with open('gen/dispatch', 'w') as fh:
-            for key, value in sorted(dispatch.items()):
-                print(f'{key}={value}', file=fh)
-        return subprocess.check_output('./kgit hash-object -w --stdin < gen/dispatch', shell=True, text=True).strip()
-
-    def mark_complete(self, dispatch):
-        self.stmt.update({k: v for k, v in dispatch.items() if k.startswith('out/')})
-        cached_dispatch = dispatch.pop('_dispatch', None)
-        # TODO this seems awkward
-        if cached_dispatch:
-            self.stmt['_dispatch'] = cached_dispatch
-        else:
-            for key, value in self.stmt.items():
-                if key.startswith('_dep:') or key == '_source':
-                    dispatch[key[1:]] = value
-            if 'source' not in dispatch:
-                dispatch['source'] = '_pos:' + self.stmt['_pos']
-            self.stmt['_dispatch'] = self._make_dispatch(dispatch)
-
-    def resolve_dependencies(self):
-        """Build resources from input job dependencies"""
-        depkeys = [k for k in self.stmt
-                   if k.startswith('in/') or k.startswith('inref/')]
-        # Unexecuted dependencies?
-        depvalues = [self.stmt[k].split(':') for k in depkeys]
-        if not all(steps[v[1]].dispatch for v in depvalues if v[0] == '_pos'):
-            return False
-        for inpath in depkeys:
-            value = self.stmt[inpath]
+completed = False
+unresolved = False
+for line in sys.stdin:
+    line = line.rstrip('\n')
+    if line:
+        key, value = line.split('=', 1)
+        if key == '_pos':
+            pos = value
+        elif key.startswith('in/') or key.startswith('inref/'):
             if value.startswith('_pos:'):
-                _, pos, outpath = value.split(':', 2)
-                self.stmt[f'_dep:{inpath}'] = steps[pos].stmt['_dispatch']
-                assert outpath.startswith('out/')
-                if inpath.endswith('/') and outpath.endswith('/'):
-                    del self.stmt[inpath]
-                    # Map dependency outpath to inpath.
-                    self.stmt.update({inpath + k[len(outpath):]: v
-                                      for k, v in steps[pos].stmt.items()
-                                      if k.startswith(outpath)})
-                else:
-                    self.stmt[inpath] = steps[pos].stmt[outpath]
-        return True
-
-    def save(self, fh):
-        for key, value in sorted(self.stmt.items()):
-            print(f'{key}={value}', file=fh)
-        print(file=fh)
-
-path = sys.argv[1]
-lines = []
-with open(path) as fh:
-    for line in fh:
-        line = line.rstrip('\n')
-        if line:
-            lines.append(line)
-        else:
-            Step(lines)
-            lines = []
-if lines:
-    Step(lines)
-
-# Optionally mark completed job.
-if len(sys.argv) > 2:
-    dispatch_path, = sys.argv[2:]
-    with open(dispatch_path) as fh:
-        dispatch = dict(line.rstrip('\n').split('=', 1) for line in fh)
-    if dispatch:
-        pos = dispatch.pop('_pos')
-        steps[pos].mark_complete(dispatch)
-
-tmp_path = f'{path}.{os.getpid()}'
-with open(tmp_path, 'w') as fh:
-    for pos, step in sorted(steps.items()):
-        if not step.dispatch and step.resolve_dependencies():
+                unresolved = True
+        elif key == '_dispatch':
+            completed = True
+    else:
+        if not completed and not unresolved:
             print(pos)
-        step.save(fh)
-os.rename(tmp_path, path)
+            schedulable = True
+        completed = False
+        unresolved = False
+
+exit(0 if schedulable else 1)
