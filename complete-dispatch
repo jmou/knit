@@ -48,7 +48,8 @@ class Step(object):
             value = self.stmt[inpath]
             if value.startswith('_pos:'):
                 _, pos, outpath = value.split(':', 2)
-                if depdispatch := steps[pos].dispatch:
+                depdispatch = steps[pos].dispatch
+                if depdispatch:
                     self.stmt[f'_dep:{inpath}'] = depdispatch
                     assert outpath.startswith('out/')
                     if inpath.endswith('/') and outpath.endswith('/'):
