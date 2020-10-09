@@ -2,71 +2,42 @@
 #
 # Recursively convert unit file and dependencies to execution plan.
 
-import os
 import subprocess
 import sys
 
 pos = 0
 
-# This may emit redundant steps, which should be deduplicated by the job cache.
-def emit_identity_step(input_type, input_path):
-    global pos
-    mypos = f'{root_pos}@{pos}'
-    # This step only exists to propagate _source.
-    print(f'_pos={mypos}')
-    print(f'_source={input_type}:{input_path}')
-    print('process=identity')
-    redirection = '<' if input_type == 'file' else '<<<'
-    cid = subprocess.check_output(f'./kgit hash-object -w --stdin {redirection} "{input_path}"', shell=True, text=True).strip()
-    print(f'in/_={cid}')
-    print()
-    value = f'_pos:{mypos}:out/_'
-    pos += 1
-    return value
-
 def translate(unit, appendsuffix=True):
     global pos
-    step = []
+    process = None
+    inputs = []
     with open(unit) as fh:
         for line in fh:
             if line.startswith('#') or line.isspace():
                 continue
             key, value = line.rstrip().split('=', 1)
-            if key.startswith('in/') or key.startswith('inref/'):
-                input_type, input_path = value.split(':', 1)
-                if input_type == 'file':
-                    if key.endswith('/') and input_path.endswith('/'):  # directory
-                        for dirpath, _, filenames in os.walk(input_path):
-                            for filename in filenames:
-                                filepath = os.path.join(dirpath, filename)
-                                assert filepath.startswith(input_path)
-                                outkey = key + filepath[len(input_path):]
-                                value = emit_identity_step(input_type, filepath)
-                                step.append(f'{outkey}={value}')
-                        continue  # elide directory
-                    value = emit_identity_step(input_type, input_path)
-                elif input_type == 'inline':
-                    value = emit_identity_step(input_type, input_path)
-                elif input_type == 'unit':
-                    unit_path, artifact_path = input_path.split(':', 1)
+            if key == 'process':
+                process = value
+            elif key.startswith('in/') or key.startswith('inref/'):
+                if value.startswith('unit:'):
+                    _, unit_path, artifact_path = value.split(':', 2)
                     dep = translate(unit_path)
                     value = f'_pos:{dep}:{artifact_path}'
-                elif input_type == '_pos':
+                elif value.startswith('_pos:'):
                     print(f'warning: passing through _pos input in {unit}',
                           file=sys.stderr)
-                elif input_type == 'param':
-                    value = f'_pos:_param:{input_path}'
-                else:
-                    raise Exception('unknown input type', input_type)
-            step.append(f'{key}={value}')
+                inputs += [f'{key}={value}\n']
+            else:
+                raise Exception('unsupported key', key)
+
     mypos = f'{root_pos}@{pos}' if appendsuffix else root_pos
-    print(f'_pos={mypos}')
-    print(f'_source=unit:{unit}')
-    for line in step:
-        print(line)
-    print()
+    subprocess.run(['./build-plan', '--build', build, 'step',
+                    mypos, f'unit:{unit}', process],
+                   input=''.join(inputs), text=True, check=True)
     pos += 1
     return mypos
 
 _, root_pos, unit = sys.argv
+build = subprocess.check_output(['./build-plan', 'start'], text=True).rstrip('\n')
 translate(unit, appendsuffix=False)
+subprocess.run(['./build-plan', '--build', build, 'commit'], check=True)

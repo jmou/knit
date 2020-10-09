@@ -1,0 +1,88 @@
+#!/usr/bin/python3
+#
+# Programmatically build a plan.
+
+import hashlib
+import os
+import shutil
+import subprocess
+import sys
+from tempfile import mkdtemp
+
+
+def emit_identity_step(builddir, input_type, input_path):
+    step = hashlib.sha1(f'{input_type}:{input_path}'.encode('ascii')).hexdigest()
+    if not os.path.exists(f'{builddir}/{step}'):
+        with open(f'{builddir}/{step}', 'w') as fh:
+            redirection = '<' if input_type == 'file' else '<<<'
+            cid = subprocess.check_output(f'./kgit hash-object -w --stdin {redirection} "{input_path}"', shell=True, text=True).strip()
+            print(f'_pos={step}', file=fh)
+            # This step only exists to propagate _source.
+            print(f'_source={input_type}:{input_path}', file=fh)
+            print(f'process=identity', file=fh)
+            print(f'in/_={cid}', file=fh)
+    return f'_pos:{step}:out/_'
+
+def interpret_input(builddir, inkey, invalue):
+    input_type, input_path = invalue.split(':', 1)
+    if input_type == 'file':
+        # This is awkward to use in nested contexts because it only takes paths
+        # from the repository root.
+        if inkey.endswith('/') and input_path.endswith('/'):  # directory
+            lines = []
+            for dirpath, _, filenames in os.walk(input_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    assert filepath.startswith(input_path)
+                    outkey = inkey + filepath[len(input_path):]
+                    value = emit_identity_step(builddir, input_type, filepath)
+                    lines.append(f'{outkey}={value}')
+            return lines
+        value = emit_identity_step(builddir, input_type, input_path)
+        return [f'{inkey}={value}']
+    elif input_type == 'inline':
+        value = emit_identity_step(builddir, input_type, input_path)
+        return [f'{inkey}={value}']
+    # TODO rename to step?
+    elif input_type == '_pos':
+        return [f'{inkey}={invalue}']
+    elif input_type == 'param':
+        return [f'{inkey}=_pos:_param:{input_path}']
+    else:
+        raise Exception('unknown input type', input_type)
+
+def main():
+    if sys.argv[1:] == ['start']:
+        builddir = mkdtemp(dir='gen', prefix='build-')
+        print(builddir)
+        return
+
+    assert sys.argv[1] == '--build'
+    builddir = sys.argv[2]
+    subcommand = sys.argv[3]
+    args = sys.argv[4:]
+
+    if subcommand == 'step':
+        step, source, process = args
+        if os.path.exists(f'{builddir}/{step}'):
+            print(f'warn: overwriting existing step {step}', file=sys.stderr)
+        with open(f'{builddir}/{step}', 'w') as fh:
+            print(f'_pos={step}', file=fh)
+            print(f'_source={source}', file=fh)
+            print(f'process={process}', file=fh)
+            for inline in sys.stdin:
+                inkey, invalue = inline.rstrip('\n').split('=', 1)
+                for outline in interpret_input(builddir, inkey, invalue):
+                    print(outline, file=fh)
+    elif subcommand == 'commit':
+        () = args
+        for filename in os.listdir(builddir):
+            with open(f'{builddir}/{filename}') as infh:
+                shutil.copyfileobj(infh, sys.stdout)
+            sys.stdout.write('\n')
+        shutil.rmtree(builddir)
+    else:
+        raise Exception(f'unknown command {subcommand}')
+
+if __name__ == '__main__':
+    main()
