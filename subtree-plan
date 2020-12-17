@@ -1,0 +1,29 @@
+#!/usr/bin/perl -w
+#
+# Filter a plan to a subtree. Analog to check-plan.
+
+use strict;
+
+my ($target) = @ARGV;
+
+my %steps;
+# paragraph mode
+local $/ = '';
+while (<STDIN>) {
+    /^_pos=(.*?)$/m;
+    $steps{$1} = $_;
+}
+
+die unless exists $steps{$target};
+
+my %visited;
+sub emit_subtree {
+    my ($root) = @_;
+    return if $visited{$root}++;
+    print $steps{$root};
+    # for each _pos in/
+    for ($steps{$root} =~ m@^in/[^=]*=_pos:([^:]*):.*?$@gm) {
+        emit_subtree($_);
+    }
+}
+emit_subtree $target;

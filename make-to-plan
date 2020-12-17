@@ -1,0 +1,57 @@
+#!/usr/bin/perl -w
+
+use strict;
+
+my @targets;
+my @prereqs;
+my @recipes;
+my %target_index;
+
+# parse Makefile
+my $rulenum = -1;
+PARSE: while (<>) {
+    next if /^ *(#.*)?$/;  # skip comments
+    $rulenum++;
+    die unless s/^(.+?):\s*//;  # target line
+    @{$targets[$rulenum]} = split /\s+/, $1;
+    die 'targets may only be defined once'
+        if grep { exists $target_index{$_} } @{$targets[$rulenum]};
+    $target_index{$_} = $rulenum for @{$targets[$rulenum]};
+    # prerequisites
+    $prereqs[$rulenum] = [];
+    push @{$prereqs[$rulenum]}, /(?:(.+?)(?:\s+|$))/g;
+    # recipe
+    $recipes[$rulenum] = [];
+    while (<>) {
+        redo PARSE unless s/^\t//;
+        chomp;
+        # automatic variables
+        s/\$</${$prereqs[$rulenum]}[0]/g;
+        s/\$\^/@{$prereqs[$rulenum]}/g;
+        s/\$@/${$targets[$rulenum]}[0]/g;
+        s/\$\$/\$/g;
+        push @{$recipes[$rulenum]}, $_;
+    }
+}
+
+my $nonce = -1;
+sub array_file_input {
+    my ($array, $name) = @_;
+    $nonce++;
+    open my $fh, ">gen/make.$nonce" or die;
+    print $fh "$_\n" for @{$array};
+    close $fh or die;
+    return "in/$name=file:gen/make.$nonce\n";
+}
+
+chomp (my $build = `./build-plan start`);
+while (my ($target, $index) = each %target_index) {
+    open my $fh, "|./build-plan --build $build step $target make:$target 'command:bash -e in/run'" or die;
+    print $fh array_file_input $targets[$index], 'targets';
+    print $fh array_file_input $prereqs[$index], 'prereqs';
+    print $fh array_file_input $recipes[$index], 'recipe';
+    print $fh "in/run=file:make/run.sh\n";
+    print $fh "in/inputs/$_=_pos:$_:out/$_\n" for (@{$prereqs[$index]});
+    close $fh or die;
+}
+print `./build-plan --build $build commit`;

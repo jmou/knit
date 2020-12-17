@@ -135,5 +135,22 @@ partial_dispatch=$(./kgit cat-file blob $invocation | grep ^partial_dispatch:)
 ! invocation=$(./run-flow flow/fail/error.unit)
 [[ $partial_dispatch == $(./kgit cat-file blob $invocation | grep ^partial_dispatch:) ]]
 
+header make
+invocation=$(./run-make make/basic/Makefile join)
+diff - <(./show-output $invocation out/join) <<EOF
+a
+c
+c
+b
+a
+b
+EOF
+invocation=$(./run-make make/basic/Makefile tac)
+diff - <(./show-output $invocation out/tac) <<EOF
+c
+b
+a
+EOF
+
 set +x
 header PASS
