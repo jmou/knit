@@ -10,8 +10,11 @@ grep ^_dispatch= $plan | cut -d= -f2 | sort -u > gen/roots.$$
 
 while read -r dispatch; do
     ./kgit cat-file blob $dispatch | grep ^dep: | cut -d= -f2 > gen/deps.$$
-    grep -Fxvf gen/deps.$$ gen/roots.$$ > gen/roots.$$.tmp
-    mv gen/roots.$$.tmp gen/roots.$$
+    # BSD grep fails if -f file is empty.
+    if [[ -s gen/deps.$$ ]]; then
+        grep -Fxvf gen/deps.$$ gen/roots.$$ > gen/roots.$$.tmp
+        mv gen/roots.$$.tmp gen/roots.$$
+    fi
 done < gen/roots.$$
 
 cat gen/roots.$$
