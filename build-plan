@@ -14,8 +14,9 @@ def emit_identity_step(builddir, input_type, input_path):
     step = hashlib.sha1(f'{input_type}:{input_path}'.encode('ascii')).hexdigest()
     if not os.path.exists(f'{builddir}/{step}'):
         with open(f'{builddir}/{step}', 'w') as fh:
+            # <<< is not POSIX
             redirection = '<' if input_type == 'file' else '<<<'
-            cid = subprocess.check_output(f'./kgit hash-object -w --stdin {redirection} "{input_path}"', shell=True, text=True).strip()
+            cid = subprocess.check_output(['/bin/bash', '-c', f'./kgit hash-object -w --stdin {redirection} "{input_path}"'], text=True).strip()
             print(f'_pos={step}', file=fh)
             # This step only exists to propagate _source.
             print(f'_source={input_type}:{input_path}', file=fh)
