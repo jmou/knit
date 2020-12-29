@@ -5,7 +5,7 @@ set -o pipefail
 IFS=/ read -r empty pipeline_id sub_action <<< "$PATH_INFO"
 
 if [[ $sub_action == result ]]; then
-    result_id=$(./kgit cat-file blob $pipeline_id | tail -n1 | cut -d' ' -f2)
+    result_id=$(./kgit cat-file blob $pipeline_id | tail -n1 | cut -d' ' -f3)
     echo Content-Type: text/html
     echo
     if [[ $(./kgit cat-file -s $result_id) -gt 1000000 ]]; then
