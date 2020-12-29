@@ -1,8 +1,13 @@
 #!/bin/bash -e
 
 makefile=$1
-target=$2
+# default to first target
+target="${2-$(perl -ne '/^([^\t][^:\s]*)\s*:/ and print "$1\n" and exit' make/basic/Makefile)}"
 
 ./make-to-plan < $makefile > gen/plan.full
 ./subtree-plan $target < gen/plan.full > gen/plan
-./run-plan gen/plan
+
+if ! ./run-plan gen/plan; then
+    echo fail: some jobs failed >&2
+    exit 1
+fi

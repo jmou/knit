@@ -19,6 +19,6 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 if ! ./run-plan gen/plan; then
-    echo warn: some jobs failed >&2
+    echo fail: some jobs failed >&2
     exit 1
 fi

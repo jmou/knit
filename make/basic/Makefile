@@ -1,3 +1,5 @@
+all: join
+
 abc:
 	echo -e 'a\nb\nc' > $@
 

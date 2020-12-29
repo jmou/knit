@@ -1,37 +1,69 @@
 #!/usr/bin/perl -w
 
+# TODO support static file prerequisites
+
 use strict;
 
 my @targets;
 my @prereqs;
 my @recipes;
 my %target_index;
+my %pattern_index;
 
 # parse Makefile
 my $rulenum = -1;
 PARSE: while (<>) {
     next if /^ *(#.*)?$/;  # skip comments
-    $rulenum++;
     die unless s/^(.+?):\s*//;  # target line
-    @{$targets[$rulenum]} = split /\s+/, $1;
+    $rulenum++;
+    my @ruletargets = split /\s+/, $1;
+    my (@ruleprereqs, @rulerecipe);
+    $targets[$rulenum] = \@ruletargets;
+    $prereqs[$rulenum] = \@ruleprereqs;
+    $recipes[$rulenum] = \@rulerecipe;
     die 'targets may only be defined once'
-        if grep { exists $target_index{$_} } @{$targets[$rulenum]};
-    $target_index{$_} = $rulenum for @{$targets[$rulenum]};
+        if grep { exists $target_index{$_} || exists $pattern_index{$_} } @ruletargets;
+    if (@ruletargets == 1 && $ruletargets[0] =~ /%/) {
+        $pattern_index{$_} = $rulenum for @ruletargets;
+    } else {
+        $target_index{$_} = $rulenum for @ruletargets;
+    }
     # prerequisites
-    $prereqs[$rulenum] = [];
-    push @{$prereqs[$rulenum]}, /(?:(.+?)(?:\s+|$))/g;
+    push @ruleprereqs, /(?:(.+?)(?:\s+|$))/g;
     # recipe
-    $recipes[$rulenum] = [];
     while (<>) {
         redo PARSE unless s/^\t//;
         chomp;
-        # automatic variables
-        s/\$</${$prereqs[$rulenum]}[0]/g;
-        s/\$\^/@{$prereqs[$rulenum]}/g;
-        s/\$@/${$targets[$rulenum]}[0]/g;
-        s/\$\$/\$/g;
-        push @{$recipes[$rulenum]}, $_;
+        push @rulerecipe, $_;
     }
+}
+
+# Generate pattern rule expansions for prerequisites (not command line targets).
+my @resolve;
+push @resolve, @{$prereqs[$_]} for values %target_index;
+RESOLVE: while (my $ruletarget = pop @resolve) {
+    next if exists $target_index{$ruletarget};
+    # Can't easily use each because it doesn't reset iteration on next RESOLVE.
+    for my $pattern (keys %pattern_index) {
+        my @pieces = split '%', $pattern;
+        die 'target pattern must have one %' unless @pieces == 2;
+        if ($ruletarget =~ /^\Q$pieces[0]\E(.*)\Q$pieces[1]\E$/) {
+            my $stem = $1;
+            my $rulenum = $pattern_index{$pattern};
+            my (@ruleprereqs, @rulerecipe);
+            push @ruleprereqs, s/%/$stem/r for @{$prereqs[$rulenum]};
+            # $* automatic variable
+            push @rulerecipe, s/\$\*/$stem/gr for @{$recipes[$rulenum]};
+            $rulenum = @targets;
+            $targets[$rulenum] = [$ruletarget];
+            $prereqs[$rulenum] = \@ruleprereqs;
+            $recipes[$rulenum] = \@rulerecipe;
+            $target_index{$ruletarget} = $rulenum;
+            push @resolve, @ruleprereqs;
+            next RESOLVE;
+        }
+    }
+    die "missing rule for $ruletarget";
 }
 
 my $nonce = -1;
@@ -45,13 +77,22 @@ sub array_file_input {
 }
 
 chomp (my $build = `./build-plan start`);
-while (my ($target, $index) = each %target_index) {
+while (my ($target, $rulenum) = each %target_index) {
     open my $fh, "|./build-plan --build $build step $target make:$target 'command:bash -e in/run'" or die;
-    print $fh array_file_input $targets[$index], 'targets';
-    print $fh array_file_input $prereqs[$index], 'prereqs';
-    print $fh array_file_input $recipes[$index], 'recipe';
+    print $fh array_file_input $targets[$rulenum], 'targets';
+    print $fh array_file_input $prereqs[$rulenum], 'prereqs';
+    my @recipe;
+    for (@{$recipes[$rulenum]}) {
+        # automatic variables
+        s/\$</$prereqs[$rulenum]->[0]/g;
+        s/\$\^/@{$prereqs[$rulenum]}/g;
+        s/\$@/$target/g;
+        s/\$\$/\$/g;
+        push @recipe, $_;
+    }
+    print $fh array_file_input \@recipe, 'recipe';
     print $fh "in/run=file:make/run.sh\n";
-    print $fh "in/inputs/$_=_pos:$_:out/$_\n" for (@{$prereqs[$index]});
+    print $fh "in/inputs/$_=_pos:$_:out/$_\n" for @{$prereqs[$rulenum]};
     close $fh or die;
 }
 print `./build-plan --build $build commit`;
