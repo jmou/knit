@@ -1,0 +1,27 @@
+#!/bin/bash -e
+#
+# Generate markdown notebook from flow/mdnote/notebook.unit invocation.
+
+invocation=$1
+
+dispatch=$(./kgit cat-file blob $invocation | grep ^dispatch= | cut -d= -f2)
+order=$(./kgit cat-file blob $dispatch | grep ^out/order= | cut -d= -f2)
+
+./kgit cat-file blob $order | while read -r step; do
+    [[ -z $initialline ]] || echo && initialline=1
+    ./kgit cat-file blob $dispatch | while IFS== read -r key value; do
+        case $key in
+            out/cells/$step) ./kgit cat-file blob $value ;;
+            out/outs/$step/*)
+                echo
+                echo "## output: ${key#out/outs/$step/}"
+                echo '```'
+                ./kgit cat-file blob $value
+                # duplicate newline elided in final output
+                echo
+                echo '```'
+                ;;
+        esac
+    done
+# This is basically incomprehensible, but it elides one blank line before ```
+done | sed -e '/^$/{:a;N;s/\n$/\n/;ta;s/\n```/```/}'

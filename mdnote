@@ -1,0 +1,47 @@
+#!/bin/bash -e
+#
+# Poor man's markdown notebook.
+
+# TODO python dicts for I/O
+
+note=${1?usage: $0 note.md}
+
+if [[ ! -f $note ]]; then
+    cat > $note <<'EOF'
+# example
+- word-count
+```bash
+cut -d, -f2 word-count/counts.csv | tail -n+1 > nothing.txt
+```
+
+# word-count
+- quotes
+```python
+import json
+words = ('milk', 'nothing', 'government')
+with open('quotes/swanson.json') as infh:
+    quotes = json.load(infh)
+    counts = [sum(word in quote for quote in quotes) for word in words]
+with open('counts.csv', 'w') as outfh:
+    print(','.join(words), file=outfh)
+    print(','.join(map(str, counts)), file=outfh)
+```
+
+# quotes
+```bash
+curl -fs http://ron-swanson-quotes.herokuapp.com/v2/quotes/search/the > swanson.json
+```
+EOF
+fi
+
+edit() {
+    # Unchanged file will quit the loop.
+    checksum="$(openssl dgst -sha1 $1)"
+    ${EDITOR-vi} $1 && [[ $checksum != $(openssl dgst -sha1 $1) ]]
+}
+
+while edit $note; do
+    invocation=$(./run-flow flow/mdnote/notebook.unit in/md=file:$note)
+    ./invocation-to-mdnote $invocation > $note.$$
+    mv $note.$$ $note
+done

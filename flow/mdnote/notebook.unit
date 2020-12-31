@@ -1,0 +1,4 @@
+process=nested:python in/md-to-steps.py < in/md
+in/md-to-steps.py=file:flow/mdnote/md-to-steps.py
+in/md=param:out/md
+inref/drivers/=file:flow/mdnote/drivers/

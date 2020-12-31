@@ -1,0 +1,8 @@
+#!/bin/bash -e
+
+cd out
+for i in ../in/inputs/*; do
+    ln -s $i
+done
+bash -e ../in/script
+find . -type l -delete

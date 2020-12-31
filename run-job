@@ -50,9 +50,11 @@ elif [[ $process_type = nested ]]; then
         find $workdir/steps -type f | sort | while read -r path; do
             echo _pos=${path#$workdir/steps/}
             echo _source=nested:_pos:${path#$workdir/steps/}
-            cat $path
+            # Kludge for relative file: resources for nested flows.
+            sed -e "s@^\\(in/[^=]*=file:\\)\.\\(/.*\\)@\\1$workdir\\2@" $path
             echo
-        done > $workdir/plan
+        done > $workdir/plan.$$
+        ./resolve-input < $workdir/plan.$$ > $workdir/plan
         # all is hardcoded as the nested flow terminal pos.
         ./check-plan $workdir/plan all
         if invocation=$(./run-plan $workdir/plan); then
