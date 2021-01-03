@@ -1,0 +1,38 @@
+#!/bin/bash -ex
+
+invocation=$(./run-flow flow/basic/tac.unit)
+
+diff - <(cargo run print invocation $invocation | cut -d= -f1) <<EOF
+_annotated_plan
+dispatch
+plan
+status
+EOF
+
+cargo run print invocation $invocation | grep -qx status=ok
+
+dispatch=$(cargo run print invocation $invocation | grep ^dispatch= | cut -d= -f2)
+
+diff - <(cargo run print production $dispatch | cut -d= -f1) <<EOF
+_source
+dep:in/data
+end_ts
+exit_code
+job
+out/_
+start_ts
+EOF
+
+job=$(cargo run print production $dispatch | grep ^job= | cut -d= -f2)
+
+diff - <(cargo run print job $job) <<EOF
+in/data=01e79c32a8c99c557f0757da7cb6d65b3414466d
+process=command:perl -e 'print reverse <>' in/data > out/_
+EOF
+
+# flow/basic/source.unit (synthesized identity job)
+diff - <(cargo run run-job 7c0d72850f36e7338fba64f8434e024c57520019) <<EOF
+exit_code=0
+job=7c0d72850f36e7338fba64f8434e024c57520019
+out/_=01e79c32a8c99c557f0757da7cb6d65b3414466d
+EOF

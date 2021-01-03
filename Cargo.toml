@@ -1,0 +1,20 @@
+[package]
+name = "knit"
+version = "0.0.1"
+authors = ["Joe Mou <dev@mou.fo>"]
+edition = "2018"
+repository = "https://github.com/jmou/knit/"
+license = "MIT"
+
+[dependencies]
+bstr = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+# eyre instead of anyhow because of stable backtrace support
+stable-eyre = "0.2"
+hex = { version = "0.4.2", features = ["serde"] }
+serde = { version = "~1.0.118", features = ["derive"] }
+structopt = { version = "0.3", default-features = false }
+strum = { version = "~0.20.0", features = ["derive"] }
+tempfile = "3.1.0"
+thiserror = "~1.0.23"
+walkdir = "~2.3"

@@ -4,6 +4,10 @@
 
 plan=$1
 
+if [[ $USE_RUST -eq 1 ]]; then
+    exec cargo run run-plan $plan
+fi
+
 set -o pipefail
 
 initial_plan=$(./kgit hash-object -w --stdin < $plan)
@@ -38,7 +42,7 @@ while ./schedule-step < $plan > gen/next; do
     mv $plan.$$ $plan
 done
 
-rm gen/dispatch.$$
+rm -f gen/dispatch.$$
 
 ./reduce-dispatches $plan > gen/roots.$$
 if [[ $(wc -l < gen/roots.$$) -eq 1 ]] && ./kgit cat-file blob $(<gen/roots.$$) | grep -qFx exit_code=0; then
