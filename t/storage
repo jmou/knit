@@ -1,0 +1,13 @@
+#!/bin/bash -ex
+
+invocation=$(./run-flow flow/storage/tac.unit)
+diff - <(./show-output $invocation out/_) <<EOF
+format=text/plain
+path=/var/tmp/knit/9941e2c2869be9f6fef2250f3cd85527d059dadd
+store=fs
+EOF
+diff - /var/tmp/knit/9941e2c2869be9f6fef2250f3cd85527d059dadd <<EOF
+3
+2
+1
+EOF

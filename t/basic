@@ -1,0 +1,10 @@
+#!/bin/bash -ex
+
+invocation=$(./run-flow flow/basic/tac.unit)
+diff - <(./show-output $invocation out/_) <<EOF
+3
+2
+1
+EOF
+
+[[ $(./run-flow flow/basic/tac.unit) = $invocation ]]

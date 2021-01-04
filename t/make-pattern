@@ -1,0 +1,11 @@
+#!/bin/bash -ex
+
+invocation=$(./run-make make/pattern/Makefile)
+diff - <(./show-output $invocation out/all) <<EOF
+c
+b
+a
+f
+e
+d
+EOF

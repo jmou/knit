@@ -1,0 +1,27 @@
+#!/bin/bash -ex
+
+rm -rf gen/flow
+build=$(./build-unit start)
+./build-unit --build $build copy /dev/stdin 123 <<EOF
+1
+2
+3
+EOF
+./build-unit --build $build run 'cat in/123 > out/_'
+./build-unit --build $build commit gen/flow/123.unit
+build=$(./build-unit start)
+./build-unit --build $build set in abc
+./build-unit --build $build run 'cat in/in > out/_'
+./build-unit --build $build commit gen/flow/abc.unit
+build=$(./build-unit start)
+./build-unit --build $build after gen/flow/123.unit out/_ 123
+./build-unit --build $build after gen/flow/abc.unit out/_ abc
+./build-unit --build $build run 'perl -e "print reverse <>" in/abc in/123 > out/_'
+./build-unit --build $build commit gen/flow/tac.unit
+invocation=$(./run-flow gen/flow/tac.unit)
+diff - <(./show-output $invocation out/_) <<EOF
+3
+2
+1
+abc
+EOF

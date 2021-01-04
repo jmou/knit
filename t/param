@@ -1,0 +1,8 @@
+#!/bin/bash -ex
+
+invocation=$(./run-flow flow/param/ab.unit in/x=inline:x in/y=inline:y)
+diff - <(./show-output $invocation out/_) <<EOF
+a1
+x
+y
+EOF

@@ -1,0 +1,48 @@
+#!/bin/bash -ex
+
+rm -rf gen/flow
+build=$(./build-unit start)
+./build-unit --build $build run 'curl -fs https://s3.amazonaws.com/nyc-tlc/misc/taxi+_zone_lookup.csv > out/_'
+./build-unit --build $build commit gen/flow/taxi-zone-lookup.unit
+build=$(./build-unit start)
+./build-unit --build $build after gen/flow/taxi-zone-lookup.unit out/_ csv
+./build-unit --build $build copy helpers/sqlite sqlite
+./build-unit --build $build copy /dev/stdin sql <<EOF
+SELECT LocationID, Borough
+FROM zones;
+EOF
+./build-unit --build $build run 'bash -e in/sqlite zones=in/csv < in/sql > out/_'
+./build-unit --build $build commit gen/flow/zone-borough.unit
+build=$(./build-unit start)
+./build-unit --build $build run 'curl -fs https://s3.amazonaws.com/nyc-tlc/trip+data/yellow_tripdata_2018-12.csv | head -n 10000 > out/_'
+./build-unit --build $build commit gen/flow/yellow-tripdata.unit
+build=$(./build-unit start)
+./build-unit --build $build after gen/flow/yellow-tripdata.unit out/_ tripdata
+./build-unit --build $build copy helpers/sqlite sqlite
+./build-unit --build $build copy /dev/stdin sql <<EOF
+SELECT STRFTIME('%s', tpep_dropoff_datetime) - STRFTIME('%s', tpep_pickup_datetime) AS duration_s, trip_distance, total_amount
+FROM tripdata;
+EOF
+./build-unit --build $build run 'bash -e in/sqlite tripdata=in/tripdata < in/sql > out/_'
+./build-unit --build $build commit gen/flow/duration-fare.unit
+build=$(./build-unit start)
+./build-unit --build $build after gen/flow/duration-fare.unit out/_ duration_fare
+./build-unit --build $build copy helpers/sqlite sqlite
+# TODO parameterize
+./build-unit --build $build copy /dev/stdin sql <<EOF
+SELECT duration_s / 60 AS duration_m, AVG(total_amount) AS total_amount
+FROM input
+GROUP BY duration_s / 60
+HAVING duration_m > 0
+AND duration_m < 60
+ORDER BY duration_m;
+EOF
+./build-unit --build $build run 'bash -e in/sqlite input=in/duration_fare < in/sql > out/_'
+./build-unit --build $build commit gen/flow/duration-amount.unit
+build=$(./build-unit start)
+./build-unit --build $build after gen/flow/duration-amount.unit out/_ duration_amount
+./build-unit --build $build copy helpers/bash-template bt
+# TODO non-test dependency
+tail -n+2 flow/taxi/taxi.html | head -n-1 | ./build-unit --build $build copy /dev/stdin html
+./build-unit --build $build run 'input_duration_amount=$(<in/duration_amount) bash -e in/bt in/html /dev/null > out/_'
+./build-unit --build $build commit gen/flow/taxi.unit

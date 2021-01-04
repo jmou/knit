@@ -1,0 +1,17 @@
+#!/bin/bash -ex
+
+invocation=$(./run-make make/basic/Makefile join)
+diff - <(./show-output $invocation out/join) <<EOF
+a
+c
+c
+b
+a
+b
+EOF
+invocation=$(./run-make make/basic/Makefile tac)
+diff - <(./show-output $invocation out/tac) <<EOF
+c
+b
+a
+EOF

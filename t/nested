@@ -1,0 +1,13 @@
+#!/bin/bash -ex
+
+invocation=$(./run-flow flow/nested/compute.unit)
+diff - <(./show-output $invocation out/abc) <<EOF
+a
+b
+c
+EOF
+diff - <(./show-output $invocation out/tac) <<EOF
+c
+b
+a
+EOF
