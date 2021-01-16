@@ -1,0 +1,30 @@
+#!/usr/bin/python3
+
+import hashlib
+import re
+import sys
+
+reqs = set()
+
+
+def sub_out(match):
+    req, path = match[1], match[2]
+    filename = hashlib.sha1('@'.join((req, path)).encode()).hexdigest()
+    reqs.add(f'in/{filename}=_pos:{req}:{path}')
+    return 'in/' + filename
+
+
+_, driver, build = sys.argv
+
+with open('build', 'w') as fh:
+    for line in sys.stdin:
+        line = re.sub(r'@STDOUT\(([^)]*)\)', r'@OUT(\1,out/-)', line)
+        line = re.sub(r'@OUT\(([^,]*), *([^)]*)\)', sub_out, line)
+        print(line, file=fh)
+
+with open('step', 'w') as fh:
+    print('process=command:chmod +x in/driver && ./in/driver in/build', file=fh)
+    print(f'in/driver={driver}', file=fh)
+    print(f'in/build={build}', file=fh)
+    for line in reqs:
+        print(line, file=fh)

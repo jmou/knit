@@ -1,0 +1,13 @@
+#!/bin/bash -ex
+
+invocation=$(./run-template flow/template/inputs.d)
+diff - <(./show-output $invocation out/abc.sh/-) <<EOF
+a
+b
+c
+EOF
+diff - <(./show-output $invocation out/tac.sh/-) <<EOF
+c
+b
+a
+EOF

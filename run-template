@@ -1,0 +1,2 @@
+#!/bin/bash
+exec ./run-flow flow/template/pipeline.unit in/=file:${1%/}/
