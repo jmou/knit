@@ -1,0 +1,27 @@
+#!/usr/bin/python3
+
+import hashlib
+import io
+import re
+import sys
+
+reqs = set()
+
+
+def sub_out(match):
+    req, path = match[1], match[2]
+    filename = hashlib.sha1(','.join((req, path)).encode()).hexdigest()
+    reqs.add(f'in/{filename}=_pos:{req}:{path}')
+    return 'in/' + filename
+
+
+build = io.StringIO()
+for line in sys.stdin:
+    line = re.sub(r'@STDOUT\(([^)]*)\)', r'@OUT(\1,out/-)', line)
+    line = re.sub(r'@OUT\(([^,]*), *([^)]*)\)', sub_out, line)
+    build.write(line)
+
+for line in reqs:
+    print(line)
+print()
+sys.stdout.write(build.getvalue())

@@ -6,7 +6,7 @@ a
 b
 c
 EOF
-diff - <(./show-output $invocation out/tac.sh/-) <<EOF
+diff - <(./show-output $invocation out/tac.py/-) <<EOF
 c
 b
 a

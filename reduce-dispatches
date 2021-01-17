@@ -3,6 +3,11 @@
 # Get the dispatch roots of an execution plan. These are the roots of all
 # executed dispatches. They are also the steps closest to the plan frontier. For
 # a successfully completed plan it should be a single terminal.
+#
+# This exhibits a caching issue. Say A -> B. If A changes to A' but has the same
+# outputs, job caching will reuse B. However B will still reference the
+# production of A. This will then return both A' and B as roots. If we drop A'
+# as a root, our invocation would not include its actual production.
 
 plan=$1
 
