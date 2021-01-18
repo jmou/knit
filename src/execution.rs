@@ -378,6 +378,7 @@ impl Scheduler {
                         step.dependencies
                             .insert(format!("_dep:{}", inpath), production_id);
                         // TODO handle missing outputs
+                        // TODO would make more sense to evaluate (and fail) dependencies from depender
                         if inpath.ends_with('/') && outpath.ends_with('/') {
                             for (outfull, &output) in production.outputs.iter() {
                                 if let Some(suffix) = outfull.strip_prefix(outpath) {

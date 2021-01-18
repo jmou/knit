@@ -32,7 +32,9 @@ for dirpath, _, filenames in os.walk(raw_root):
         # write the step and build
         allsteps.append(stem)
         with create(f'steps/{stem}', 'w') as fh:
-            print('process=command:chmod +x in/driver && ./in/driver in/build', file=fh)
+            # TODO remove stdout if empty
+            print('process=command:chmod +x in/driver && '
+                  './in/driver in/build > out/-', file=fh)
             driver = open(f'inref/drivers/{extension}').read().strip()
             print(f'in/driver={driver}', file=fh)
             print(f'in/build=file:./builds/{stem}', file=fh)
