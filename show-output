@@ -1,14 +1,14 @@
 #!/bin/bash -e
 #
-# Show output from dispatch or invocation.
+# Show output from production or invocation.
 
-dispatch_or_invocation=$1
+production_or_invocation=$1
 path=$2
 
-dispatch=$(./kgit cat-file blob $dispatch_or_invocation | grep ^dispatch= | cut -d= -f2)
-if [[ -z $dispatch ]]; then
-    dispatch=$dispatch_or_invocation
+production=$(./kgit cat-file blob $production_or_invocation | grep ^production= | cut -d= -f2)
+if [[ -z $production ]]; then
+    production=$production_or_invocation
 fi
 
-cid=$(./kgit cat-file blob $dispatch | grep "^$path=" | cut -d= -f2)
+cid=$(./kgit cat-file blob $production | grep "^$path=" | cut -d= -f2)
 ./kgit cat-file blob $cid

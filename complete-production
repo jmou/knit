@@ -1,14 +1,14 @@
 #!/usr/bin/perl -w
 #
-# Mark completed dispatch in execution plan and resolve dependency references.
+# Mark completed production in execution plan and resolve dependency references.
 
 use strict;
 
-my ($plan_path, $plan_pos, $exit_code, $dispatch, $dispatch_path) = @ARGV;
+my ($plan_path, $plan_pos, $exit_code, $production, $production_path) = @ARGV;
 
 my %outs;
 
-open my $fh, "<$dispatch_path" or die;
+open my $fh, "<$production_path" or die;
 while (<$fh>) {
     chomp;
     my ($key, $value) = split /=/, $_, 2;
@@ -20,10 +20,10 @@ open $fh, "<$plan_path" or die;
 while (<$fh>) {
     if (/^_pos=\Q$plan_pos\E$/) {
         print "_exit_code=$exit_code\n";
-        print "_dispatch=$dispatch\n";
+        print "_production=$production\n";
     } elsif ($exit_code == 0 && s/^(in(ref)?\/[^=]*)=\K(_pos:\Q$plan_pos\E:(out\/.*))$/$outs{$4} \/\/ $3/e) {
         my ($in, $out) = ($1, $4);
-        print "_dep:$in=$dispatch\n";
+        print "_dep:$in=$production\n";
         if ($in =~ /\/$/ && $out =~ /\/$/) {
             for (keys %outs) {
                 print "$in$1=$outs{$_}\n" if /^\Q$out\E(.*)$/;

@@ -35,7 +35,7 @@ pub fn check_plan(plan_path: impl AsRef<OsStr>, terminal: impl AsRef<OsStr>) -> 
 pub fn write_job_cache(job_id: Id, production_id: Id) -> Result<()> {
     let status = Command::new("./kgit")
         .arg("update-ref")
-        .arg(format!("refs/job/{}/lastdispatch", job_id))
+        .arg(format!("refs/job/{}/lastproduction", job_id))
         .arg(production_id.to_string())
         .status()?;
     ensure!(status.success(), "update-ref failed");
@@ -48,7 +48,7 @@ pub fn read_job_cache(job_id: Id) -> Result<Option<Id>> {
         .arg("rev-parse")
         .arg("--verify")
         .arg("-q")
-        .arg(format!("refs/job/{}/lastdispatch", job_id))
+        .arg(format!("refs/job/{}/lastproduction", job_id))
         .output()?;
     if output.status.success() {
         Ok(Some(

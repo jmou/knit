@@ -42,7 +42,7 @@ function select(event) {
     document.querySelectorAll('.selected').forEach(el => el.classList.remove('selected'));
     let cell = event.currentTarget.closest('.cell');
     cell.classList.add('selected');
-    document.querySelector('form').className = 'selected-' + cell.dataset.dispatch;
+    document.querySelector('form').className = 'selected-' + cell.dataset.production;
 }
 function onload() {
     document.querySelectorAll('.cell').forEach(el => el.addEventListener('click', select));
@@ -109,25 +109,25 @@ fi
 echo '></header>'
 
 if invocation=$(./kgit rev-parse --verify -q $notebook); then
-    dispatch=$(./kgit cat-file blob $invocation | grep ^dispatch= | cut -d= -f2)
-    nested_invocation=$(./kgit cat-file blob $dispatch | grep ^invocation= | cut -d= -f2)
-    nested_dispatch=$(./kgit cat-file blob $nested_invocation | grep ^dispatch= | cut -d= -f2)
+    production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
+    nested_invocation=$(./kgit cat-file blob $production | grep ^invocation= | cut -d= -f2)
+    nested_production=$(./kgit cat-file blob $nested_invocation | grep ^production= | cut -d= -f2)
     echo '<style>'
-    ./kgit cat-file blob $nested_dispatch | grep ^dep: | cut -d= -f2 | while read -r cell; do
+    ./kgit cat-file blob $nested_production | grep ^dep: | cut -d= -f2 | while read -r cell; do
         ./kgit cat-file blob $cell | grep ^dep:in/inputs/ | cut -d= -f2 | sort -u | while read -r dep; do
-            echo ".selected-$cell #dispatch-$dep { border-color: #aaf; }"
-            echo ".selected-$dep #dispatch-$cell { border-color: #fca; }"
+            echo ".selected-$cell #production-$dep { border-color: #aaf; }"
+            echo ".selected-$dep #production-$cell { border-color: #fca; }"
         done
     done
     echo '</style>'
-    job=$(./kgit cat-file blob $dispatch | grep ^job= | cut -d= -f2)
+    job=$(./kgit cat-file blob $production | grep ^job= | cut -d= -f2)
     cells=$(./kgit cat-file blob $job | grep ^in/cells= | cut -d= -f2)
     # Align all the information for cells by name, then sort by order.
     paste <(./kgit cat-file blob $cells | nl -w1 | sort -k2) \
-            <(./kgit cat-file blob $nested_dispatch | grep ^dep: | cut -d= -f2) \
+            <(./kgit cat-file blob $nested_production | grep ^dep: | cut -d= -f2) \
             <(./kgit cat-file blob $job | grep '^in/inputs/.*/mode=' | sed -e 's/=/ /') \
             <(./kgit cat-file blob $job | grep '^in/inputs/.*/script=' | sed -e 's/=/ /') \
-            <(./kgit cat-file blob $dispatch | grep ^out/ | sed -e 's/=/ /') |
+            <(./kgit cat-file blob $production | grep ^out/ | sed -e 's/=/ /') |
             sort -n | while read -r _order _name \
             id \
             modepath mode \
@@ -140,7 +140,7 @@ if invocation=$(./kgit rev-parse --verify -q $notebook); then
         fi
         mode="$(./kgit cat-file blob $mode)"
         cat <<EOF
-        <div class=cell id=dispatch-$id data-dispatch=$id>
+        <div class=cell id=production-$id data-production=$id>
             <div>
                 <input type=hidden name=cells value=$name>
                 <input name=${name}_name value=$name>

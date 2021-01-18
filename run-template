@@ -2,9 +2,9 @@
 
 invocation=$(./run-flow flow/template/pipeline.unit in/=file:${1%/}/)
 
-dispatch=$(./kgit cat-file blob $invocation | grep ^dispatch= | cut -d= -f2)
+production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
 rm -rf gen/out
-./kgit cat-file blob $dispatch | grep ^out/ | while IFS== read -r outpath cid; do
+./kgit cat-file blob $production | grep ^out/ | while IFS== read -r outpath cid; do
     mkdir -p "gen/$(dirname "$outpath")"
     ./kgit cat-file blob $cid > "gen/$outpath"
 done

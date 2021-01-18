@@ -63,9 +63,9 @@ elif [[ $process_type = nested ]]; then
             # This is ambiguous with a failure in the nested process.
             echo exit_code=1
         fi
-        dispatch=$(./kgit cat-file blob $invocation | grep ^dispatch= | cut -d= -f2)
+        production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
         echo invocation=$invocation
-        ./kgit cat-file blob $dispatch | grep ^out/
+        ./kgit cat-file blob $production | grep ^out/
     else
         echo exit_code=$?
     fi

@@ -9,7 +9,7 @@ use serde::Serialize;
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Invocation {
     // TODO reconcile naming
-    #[serde(rename = "dispatch")]
+    #[serde(rename = "production")]
     pub production: Option<Id>,
     // TODO clean up failed invocations
     #[serde(flatten)]
@@ -103,7 +103,7 @@ pub struct Step {
     // TODO DRY with Production
     #[serde(rename = "_exit_code")]
     pub exit_code: Option<i32>,
-    #[serde(rename = "_dispatch")]
+    #[serde(rename = "_production")]
     pub production: Option<Id>,
     #[serde(rename = "_source")]
     pub source: Option<String>,

@@ -399,8 +399,8 @@ impl Scheduler {
         }
     }
 
-    /// Get the dispatch roots of an execution plan. These are the roots of all
-    /// executed dispatches. They are also the steps closest to the plan frontier. For
+    /// Get the production roots of an execution plan. These are the roots of all
+    /// executed productions. They are also the steps closest to the plan frontier. For
     /// a successfully completed plan it should be a single terminal.
     // TODO why doesn't this exhibit the caching issue? are we not caching properly?
     fn reduce_productions(self) -> (Plan, Vec<Id>) {
@@ -528,7 +528,7 @@ pub fn run_plan(store: &mut dyn cas::Store, plan: Plan) -> Result<Invocation> {
         partial_productions: productions
             .into_iter()
             .enumerate()
-            .map(|(i, id)| (format!("partial_dispatch:{}", i), id))
+            .map(|(i, id)| (format!("partial_production:{}", i), id))
             .collect(),
         status: InvocationStatus::Fail,
         plan: initial_plan,

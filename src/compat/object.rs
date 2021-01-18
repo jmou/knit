@@ -13,7 +13,7 @@ use crate::object::*;
 impl Invocation {
     pub fn from_reader(r: &mut impl Read) -> Result<Self> {
         let mut attrs = Attributes::from_reader(r)?;
-        let production = attrs.consume_oid("dispatch").ok();
+        let production = attrs.consume_oid("production").ok();
         let plan = attrs.consume_oid("plan")?;
         let status = match attrs.consume::<String>("status")?.as_str() {
             "ok" => InvocationStatus::Ok,
@@ -23,7 +23,7 @@ impl Invocation {
         let annotated_plan = attrs.consume_oid("_annotated_plan")?;
         let mut partial_productions = HashMap::new();
         for (key, value) in attrs {
-            ensure!(key.starts_with("partial_dispatch:"), "unknown key");
+            ensure!(key.starts_with("partial_production:"), "unknown key");
             partial_productions.insert(key, value.parse()?);
         }
         Ok(Invocation {
@@ -142,7 +142,7 @@ impl Step {
             }
         };
         let exit_code = attrs.consume("_exit_code").ok();
-        let production = attrs.consume_oid("_dispatch").ok();
+        let production = attrs.consume_oid("_production").ok();
         let source = attrs.consume("_source").ok();
         let mut inputs = HashMap::new();
         let mut dependencies = HashMap::new();
@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn parse_invocation() {
         let raw = b"_annotated_plan=bc21dd3f5fefde24510e7b3b07a3eada55476e5d
-dispatch=5a85adff7fc597bdb1c2efa56a3a7d758854ced5
+production=5a85adff7fc597bdb1c2efa56a3a7d758854ced5
 plan=00478c2684ff7c617cf87fd103c89114342adddb
 status=ok
 ";
@@ -295,7 +295,7 @@ process=command:perl -e 'print reverse <>' in/data > out/_
     #[test]
     fn parse_step() {
         let raw = b"_exit_code=0
-_dispatch=6067a9bbab7995feadd4c09fdf0c76920a393543
+_production=6067a9bbab7995feadd4c09fdf0c76920a393543
 _pos=main@0
 _source=unit:flow/basic/source.unit
 process=command:cat in/file > out/_
@@ -331,14 +331,14 @@ in/file=01e79c32a8c99c557f0757da7cb6d65b3414466d
     #[test]
     fn parse_plan() {
         let raw = b"_exit_code=0
-_dispatch=7c31e039fa719bccf92e192e500dcf1bc109b9d7
+_production=7c31e039fa719bccf92e192e500dcf1bc109b9d7
 _pos=1472c372edfbb7e2b7fedf5d314548db64248f85
 _source=file:flow/basic/source.txt
 process=identity
 in/_=01e79c32a8c99c557f0757da7cb6d65b3414466d
 
 _exit_code=0
-_dispatch=6067a9bbab7995feadd4c09fdf0c76920a393543
+_production=6067a9bbab7995feadd4c09fdf0c76920a393543
 _pos=main@0
 _source=unit:flow/basic/source.unit
 process=command:cat in/file > out/_
@@ -346,7 +346,7 @@ _dep:in/file=7c31e039fa719bccf92e192e500dcf1bc109b9d7
 in/file=01e79c32a8c99c557f0757da7cb6d65b3414466d
 
 _exit_code=0
-_dispatch=e5385bc10618962dbe798dd99b88207e2df8e3ec
+_production=e5385bc10618962dbe798dd99b88207e2df8e3ec
 _pos=main
 _source=unit:flow/basic/tac.unit
 process=command:perl -e 'print reverse <>' in/data > out/_

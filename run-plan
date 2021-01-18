@@ -22,36 +22,36 @@ while ./schedule-step < $plan > gen/next; do
     job=$(./kgit hash-object -w --stdin < gen/job)
 
     # TODO more nuanced caching policy
-    if dispatch=$(./kgit rev-parse --verify -q refs/job/$job/lastdispatch); then
-        ./kgit cat-file blob $dispatch > gen/dispatch.$$
+    if production=$(./kgit rev-parse --verify -q refs/job/$job/lastproduction); then
+        ./kgit cat-file blob $production > gen/production.$$
     else
         echo Running job:$job $source >&2
-        ./run-job < gen/job > gen/dispatch.$$
-        echo -e "_source=$source\njob=$job" >> gen/dispatch.$$
-        ./extract-step $plan $pos | grep ^_dep: | sed s/^_// >> gen/dispatch.$$ || true
-        dispatch=$(sort gen/dispatch.$$ | ./kgit hash-object -w --stdin)
-        ./kgit update-ref refs/job/$job/lastdispatch $dispatch
+        ./run-job < gen/job > gen/production.$$
+        echo -e "_source=$source\njob=$job" >> gen/production.$$
+        ./extract-step $plan $pos | grep ^_dep: | sed s/^_// >> gen/production.$$ || true
+        production=$(sort gen/production.$$ | ./kgit hash-object -w --stdin)
+        ./kgit update-ref refs/job/$job/lastproduction $production
     fi
 
-    exit_code=$(grep ^exit_code= gen/dispatch.$$ | cut -d= -f2)
+    exit_code=$(grep ^exit_code= gen/production.$$ | cut -d= -f2)
     if [[ $exit_code -ne 0 ]]; then
         echo Failed job:$job $source with exit code $exit_code >&2
     fi
 
-    ./complete-dispatch $plan $pos $exit_code $dispatch gen/dispatch.$$ > $plan.$$
+    ./complete-production $plan $pos $exit_code $production gen/production.$$ > $plan.$$
     mv $plan.$$ $plan
 done
 
-rm -f gen/dispatch.$$
+rm -f gen/production.$$
 
-./reduce-dispatches $plan > gen/roots.$$
+./reduce-productions $plan > gen/roots.$$
 if [[ $(wc -l < gen/roots.$$) -eq 1 ]] && ./kgit cat-file blob $(<gen/roots.$$) | grep -qFx exit_code=0; then
     echo status=ok
-    echo dispatch=$(<gen/roots.$$)
+    echo production=$(<gen/roots.$$)
 else
     code=1
     echo status=fail
-    awk '{print "partial_dispatch:" NR "=" $0}' gen/roots.$$
+    awk '{print "partial_production:" NR "=" $0}' gen/roots.$$
 fi > gen/invocation.$$
 rm gen/roots.$$
 echo plan=$initial_plan >> gen/invocation.$$

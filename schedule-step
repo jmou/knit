@@ -19,7 +19,7 @@ for line in sys.stdin:
         elif key.startswith('in/') or key.startswith('inref/'):
             if value.startswith('_pos:'):
                 unresolved = True
-        elif key == '_dispatch':
+        elif key == '_production':
             completed = True
     else:
         if not completed and not unresolved:

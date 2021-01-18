@@ -4,12 +4,12 @@
 
 invocation=$1
 
-dispatch=$(./kgit cat-file blob $invocation | grep ^dispatch= | cut -d= -f2)
-order=$(./kgit cat-file blob $dispatch | grep ^out/order= | cut -d= -f2)
+production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
+order=$(./kgit cat-file blob $production | grep ^out/order= | cut -d= -f2)
 
 ./kgit cat-file blob $order | while read -r step; do
     [[ -z $initialline ]] || echo && initialline=1
-    ./kgit cat-file blob $dispatch | while IFS== read -r key value; do
+    ./kgit cat-file blob $production | while IFS== read -r key value; do
         case $key in
             out/cells/$step) ./kgit cat-file blob $value ;;
             out/outs/$step/*)

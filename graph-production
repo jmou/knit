@@ -5,29 +5,29 @@ if [[ -z $graphroot ]]; then
     echo strict digraph G {
     echo 'rankdir=BT;'
     echo 'node [shape=box,style=filled,fillcolor=white];'
-    graphroot=1 ./graph-dispatch "$@"
+    graphroot=1 ./graph-production "$@"
     echo }
     exit
 fi
 
-dispatch=$1
+production=$1
 # accept an invocation instead
 while IFS== read -r key value; do
-    if [[ $key = dispatch ]]; then
-        dispatch=$value
+    if [[ $key = production ]]; then
+        production=$value
     fi
-done < <(./kgit cat-file blob $dispatch)
+done < <(./kgit cat-file blob $production)
 
 plot_resource() {
     [[ -n $graphresources ]] || return 0
-    dispatch=$1
+    production=$1
     path=$2
     dir=$3
     blob=$4
     if [[ $dir = to ]]; then
-        echo "\"$dispatch\" -> \"$blob\" [tooltip=\"$path\"];"
+        echo "\"$production\" -> \"$blob\" [tooltip=\"$path\"];"
     else
-        echo "\"$blob\" -> \"$dispatch\" [tooltip=\"$path\"];"
+        echo "\"$blob\" -> \"$production\" [tooltip=\"$path\"];"
     fi
     echo "\"$blob\" [label=\" \",tooltip=\"$blob\",shape=note];"
 }
@@ -36,33 +36,33 @@ while IFS== read -r key value; do
     case $key in
         _source|start_ts|end_ts|exit_code) declare $key="$value" ;;
         dep:*)
-            ./graph-dispatch $value
-            echo "\"$value\" -> \"$dispatch\";"
+            ./graph-production $value
+            echo "\"$value\" -> \"$production\";"
             ;;
         invocation)
-            value=$(./kgit cat-file blob $value | grep ^dispatch= | cut -d= -f2)
+            value=$(./kgit cat-file blob $value | grep ^production= | cut -d= -f2)
             echo subgraph cluster_$value {
-            ./graph-dispatch $value
+            ./graph-production $value
             echo }
-            echo "\"$value\" -> \"$dispatch\";"
+            echo "\"$value\" -> \"$production\";"
             ;;
         job)
             while IFS== read -r key value; do
                 case $key in
                     process) declare $key="$value" ;;
-                    in/*|inref/*) plot_resource $dispatch $key from $value ;;
+                    in/*|inref/*) plot_resource $production $key from $value ;;
                     *) echo Unknown job key $key >&2 ;;
                 esac
             done < <(./kgit cat-file blob $value)
             ;;
         out/*)
-            plot_resource $dispatch $key to $value
+            plot_resource $production $key to $value
             ;;
-        *) echo Unknown dispatch key $key >&2 ;;
+        *) echo Unknown production key $key >&2 ;;
     esac
-done < <(./kgit cat-file blob $dispatch)
+done < <(./kgit cat-file blob $production)
 duration=N/A
 if [[ -n $start_ts && -n $end_ts ]]; then
     duration=$(( $(date -d $end_ts +%s) - $(date -d $start_ts +%s) ))
 fi
-echo "\"$dispatch\" [label=\"$_source\",tooltip=\"$process\n${duration}s $exit_code\"];"
+echo "\"$production\" [label=\"$_source\",tooltip=\"$process\n${duration}s $exit_code\"];"

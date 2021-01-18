@@ -1,7 +1,7 @@
 #!/bin/bash -e
 #
-# Get the dispatch roots of an execution plan. These are the roots of all
-# executed dispatches. They are also the steps closest to the plan frontier. For
+# Get the production roots of an execution plan. These are the roots of all
+# executed productions. They are also the steps closest to the plan frontier. For
 # a successfully completed plan it should be a single terminal.
 #
 # This exhibits a caching issue. Say A -> B. If A changes to A' but has the same
@@ -11,10 +11,10 @@
 
 plan=$1
 
-grep ^_dispatch= $plan | cut -d= -f2 | sort -u > gen/roots.$$
+grep ^_production= $plan | cut -d= -f2 | sort -u > gen/roots.$$
 
-while read -r dispatch; do
-    ./kgit cat-file blob $dispatch | grep ^dep: | cut -d= -f2 > gen/deps.$$
+while read -r production; do
+    ./kgit cat-file blob $production | grep ^dep: | cut -d= -f2 > gen/deps.$$
     # BSD grep fails if -f file is empty.
     if [[ -s gen/deps.$$ ]]; then
         grep -Fxvf gen/deps.$$ gen/roots.$$ > gen/roots.$$.tmp

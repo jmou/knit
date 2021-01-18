@@ -1,6 +1,6 @@
 #!/bin/bash -ex
 
 ! invocation=$(./run-flow flow/fail/baddep.unit)
-partial_dispatch=$(./kgit cat-file blob $invocation | grep ^partial_dispatch:)
+partial_production=$(./kgit cat-file blob $invocation | grep ^partial_production:)
 ! invocation=$(./run-flow flow/fail/error.unit)
-[[ $partial_dispatch == $(./kgit cat-file blob $invocation | grep ^partial_dispatch:) ]]
+[[ $partial_production == $(./kgit cat-file blob $invocation | grep ^partial_production:) ]]
