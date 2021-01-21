@@ -37,6 +37,7 @@ pub struct Production {
     pub dependencies: HashMap<String, Id>,
     pub log: Option<Id>,
     pub invocation: Option<Id>,
+    pub cache: Option<Id>,
     #[serde(rename = "_source")]
     pub source: Option<String>,
     pub start_ts: Option<DateTime<FixedOffset>>,

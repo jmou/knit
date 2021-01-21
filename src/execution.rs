@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::{self, File};
+use std::hash::Hash;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -174,6 +175,7 @@ impl<'a> JobRunner<'a> {
                     outputs,
                     log,
                     invocation,
+                    cache: None,
                     start_ts: Some(self.start_ts),
                     end_ts: Some(local_now_with_offset()),
                     // populated by run-plan
@@ -320,6 +322,7 @@ pub fn run_job(store: &mut dyn cas::Store, job_id: Id) -> Result<Production> {
             dependencies: Default::default(),
             log: None,
             invocation: None,
+            cache: None,
             source: None,
             start_ts: None,
             end_ts: None,
@@ -399,10 +402,11 @@ impl Scheduler {
         }
     }
 
-    /// Get the production roots of an execution plan. These are the roots of all
-    /// executed productions. They are also the steps closest to the plan frontier. For
-    /// a successfully completed plan it should be a single terminal.
-    // TODO why doesn't this exhibit the caching issue? are we not caching properly?
+    /// Get the production roots of an execution plan. These are the roots of
+    /// all executed productions. They are also the steps closest to the plan
+    /// frontier. For a successfully completed plan it should be a single
+    /// terminal. Note unlike the shell implementation, this uses the plan graph
+    /// not the production graph (should be equivalent except for source).
     fn reduce_productions(self) -> (Plan, Vec<Id>) {
         let mut roots: Vec<Id> = self
             .plan
@@ -473,6 +477,18 @@ impl<'a> StepRunner<'a> {
     }
 }
 
+fn hashmap_equals<K: Eq + Hash, V: PartialEq>(a: &HashMap<K, V>, b: &HashMap<K, V>) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    for (key, value) in a.iter() {
+        if b.get(key) != Some(value) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // TODO allow manual jobs
 pub fn run_plan(store: &mut dyn cas::Store, plan: Plan) -> Result<Invocation> {
     let mut plan_buf = Vec::new();
@@ -485,9 +501,24 @@ pub fn run_plan(store: &mut dyn cas::Store, plan: Plan) -> Result<Invocation> {
         let job_id = runner.to_job()?;
 
         let (production_id, production) = match shell::read_job_cache(job_id)? {
-            Some(production_id) => {
+            Some(mut production_id) => {
+                // Cache hit handling is quite messy.
                 let mut production_reader = store.read("production", production_id)?;
-                let production = Production::from_reader(&mut production_reader)?;
+                let mut production = Production::from_reader(&mut production_reader)?;
+                // Compute expected production dependencies.
+                let mut dependencies = HashMap::new();
+                for (path, dependency) in step.dependencies.iter() {
+                    dependencies.insert(path[1..].to_string(), *dependency); // remove leading _
+                }
+                // If dependencies differ from cached production, synthesize a new one.
+                if !hashmap_equals(&production.dependencies, &dependencies) {
+                    production.dependencies = dependencies;
+                    production.source = step.source.clone();
+                    production.cache = Some(production_id);
+                    let mut buf = Vec::new();
+                    attributes::to_writer(&mut buf, &production)?;
+                    production_id = store.write("production", &buf)?;
+                }
                 (production_id, production)
             }
             None => runner.run_job(job_id)?,

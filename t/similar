@@ -1,0 +1,14 @@
+#!/bin/bash -ex
+#
+# If a step hits the job cache from another step, but has different
+# dependencies, then we want the cached outputs, but we should track the current
+# dependencies in a new production. This implies when a step is refactored (its
+# job changes but not its outputs), we need to regenerate productions for all
+# downstream.
+
+invocation_a=$(./run-flow flow/similar/a2.unit)
+diff <(echo 4) <(./show-output $invocation_a out/_)
+invocation_b=$(./run-flow flow/similar/b2.unit)
+diff <(echo 4) <(./show-output $invocation_b out/_)
+
+[[ $invocation_a != $invocation_b ]]

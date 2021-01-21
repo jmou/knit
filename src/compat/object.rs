@@ -42,6 +42,7 @@ impl Production {
         let job = attrs.consume_oid("job")?;
         // Does not distinguish between missing and other parse errors.
         let invocation = attrs.consume_oid("invocation").ok();
+        let cache = attrs.consume_oid("cache").ok();
         let exit_code = attrs.consume("exit_code")?;
         let log = attrs.consume_oid("log").ok();
         let source = attrs.consume("_source").ok();
@@ -55,12 +56,13 @@ impl Production {
             } else if key.starts_with("out/") {
                 outputs.insert(key.clone(), value.parse()?);
             } else {
-                bail!("unknown key");
+                bail!("unknown key: {}", &key);
             }
         }
         Ok(Production {
             job,
             invocation,
+            cache,
             outputs,
             exit_code,
             log,
@@ -247,6 +249,7 @@ start_ts=2021-01-02T04:32:43-0800
                 .collect(),
                 log: None,
                 invocation: None,
+                cache: None,
                 source: Some("unit:flow/basic/tac.unit".into()),
                 start_ts: Some("2021-01-02T04:32:43-0800".parse().unwrap()),
                 end_ts: Some("2021-01-02T04:32:43-0800".parse().unwrap()),

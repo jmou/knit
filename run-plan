@@ -23,7 +23,17 @@ while ./schedule-step < $plan > gen/next; do
 
     # TODO more nuanced caching policy
     if production=$(./kgit rev-parse --verify -q refs/job/$job/lastproduction); then
-        ./kgit cat-file blob $production > gen/production.$$
+        # Rebuild production with with current dependencies
+        ./kgit cat-file blob $production | grep -v ^_source= > gen/production.orig.$$
+        grep -v ^dep: gen/production.orig.$$ > gen/production.$$
+        ./extract-step $plan $pos | grep ^_dep: | sed s/^_// >> gen/production.$$ || true
+        # Use a new production if our dependencies differ
+        # TODO how about source?
+        if ! cmp -s <(sort gen/production.$$) gen/production.orig.$$; then
+            echo -e "_source=$source\ncache=$production" >> gen/production.$$
+            production=$(sort gen/production.$$ | ./kgit hash-object -w --stdin)
+        fi
+        rm gen/production.orig.$$
     else
         echo Running job:$job $source >&2
         ./run-job < gen/job > gen/production.$$
