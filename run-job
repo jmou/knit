@@ -59,13 +59,13 @@ elif [[ $process_type = nested ]]; then
         ./check-plan $workdir/plan all
         if invocation=$(./run-plan $workdir/plan); then
             echo exit_code=0
+            production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
+            ./kgit cat-file blob $production | grep ^out/
         else
             # This is ambiguous with a failure in the nested process.
             echo exit_code=1
         fi
-        production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
         echo invocation=$invocation
-        ./kgit cat-file blob $production | grep ^out/
     else
         echo exit_code=$?
     fi

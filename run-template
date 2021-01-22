@@ -19,7 +19,10 @@ for target in $@; do
     echo ${target#$ktroot/}
 done > >(sort > gen/targets)  # avoid subshelling loop
 
-invocation=$(./run-flow flow/template/pipeline.unit in/raw/=file:$ktroot/ in/targets=file:gen/targets)
+if ! invocation=$(./run-flow flow/template/pipeline.unit in/raw/=file:$ktroot/ in/targets=file:gen/targets); then
+    echo $invocation
+    exit 1
+fi
 
 production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
 

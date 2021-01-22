@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fs::File;
 use std::io;
+use std::process::exit;
 
 use compat::attributes;
 use structopt::StructOpt;
@@ -43,8 +44,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             io::copy(&mut obj, &mut io::stdout())?;
         }
         Command::RunJob { job_id } => {
-            let product = execution::run_job(&mut store, job_id)?;
-            attributes::to_writer(&mut io::stdout(), &product)?;
+            let production = execution::run_job(&mut store, job_id)?;
+            attributes::to_writer(&mut io::stdout(), &production)?;
+            if production.exit_code != 0 {
+                exit(production.exit_code)
+            }
         }
         Command::RunPlan { plan_path } => {
             let plan = Plan::from_reader(&mut File::open(plan_path)?)?;
@@ -53,6 +57,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             attributes::to_writer(&mut invocation_buf, &invocation)?;
             let invocation_id = store.write("invocation", &invocation_buf)?;
             println!("{}", invocation_id);
+            if invocation.status != InvocationStatus::Ok {
+                exit(1);
+            }
         }
         Command::Print { objtype, id } => {
             let mut reader = store.read(objtype.into(), id)?;
