@@ -1,5 +1,6 @@
 process=nested:python3 in/inputs-to-steps.py
 in/inputs-to-steps.py=file:flow/template/inputs-to-steps.py
-in/raw/=param:out/
+in/raw/=param:out/raw/
+in/targets=param:out/targets
 in/converters/=file:flow/template/converters/
 inref/drivers/=file:flow/template/drivers/

@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 
 
@@ -7,43 +8,45 @@ def create(path, mode):
     return open(path, mode)
 
 
-allsteps = []
+visited = set()
+frontier = [t.strip() for t in open('in/targets')]
 raw_root = 'in/raw/'
-for dirpath, _, filenames in os.walk(raw_root):
-    for filename in filenames:
-        filepath = os.path.join(dirpath, filename)
-        assert filepath.startswith(raw_root)
-        stem = filepath[len(raw_root):]
-        extension = filepath.rsplit('.', 1)[-1]
+while frontier:
+    target = frontier.pop()
+    extension = target.rsplit('.', 1)[-1]
 
-        # convert raw to reqs and build
-        converter = f'in/converters/{extension}'
-        output = subprocess.check_output(
-            f'chmod +x {converter} && {converter} < {filepath}',
-            shell=True)
-        # delimited by blank line
-        if output.startswith(b'\n'):
-            reqs = b''
-            build = output[1:]
-        else:
-            reqs, build = output.split(b'\n\n', 1)
-            reqs += b'\n'
+    # convert raw to reqs and build
+    converter = f'in/converters/{extension}'
+    output = subprocess.check_output(
+        f'chmod +x {converter} && {converter} < in/raw/{target}',
+        shell=True)
+    # delimited by blank line
+    if output.startswith(b'\n'):
+        reqs = []
+        build = output[1:]
+    else:
+        reqs, build = output.split(b'\n\n', 1)
+        reqs = reqs.decode('utf-8').split('\n')
 
-        # write the step and build
-        allsteps.append(stem)
-        with create(f'steps/{stem}', 'w') as fh:
-            # TODO remove stdout if empty
-            print('process=command:chmod +x in/driver && '
-                  './in/driver in/build > out/-', file=fh)
-            driver = open(f'inref/drivers/{extension}').read().strip()
-            print(f'in/driver={driver}', file=fh)
-            print(f'in/build=file:./builds/{stem}', file=fh)
-            fh.write(reqs.decode('utf-8'))
-        with create(f'builds/{stem}', 'wb') as fh:
-            fh.write(build)
+    # write the step and build
+    visited.add(target)
+    with create(f'builds/{target}', 'wb') as fh:
+        fh.write(build)
+    with create(f'steps/{target}', 'w') as fh:
+        # TODO remove stdout if empty
+        print('process=command:chmod +x in/driver && '
+              './in/driver in/build > out/-', file=fh)
+        driver = open(f'inref/drivers/{extension}').read().strip()
+        print(f'in/driver={driver}', file=fh)
+        print(f'in/build=file:./builds/{target}', file=fh)
+        for req in reqs:
+            print(req, file=fh)
+            match = re.fullmatch(r'in/[^=]*=_pos:([^:]*):.*', req)
+            if match:
+                frontier.append(match[1])
 
 # copy outputs to all
 with open('steps/all', 'w') as fh:
     print('process=identity', file=fh)
-    for step in allsteps:
+    for step in visited:
         print(f'in/{step}/=_pos:{step}:out/', file=fh)

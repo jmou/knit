@@ -1,8 +1,29 @@
 #!/bin/bash -e
 
-invocation=$(./run-flow flow/template/pipeline.unit in/=file:${1%/}/)
+for target in $@; do
+    # find _ktroot from first argument
+    if [[ -z $ktroot ]]; then
+        ktroot=$(dirname $target)
+        while [[ ! -e $ktroot/_ktroot ]]; do
+            if [[ ${#ktroot} -eq 1 ]]; then
+                echo 'no _ktroot found' >&2
+                exit 1
+            fi
+            ktroot=$(dirname $ktroot)
+        done
+    fi
+    if [[ $target != $ktroot/* ]]; then
+        echo 'targets have different _ktroot?' >&2
+        exit 1
+    fi
+    echo ${target#$ktroot/}
+done > >(sort > gen/targets)  # avoid subshelling loop
+
+invocation=$(./run-flow flow/template/pipeline.unit in/raw/=file:$ktroot/ in/targets=file:gen/targets)
 
 production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
+
+# materialize outputs
 rm -rf gen/out
 ./kgit cat-file blob $production | grep ^out/ | while IFS== read -r outpath cid; do
     mkdir -p "gen/$(dirname "$outpath")"

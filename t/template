@@ -1,6 +1,6 @@
 #!/bin/bash -ex
 
-invocation=$(./run-template flow/template/inputs.d)
+invocation=$(./run-template flow/template/inputs.d/tac.py)
 diff - gen/out/abc.sh/- <<EOF
 a
 b
