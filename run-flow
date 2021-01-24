@@ -2,9 +2,7 @@
 #
 # Run a target unit file and its dependencies.
 
-if [[ $USE_RUST -eq 1 ]]; then
-    exec cargo run -q run-unit "$@"
-elif [[ $USE_RUST -eq 2 ]]; then
+if [[ -n $RUN_PORTABLE ]]; then
     if [[ $1 = flow/* ]]; then
         exec ./run-portable flow/ "$@"
     else
@@ -12,23 +10,4 @@ elif [[ $USE_RUST -eq 2 ]]; then
     fi
 fi
 
-unit="$1"
-shift
-
-./unit-to-plan main "$unit" > gen/plan
-
-# Avoid populating an orphan param step.
-if grep -qE '^in(ref)?/[^=]*=_pos:_param:' gen/plan; then
-    echo process=identity > gen/param.unit
-    for paramline in "$@"; do
-        echo "$paramline"
-    done >> gen/param.unit
-    ./unit-to-plan _param gen/param.unit >> gen/plan
-elif [[ $# -gt 1 ]]; then
-    echo warn: parameters specified for non-parameterized flow >&2
-fi
-
-if ! ./run-plan gen/plan; then
-    echo fail: some jobs failed >&2
-    exit 1
-fi
+exec cargo run -q run-unit "$@"

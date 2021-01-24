@@ -7,7 +7,7 @@ target="${2-$(perl -ne '/^([^\t][^:\s]*)\s*:/ and print "$1\n" and exit' make/ba
 ./make-to-plan < $makefile > gen/plan.full
 ./subtree-plan $target < gen/plan.full > gen/plan
 
-if ! ./run-plan gen/plan; then
+if ! cargo run -q run-plan gen/plan; then
     echo fail: some jobs failed >&2
     exit 1
 fi

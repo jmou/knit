@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+# TODO broken by removing shell implementation
+
 import os
 import re
 import subprocess

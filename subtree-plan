@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# Filter a plan to a subtree. Analog to check-plan.
+# Filter a plan to a subtree.
 
 use strict;
 
