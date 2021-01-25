@@ -1,0 +1,2 @@
+process=command:tr a-z A-Z < in/input > out/_
+in/input=param:out/input

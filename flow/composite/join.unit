@@ -1,0 +1,3 @@
+process=command:cat in/abc in/xyz > out/_
+in/abc=unit:flow/composite/abc.unit:out/_
+in/xyz=unit:flow/composite/xyz.unit:out/_

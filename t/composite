@@ -1,0 +1,10 @@
+#!/bin/bash -ex
+
+# Composite input only implemented in Rust.
+export USE_RUST=1
+
+invocation=$(./run-flow flow/composite/join.unit)
+diff - <(./show-output $invocation out/_) <<EOF
+ABC
+XYZ
+EOF

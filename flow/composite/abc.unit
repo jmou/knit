@@ -1,0 +1,2 @@
+process=composite:flow/composite/upper.unit
+in/input=inline:abc

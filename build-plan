@@ -25,6 +25,8 @@ def emit_identity_step(builddir, input_type, input_path):
     return f'_pos:{step}:out/_'
 
 def interpret_input(builddir, inkey, invalue):
+    if ':' not in invalue:
+        return [f'{inkey}={invalue}']
     input_type, input_path = invalue.split(':', 1)
     if input_type == 'file':
         # This is awkward to use in nested contexts because it only takes paths

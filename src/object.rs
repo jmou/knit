@@ -8,8 +8,6 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct Invocation {
-    // TODO reconcile naming
-    #[serde(rename = "production")]
     pub production: Option<Id>,
     // TODO clean up failed invocations
     #[serde(flatten)]
@@ -58,6 +56,7 @@ pub enum Process {
     Identity,
     Command(String),
     Nested(String),
+    Composite(String),
 }
 
 #[derive(Clone, Copy, Serialize, PartialEq)]
@@ -123,5 +122,7 @@ pub enum Input {
     File(String),
     #[serde(rename = "_pos")]
     Pos(String, String),
-    // TODO inline (value?)
+    // TODO reconcile name
+    #[serde(rename = "inline")]
+    Value(String),
 }

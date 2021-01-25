@@ -2,6 +2,10 @@
 #
 # Run a target unit file and its dependencies.
 
+if [[ $USE_RUST -eq 1 ]]; then
+    exec cargo run run-flow "$@"
+fi
+
 unit="$1"
 shift
 

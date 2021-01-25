@@ -20,6 +20,7 @@ enum Command {
     CasSmoke,
     RunJob { job_id: Id },
     RunPlan { plan_path: String },
+    RunFlow { unit: String, params: Vec<String> },
     Print { objtype: ObjectType, id: Id },
 }
 
@@ -58,6 +59,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             let invocation_id = store.write("invocation", &invocation_buf)?;
             println!("{}", invocation_id);
             if invocation.status != InvocationStatus::Ok {
+                exit(1);
+            }
+        }
+        Command::RunFlow { unit, params } => {
+            let invocation = execution::run_flow(&mut store, &unit, &params)?;
+            let mut invocation_buf = Vec::new();
+            attributes::to_writer(&mut invocation_buf, &invocation)?;
+            let invocation_id = store.write("invocation", &invocation_buf)?;
+            println!("{}", invocation_id);
+            if invocation.status != InvocationStatus::Ok {
+                eprintln!("fail: some jobs failed");
                 exit(1);
             }
         }

@@ -84,6 +84,7 @@ impl Job {
                     match process_type {
                         "command" => Process::Command(suffix.into()),
                         "nested" => Process::Nested(suffix.into()),
+                        "composite" => Process::Composite(suffix.into()),
                         _ => bail!("unsupported process"),
                     }
                 } else {
@@ -117,7 +118,10 @@ impl FromStr for Input {
                         Err(anyhow!("expected : in _pos input"))
                     }
                 }
-                _ => Err(anyhow!("unknown input type")),
+                "inline" => Ok(Input::Value(suffix.into())),
+                // This seems like the wrong way to do this
+                "param" => Ok(Input::Pos("_param".into(), suffix.into())),
+                _ => Err(anyhow!("unknown input type: {}", prefix)),
             }
         } else {
             Ok(Input::Id(s.parse()?))
@@ -129,6 +133,7 @@ impl Step {
     pub fn from_reader(r: &mut dyn Read) -> Result<Self> {
         let mut attrs = Attributes::from_reader(r)?;
         let pos = attrs.consume("_pos").ok();
+        // TODO DRY with Job::from_reader
         let process = match attrs.consume::<String>("process")?.as_str() {
             "identity" => Process::Identity,
             value => {
@@ -136,6 +141,7 @@ impl Step {
                     match process_type {
                         "command" => Process::Command(suffix.into()),
                         "nested" => Process::Nested(suffix.into()),
+                        "composite" => Process::Composite(suffix.into()),
                         _ => bail!("unsupported process"),
                     }
                 } else {

@@ -165,6 +165,7 @@ impl<'a> JobRunner<'a> {
             Process::Identity => unreachable!(), // early return from run_job
             Process::Command(command) => self.run_command(command),
             Process::Nested(command) => self.run_nested(command),
+            Process::Composite(_) => unreachable!(), // early return from run_job
         };
 
         match result {
@@ -329,6 +330,52 @@ pub fn run_job(store: &mut dyn cas::Store, job_id: Id) -> Result<Production> {
         });
     }
 
+    if let Process::Composite(unit) = job.process {
+        // TODO how to decouple from units? unify w/ nested?
+
+        let start_ts = local_now_with_offset();
+
+        let params = job
+            .inputs
+            .into_iter()
+            .map(|(path, id)| format!("{}={}", path, id))
+            .collect();
+        let invocation = run_flow(store, &unit, &params)?;
+
+        let mut invocation_buf = Vec::new();
+        attributes::to_writer(&mut invocation_buf, &invocation)?;
+        let invocation_id = store.write("invocation", &invocation_buf)?;
+
+        let exit_code = match invocation.status {
+            InvocationStatus::Ok => 0,
+            InvocationStatus::Fail => 1,
+        };
+
+        let outputs = match invocation.production {
+            Some(id) => {
+                let mut reader = store.read("production", id)?;
+                let production = Production::from_reader(&mut reader)?;
+                production.outputs
+            }
+            None => HashMap::new(),
+        };
+
+        return Ok(Production {
+            job: job_id,
+            exit_code,
+            outputs,
+            log: None,
+            invocation: Some(invocation_id),
+            cache: None,
+            start_ts: Some(start_ts),
+            end_ts: Some(local_now_with_offset()),
+            // populated by run-plan
+            dependencies: HashMap::new(),
+            source: None,
+        });
+        // return Ok(run_composite(store, &unit, job.inputs, &job_id)?);
+    }
+
     let runtime = JobRunner::from_job(store, &job)?;
     let production = runtime.produce(job_id, &job.process)?;
 
@@ -434,10 +481,15 @@ impl<'a> StepRunner<'a> {
     fn to_job(&mut self) -> Result<Id> {
         let mut inputs = HashMap::new();
         for (path, input) in self.step.inputs.iter() {
-            if let Input::Id(id) = input {
-                inputs.insert(path.clone(), id.clone());
-            } else {
-                panic!("unresolved input");
+            match input {
+                Input::Id(id) => {
+                    inputs.insert(path.clone(), id.clone());
+                }
+                Input::Value(value) => {
+                    let id = self.store.write("resource", value.as_bytes())?;
+                    inputs.insert(path.clone(), id);
+                }
+                _ => panic!("unresolved input"),
             }
         }
 
@@ -565,4 +617,35 @@ pub fn run_plan(store: &mut dyn cas::Store, plan: Plan) -> Result<Invocation> {
         plan: initial_plan,
         annotated_plan,
     })
+}
+
+pub fn run_flow(
+    store: &mut dyn cas::Store,
+    unit: &str,
+    params: &Vec<String>,
+) -> Result<Invocation> {
+    // WorkDir here is excessive
+    let workdir = WorkDir::new()?;
+    let mut plan = shell::unit_to_plan(unit, "main")?;
+
+    // Avoid populating an orphan param step.
+    let param_dependency = plan
+        .steps
+        .values()
+        .flat_map(|step| step.inputs.values())
+        .any(|input| match input {
+            Input::Pos(pos, _) if pos == "_param" => true,
+            _ => false,
+        });
+    if param_dependency {
+        let param_plan = shell::param_to_plan(&params)?;
+        plan.steps.extend(param_plan.steps);
+    } else if params.len() > 0 {
+        eprintln!("warn: parameters specified for non-parameterized flow");
+    }
+
+    // Seems useless?
+    plan.to_writer(&mut workdir.create("plan")?)?;
+
+    run_plan(store, plan)
 }
