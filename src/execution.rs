@@ -15,6 +15,7 @@ use crate::cas;
 use crate::compat::attributes::{self, Attributes};
 use crate::compat::shell;
 use crate::object::*;
+use crate::plan::{Input, Plan, Step};
 
 #[cfg(unix)]
 fn exit_status_to_code(exit_status: ExitStatus) -> i32 {
@@ -626,7 +627,7 @@ pub fn run_flow(
 ) -> Result<Invocation> {
     // WorkDir here is excessive
     let workdir = WorkDir::new()?;
-    let mut plan = shell::unit_to_plan(unit, "main")?;
+    let mut plan = Plan::from_unit_file(store, unit, "main")?;
 
     // Avoid populating an orphan param step.
     let param_dependency = plan
@@ -638,7 +639,16 @@ pub fn run_flow(
             _ => false,
         });
     if param_dependency {
-        let param_plan = shell::param_to_plan(&params)?;
+        let unit = "gen/param.unit";
+        {
+            let mut file = File::create(unit)?;
+            file.write_all(b"process=identity\n")?;
+            for param in params.iter() {
+                file.write_all(param.as_bytes())?;
+                file.write_all(b"\n")?;
+            }
+        }
+        let param_plan = Plan::from_unit_file(store, unit, "_param")?;
         plan.steps.extend(param_plan.steps);
     } else if params.len() > 0 {
         eprintln!("warn: parameters specified for non-parameterized flow");

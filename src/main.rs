@@ -4,6 +4,7 @@ use std::io;
 use std::process::exit;
 
 use compat::attributes;
+use plan::Plan;
 use structopt::StructOpt;
 use strum::{EnumString, IntoStaticStr};
 
@@ -14,6 +15,7 @@ mod cas;
 mod compat;
 mod execution;
 mod object;
+mod plan;
 
 #[derive(StructOpt)]
 enum Command {

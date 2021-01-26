@@ -9,6 +9,7 @@ use stable_eyre::eyre::{anyhow, bail, ensure, Error, Result};
 
 use crate::attributes::{self, Attributes, StrExt};
 use crate::object::*;
+use crate::plan::{Input, Plan, Step};
 
 impl Invocation {
     pub fn from_reader(r: &mut impl Read) -> Result<Self> {
@@ -77,21 +78,7 @@ impl Production {
 impl Job {
     pub fn from_reader(r: &mut impl Read) -> Result<Self> {
         let mut attrs = Attributes::from_reader(r)?;
-        let process = match attrs.consume::<String>("process")?.as_str() {
-            "identity" => Process::Identity,
-            value => {
-                if let Some((process_type, suffix)) = value.split_once_ext(':') {
-                    match process_type {
-                        "command" => Process::Command(suffix.into()),
-                        "nested" => Process::Nested(suffix.into()),
-                        "composite" => Process::Composite(suffix.into()),
-                        _ => bail!("unsupported process"),
-                    }
-                } else {
-                    bail!("malformed process");
-                }
-            }
-        };
+        let process = attrs.consume::<String>("process")?.parse()?;
         let mut inputs = HashMap::new();
         for (key, value) in attrs {
             if key.starts_with("in/") || key.starts_with("inref/") {
@@ -129,26 +116,32 @@ impl FromStr for Input {
     }
 }
 
+impl FromStr for Process {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "identity" {
+            return Ok(Process::Identity);
+        }
+        let process = if let Some((kind, suffix)) = s.split_once_ext(':') {
+            match kind {
+                "command" => Process::Command(suffix.into()),
+                "nested" => Process::Nested(suffix.into()),
+                "composite" => Process::Composite(suffix.into()),
+                _ => bail!("unsupported process"),
+            }
+        } else {
+            bail!("malformed process");
+        };
+        Ok(process)
+    }
+}
+
 impl Step {
     pub fn from_reader(r: &mut dyn Read) -> Result<Self> {
         let mut attrs = Attributes::from_reader(r)?;
         let pos = attrs.consume("_pos").ok();
-        // TODO DRY with Job::from_reader
-        let process = match attrs.consume::<String>("process")?.as_str() {
-            "identity" => Process::Identity,
-            value => {
-                if let Some((process_type, suffix)) = value.split_once_ext(':') {
-                    match process_type {
-                        "command" => Process::Command(suffix.into()),
-                        "nested" => Process::Nested(suffix.into()),
-                        "composite" => Process::Composite(suffix.into()),
-                        _ => bail!("unsupported process"),
-                    }
-                } else {
-                    bail!("malformed process");
-                }
-            }
-        };
+        let process = attrs.consume::<String>("process")?.parse()?;
         let exit_code = attrs.consume("_exit_code").ok();
         let production = attrs.consume_oid("_production").ok();
         let source = attrs.consume("_source").ok();
@@ -203,6 +196,8 @@ impl Plan {
 
 #[cfg(test)]
 mod tests {
+    use crate::plan::{Plan, Step};
+
     use super::*;
 
     #[test]
