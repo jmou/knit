@@ -226,6 +226,35 @@ impl<'a> JobRunner<'a> {
         Ok((exit_code, outputs, log, None))
     }
 
+    fn check_plan(plan: &Plan, terminal: &str) -> Result<()> {
+        let mut alldeps = Vec::new();
+        let mut frontier = vec![terminal];
+        while let Some(pos) = frontier.pop() {
+            if alldeps.contains(&pos) {
+                continue;
+            }
+            alldeps.push(pos);
+            for input in plan.steps[pos].inputs.values() {
+                if let Input::Pos(dep, _) = input {
+                    frontier.push(dep);
+                }
+            }
+        }
+
+        let extra_steps: Vec<_> = plan
+            .steps
+            .keys()
+            .filter(|s| !alldeps.contains(&s.as_str()))
+            .collect();
+        ensure!(
+            extra_steps.is_empty(),
+            "{} is not the plan terminal: {:?}",
+            terminal,
+            extra_steps
+        );
+        Ok(())
+    }
+
     fn run_nested(
         &mut self,
         command: impl AsRef<OsStr>,
@@ -241,10 +270,9 @@ impl<'a> JobRunner<'a> {
         }
 
         let plan = self.plan_nested_steps()?;
-        plan.to_writer(&mut self.workdir.create("plan")?)?;
         // all is hardcoded as the nested flow terminal pos.
         // TODO failed check should still return Ok
-        shell::check_plan(self.workdir.path().join("plan"), "all")?;
+        Self::check_plan(&plan, "all")?;
 
         let invocation = run_plan(self.store, plan)?;
         let exit_code = match invocation.status {

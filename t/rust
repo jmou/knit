@@ -2,7 +2,7 @@
 
 invocation=$(./run-flow flow/basic/tac.unit)
 
-diff - <(cargo run print invocation $invocation | cut -d= -f1) <<EOF
+diff - <(cargo run -q print invocation $invocation | cut -d= -f1) <<EOF
 _annotated_plan
 plan
 production
@@ -11,9 +11,9 @@ EOF
 
 cargo run print invocation $invocation | grep -qx status=ok
 
-production=$(cargo run print invocation $invocation | grep ^production= | cut -d= -f2)
+production=$(cargo run -q print invocation $invocation | grep ^production= | cut -d= -f2)
 
-diff - <(cargo run print production $production | cut -d= -f1) <<EOF
+diff - <(cargo run -q print production $production | cut -d= -f1) <<EOF
 _source
 dep:in/data
 end_ts
@@ -23,15 +23,15 @@ out/_
 start_ts
 EOF
 
-job=$(cargo run print production $production | grep ^job= | cut -d= -f2)
+job=$(cargo run -q print production $production | grep ^job= | cut -d= -f2)
 
-diff - <(cargo run print job $job) <<EOF
+diff - <(cargo run -q print job $job) <<EOF
 in/data=01e79c32a8c99c557f0757da7cb6d65b3414466d
 process=command:perl -e 'print reverse <>' in/data > out/_
 EOF
 
 # flow/basic/source.unit (synthesized identity job)
-diff - <(cargo run run-job 7c0d72850f36e7338fba64f8434e024c57520019) <<EOF
+diff - <(cargo run -q run-job 7c0d72850f36e7338fba64f8434e024c57520019) <<EOF
 exit_code=0
 job=7c0d72850f36e7338fba64f8434e024c57520019
 out/_=01e79c32a8c99c557f0757da7cb6d65b3414466d

@@ -5,6 +5,10 @@
 production_or_invocation=$1
 path=$2
 
+if [[ $USE_RUST -eq 1 ]]; then
+    exec cargo run -q show-output $production_or_invocation $path
+fi
+
 # As a convenience, allow the user to specify an actual file in gen/out/, since
 # it will be easier to tab complete.
 if [[ $path = gen/* ]]; then

@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::process::Command;
 
 use stable_eyre::eyre::{ensure, Result};
@@ -21,15 +20,6 @@ macro_rules! command {
     (expand $c:expr; $e:expr, $($es:expr),*) => {
         command!(expand $c.arg($e); $($es),*,)
     }
-}
-
-pub fn check_plan(plan_path: impl AsRef<OsStr>, terminal: impl AsRef<OsStr>) -> Result<()> {
-    let check = Command::new("./check-plan")
-        .arg(plan_path)
-        .arg(terminal)
-        .status()?;
-    ensure!(check.success(), "invalid plan");
-    Ok(())
 }
 
 pub fn write_job_cache(job_id: Id, production_id: Id) -> Result<()> {

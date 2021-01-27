@@ -1,10 +1,10 @@
-use std::error::Error;
 use std::fs::File;
 use std::io;
 use std::process::exit;
 
 use compat::attributes;
 use plan::Plan;
+use stable_eyre::eyre::{anyhow, Result};
 use structopt::StructOpt;
 use strum::{EnumString, IntoStaticStr};
 
@@ -20,10 +20,24 @@ mod plan;
 #[derive(StructOpt)]
 enum Command {
     CasSmoke,
-    RunJob { job_id: Id },
-    RunPlan { plan_path: String },
-    RunFlow { unit: String, params: Vec<String> },
-    Print { objtype: ObjectType, id: Id },
+    RunJob {
+        job_id: Id,
+    },
+    RunPlan {
+        plan_path: String,
+    },
+    RunFlow {
+        unit: String,
+        params: Vec<String>,
+    },
+    ShowOutput {
+        production_or_invocation: Id,
+        path: String,
+    },
+    Print {
+        objtype: ObjectType,
+        id: Id,
+    },
 }
 
 #[derive(Clone, Copy, EnumString, IntoStaticStr)]
@@ -36,7 +50,7 @@ enum ObjectType {
     Job,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let command = Command::from_args();
     let mut store = cas::GitStore {};
     match command {
@@ -74,6 +88,36 @@ fn main() -> Result<(), Box<dyn Error>> {
                 eprintln!("fail: some jobs failed");
                 exit(1);
             }
+        }
+        Command::ShowOutput {
+            production_or_invocation,
+            path,
+        } => {
+            // As a convenience, allow the user to specify an actual file in gen/out/,
+            // since it will be easier to tab complete.
+            let path = match path.strip_prefix("gen/") {
+                Some(suffix) => suffix,
+                None => &path,
+            };
+
+            let production_id = store
+                .read("invocation", production_or_invocation)
+                .and_then(|mut reader| Invocation::from_reader(&mut reader))
+                .map_or(Some(production_or_invocation), |invocation| {
+                    invocation.production
+                })
+                .ok_or_else(|| anyhow!("invocation missing production"))?;
+
+            let production = store
+                .read("production", production_id)
+                .and_then(|mut reader| Production::from_reader(&mut reader))?;
+
+            let mut reader = production
+                .outputs
+                .get(path)
+                .ok_or_else(|| anyhow!("output not found"))
+                .and_then(|&id| store.read("resource", id))?;
+            io::copy(&mut reader, &mut io::stdout())?;
         }
         Command::Print { objtype, id } => {
             let mut reader = store.read(objtype.into(), id)?;
