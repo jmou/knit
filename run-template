@@ -24,14 +24,9 @@ if ! invocation=$(./run-flow flow/template/pipeline.unit in/raw/=file:$ktroot/ i
     exit 1
 fi
 
-production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
-
 # materialize outputs
 rm -rf gen/out
-./kgit cat-file blob $production | grep ^out/ | while IFS== read -r outpath cid; do
-    mkdir -p "gen/$(dirname "$outpath")"
-    ./kgit cat-file blob $cid > "gen/$outpath"
-done
+./materialize-outputs $invocation gen
 
 echo $invocation
 echo outputs in gen/out/ >&2

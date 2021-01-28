@@ -5,10 +5,21 @@
 production_or_invocation=$1
 path=$2
 
+# As a convenience, allow the user to specify an actual file in gen/out/, since
+# it will be easier to tab complete.
+if [[ $path = gen/* ]]; then
+    path=${path#gen/}
+fi
+
 production=$(./kgit cat-file blob $production_or_invocation | grep ^production= | cut -d= -f2)
 if [[ -z $production ]]; then
     production=$production_or_invocation
 fi
 
 cid=$(./kgit cat-file blob $production | grep "^$path=" | cut -d= -f2)
+if [[ -z $cid ]]; then
+    echo output not found >&2
+    exit 1
+fi
+
 ./kgit cat-file blob $cid

@@ -1,0 +1,11 @@
+#!/bin/bash -e
+
+invocation=$1
+root=$2
+
+production=$(./kgit cat-file blob $invocation | grep ^production= | cut -d= -f2)
+
+./kgit cat-file blob $production | grep ^out/ | while IFS== read -r outpath cid; do
+    mkdir -p "$root/$(dirname "$outpath")"
+    ./kgit cat-file blob $cid > "$root/$outpath"
+done
