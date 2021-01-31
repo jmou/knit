@@ -2,13 +2,13 @@ use std::fs::File;
 use std::io;
 use std::process::exit;
 
-use compat::attributes;
-use plan::Plan;
 use stable_eyre::eyre::{anyhow, Result};
 use structopt::StructOpt;
 use strum::{EnumString, IntoStaticStr};
 
-use cas::Store;
+use cas::{Storable, UntypedId};
+use compat::attributes;
+use compat::cas::GitStore;
 use object::*;
 
 mod cas;
@@ -19,9 +19,8 @@ mod plan;
 
 #[derive(StructOpt)]
 enum Command {
-    CasSmoke,
     RunJob {
-        job_id: Id,
+        job_id: Id<Job>,
     },
     RunPlan {
         plan_path: String,
@@ -31,12 +30,12 @@ enum Command {
         params: Vec<String>,
     },
     ShowOutput {
-        production_or_invocation: Id,
+        production_or_invocation: UntypedId,
         path: String,
     },
     Print {
         objtype: ObjectType,
-        id: Id,
+        id: UntypedId,
     },
 }
 
@@ -52,37 +51,27 @@ enum ObjectType {
 
 fn main() -> Result<()> {
     let command = Command::from_args();
-    let mut store = cas::GitStore {};
+    let store = cas::Store(Box::new(GitStore {}));
     match command {
-        Command::CasSmoke => {
-            let cid = store.write("ignored", b"foo\n")?;
-            println!("{}", cid);
-            let mut obj = store.read("ignored", cid)?;
-            io::copy(&mut obj, &mut io::stdout())?;
-        }
         Command::RunJob { job_id } => {
-            let production = execution::run_job(&mut store, job_id)?;
+            let production = execution::run_job(&store, &job_id)?;
             attributes::to_writer(&mut io::stdout(), &production)?;
             if production.exit_code != 0 {
                 exit(production.exit_code)
             }
         }
         Command::RunPlan { plan_path } => {
-            let plan = Plan::from_reader(&mut File::open(plan_path)?)?;
-            let invocation = execution::run_plan(&mut store, plan)?;
-            let mut invocation_buf = Vec::new();
-            attributes::to_writer(&mut invocation_buf, &invocation)?;
-            let invocation_id = store.write("invocation", &invocation_buf)?;
+            let plan = Plan::from_reader(Box::new(File::open(plan_path)?))?;
+            let invocation = execution::run_plan(&store, plan)?;
+            let invocation_id = store.write(&invocation)?;
             println!("{}", invocation_id);
             if invocation.status != InvocationStatus::Ok {
                 exit(1);
             }
         }
         Command::RunFlow { unit, params } => {
-            let invocation = execution::run_flow(&mut store, &unit, &params)?;
-            let mut invocation_buf = Vec::new();
-            attributes::to_writer(&mut invocation_buf, &invocation)?;
-            let invocation_id = store.write("invocation", &invocation_buf)?;
+            let invocation = execution::run_flow(&store, &unit, &params)?;
+            let invocation_id = store.write(&invocation)?;
             println!("{}", invocation_id);
             if invocation.status != InvocationStatus::Ok {
                 eprintln!("fail: some jobs failed");
@@ -101,41 +90,36 @@ fn main() -> Result<()> {
             };
 
             let production_id = store
-                .read("invocation", production_or_invocation)
-                .and_then(|mut reader| Invocation::from_reader(&mut reader))
-                .map_or(Some(production_or_invocation), |invocation| {
-                    invocation.production
-                })
+                .read(&Id::<Invocation>::new(production_or_invocation))
+                .map_or_else(
+                    |_| Some(Id::<Production>::new(production_or_invocation)),
+                    |invocation| invocation.production,
+                )
                 .ok_or_else(|| anyhow!("invocation missing production"))?;
 
-            let production = store
-                .read("production", production_id)
-                .and_then(|mut reader| Production::from_reader(&mut reader))?;
+            let production = store.read(&production_id)?;
 
             let mut reader = production
                 .outputs
                 .get(path)
                 .ok_or_else(|| anyhow!("output not found"))
-                .and_then(|&id| store.read("resource", id))?;
+                .and_then(|id| store.read_resource(id))?;
             io::copy(&mut reader, &mut io::stdout())?;
         }
-        Command::Print { objtype, id } => {
-            let mut reader = store.read(objtype.into(), id)?;
-            match objtype {
-                ObjectType::Invocation => {
-                    let obj = Invocation::from_reader(&mut reader)?;
-                    attributes::to_writer(&mut io::stdout(), &obj)?;
-                }
-                ObjectType::Production => {
-                    let obj = Production::from_reader(&mut reader)?;
-                    attributes::to_writer(&mut io::stdout(), &obj)?;
-                }
-                ObjectType::Job => {
-                    let obj = Job::from_reader(&mut reader)?;
-                    attributes::to_writer(&mut io::stdout(), &obj)?;
-                }
+        Command::Print { objtype, id } => match objtype {
+            ObjectType::Invocation => {
+                let obj = store.read(&Id::<Invocation>::new(id))?;
+                attributes::to_writer(&mut io::stdout(), &obj)?;
             }
-        }
+            ObjectType::Production => {
+                let obj = store.read(&Id::<Production>::new(id))?;
+                attributes::to_writer(&mut io::stdout(), &obj)?;
+            }
+            ObjectType::Job => {
+                let obj = store.read(&Id::<Job>::new(id))?;
+                attributes::to_writer(&mut io::stdout(), &obj)?;
+            }
+        },
     }
 
     Ok(())

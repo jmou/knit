@@ -26,7 +26,11 @@ impl ser::Error for Error {
     }
 }
 
-pub fn to_writer(writer: &mut impl Write, value: &impl Serialize) -> Result<(), Error> {
+pub fn to_writer<W, T>(writer: &mut W, value: &T) -> Result<(), Error>
+where
+    W: Write + ?Sized,
+    T: Serialize,
+{
     let mut serializer = Serializer {
         lines: vec![vec![]],
     };

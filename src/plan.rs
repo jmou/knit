@@ -1,63 +1,28 @@
+//! Unit to plan conversion.
+// TODO this should not be implemented on Plan
+
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{prelude::*, BufReader};
 use std::str;
 
-use serde::Serialize;
 use sha1::Digest;
 use stable_eyre::eyre::{anyhow, bail, Result};
 use walkdir::WalkDir;
 
 use crate::attributes::StrExt;
-use crate::{cas, object::*};
-
-#[derive(Debug, PartialEq)]
-pub struct Plan {
-    pub steps: HashMap<String, Step>,
-}
-
-#[derive(Debug, Serialize, PartialEq)]
-pub struct Step {
-    #[serde(rename = "_pos")]
-    pub pos: Option<String>,
-    pub process: Process,
-
-    // TODO DRY with Production
-    #[serde(rename = "_exit_code")]
-    pub exit_code: Option<i32>,
-    #[serde(rename = "_production")]
-    pub production: Option<Id>,
-    #[serde(rename = "_source")]
-    pub source: Option<String>,
-
-    #[serde(flatten)]
-    pub inputs: HashMap<String, Input>,
-    #[serde(flatten)]
-    pub dependencies: HashMap<String, Id>,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum Input {
-    #[serde(rename = "")]
-    Id(Id),
-    File(String),
-    #[serde(rename = "_pos")]
-    Pos(String, String),
-    // TODO reconcile name
-    #[serde(rename = "inline")]
-    Value(String),
-}
+use crate::cas;
+use crate::object::*;
 
 impl Plan {
     fn emit_identity_step(
         &mut self,
-        store: &mut dyn cas::Store,
+        store: &cas::Store,
         source: String,
         data: &[u8],
     ) -> Result<Input> {
         let name = hex::encode(sha1::Sha1::digest(source.as_bytes()));
-        let id = store.write("resource", data)?;
+        let id = store.write_resource(data)?;
         let mut inputs = HashMap::new();
         inputs.insert("in/_".into(), Input::Id(id));
         // This step only exists to propagate source.
@@ -76,7 +41,7 @@ impl Plan {
 
     fn interpret_input(
         &mut self,
-        store: &mut dyn cas::Store,
+        store: &cas::Store,
         key: &str,
         input: Input,
         inputs: &mut HashMap<String, Input>,
@@ -122,7 +87,7 @@ impl Plan {
 
     fn translate_unit(
         &mut self,
-        store: &mut dyn cas::Store,
+        store: &cas::Store,
         unit: &str,
         step: &str,
         index: &mut i32,
@@ -186,7 +151,7 @@ impl Plan {
         Ok(pos)
     }
 
-    pub fn from_unit_file(store: &mut dyn cas::Store, unit: &str, root_pos: &str) -> Result<Plan> {
+    pub fn from_unit_file(store: &cas::Store, unit: &str, root_pos: &str) -> Result<Plan> {
         let mut plan = Plan {
             steps: HashMap::new(),
         };

@@ -2,6 +2,7 @@ use std::process::Command;
 
 use stable_eyre::eyre::{ensure, Result};
 
+use crate::cas::{Id, UntypedId};
 use crate::object::*;
 
 // TODO doesn't work
@@ -22,7 +23,7 @@ macro_rules! command {
     }
 }
 
-pub fn write_job_cache(job_id: Id, production_id: Id) -> Result<()> {
+pub fn write_job_cache(job_id: &Id<Job>, production_id: &Id<Production>) -> Result<()> {
     let status = Command::new("./kgit")
         .arg("update-ref")
         .arg(format!("refs/job/{}/lastproduction", job_id))
@@ -32,7 +33,7 @@ pub fn write_job_cache(job_id: Id, production_id: Id) -> Result<()> {
     Ok(())
 }
 
-pub fn read_job_cache(job_id: Id) -> Result<Option<Id>> {
+pub fn read_job_cache(job_id: &Id<Job>) -> Result<Option<Id<Production>>> {
     // TODO more nuanced caching policy
     let output = Command::new("./kgit")
         .arg("rev-parse")
@@ -42,7 +43,10 @@ pub fn read_job_cache(job_id: Id) -> Result<Option<Id>> {
         .output()?;
     if output.status.success() {
         Ok(Some(
-            std::str::from_utf8(&output.stdout)?.trim_end().parse()?,
+            std::str::from_utf8(&output.stdout)?
+                .trim_end()
+                .parse::<UntypedId>()
+                .map(Id::<Production>::new)?,
         ))
     } else {
         Ok(None)

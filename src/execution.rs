@@ -15,7 +15,6 @@ use crate::cas;
 use crate::compat::attributes::{self, Attributes};
 use crate::compat::shell;
 use crate::object::*;
-use crate::plan::{Input, Plan, Step};
 
 #[cfg(unix)]
 fn exit_status_to_code(exit_status: ExitStatus) -> i32 {
@@ -126,24 +125,24 @@ impl WorkDir {
 }
 
 struct JobRunner<'a> {
-    store: &'a mut dyn cas::Store,
+    store: &'a cas::Store,
     workdir: WorkDir,
     envs: Attributes,
     start_ts: DateTime<FixedOffset>,
 }
 
 impl<'a> JobRunner<'a> {
-    fn from_job(store: &'a mut dyn cas::Store, job: &Job) -> Result<Self> {
+    fn from_job(store: &'a cas::Store, job: &Job) -> Result<Self> {
         let workdir = WorkDir::new()?;
         let mut job_buf = Vec::new();
         attributes::to_writer(&mut job_buf, job)?;
         io::copy(&mut job_buf.as_slice(), &mut workdir.create("job")?)?;
 
-        for (input_path, &input_id) in job.inputs.iter() {
+        for (input_path, input_id) in job.inputs.iter() {
             let mut input_file = workdir.create(input_path)?;
             if input_path.starts_with("in/") {
-                let mut input_read = store.read("input", input_id)?;
-                io::copy(&mut input_read, &mut input_file)?;
+                let mut reader = store.read_resource(input_id)?;
+                io::copy(&mut reader, &mut input_file)?;
             } else if input_path.starts_with("inref/") {
                 writeln!(input_file, "{}", input_id)?;
             } else {
@@ -161,7 +160,7 @@ impl<'a> JobRunner<'a> {
         })
     }
 
-    fn produce(mut self, job_id: Id, process: &Process) -> Result<Production> {
+    fn produce(mut self, job_id: &Id<Job>, process: &Process) -> Result<Production> {
         let result = match process {
             Process::Identity => unreachable!(), // early return from run_job
             Process::Command(command) => self.run_command(command),
@@ -172,7 +171,7 @@ impl<'a> JobRunner<'a> {
         match result {
             Ok((exit_code, outputs, log, invocation)) => {
                 Ok(Production {
-                    job: job_id,
+                    job: *job_id,
                     exit_code,
                     outputs,
                     log,
@@ -195,20 +194,25 @@ impl<'a> JobRunner<'a> {
         }
     }
 
-    fn save_log(&mut self, log: &[u8]) -> Result<Option<Id>> {
+    fn save_log(&mut self, log: &[u8]) -> Result<Option<Id<Resource>>> {
         if log.is_empty() {
             Ok(None)
         } else {
             // Consider how to save logs with storage system.
             // Write stdout to file first?
-            Ok(Some(self.store.write("resource", log)?))
+            Ok(Some(self.store.write_resource(log)?))
         }
     }
 
     fn run_command(
         &mut self,
         command: impl AsRef<OsStr>,
-    ) -> Result<(i32, HashMap<String, Id>, Option<Id>, Option<Id>)> {
+    ) -> Result<(
+        i32,
+        HashMap<String, Id<Resource>>,
+        Option<Id<Resource>>,
+        Option<Id<Invocation>>,
+    )> {
         if self.workdir.is_dir("inref") {
             eprintln!("warning: inref used in command process");
         }
@@ -220,7 +224,7 @@ impl<'a> JobRunner<'a> {
         let mut outputs = HashMap::new();
         for (filename, path) in self.workdir.scan_files("out")? {
             let key = format!("out/{}", filename);
-            let output_id = self.store.write("resource", &fs::read(path)?)?;
+            let output_id = self.store.write_resource(&fs::read(path)?)?;
             outputs.insert(key, output_id);
         }
         Ok((exit_code, outputs, log, None))
@@ -258,7 +262,12 @@ impl<'a> JobRunner<'a> {
     fn run_nested(
         &mut self,
         command: impl AsRef<OsStr>,
-    ) -> Result<(i32, HashMap<String, Id>, Option<Id>, Option<Id>)> {
+    ) -> Result<(
+        i32,
+        HashMap<String, Id<Resource>>,
+        Option<Id<Resource>>,
+        Option<Id<Invocation>>,
+    )> {
         // Nested flows don't really need parameterization because the
         // command can wire inputs as parameters. But it's natural to
         // consider if params should be exposed in some consistent way here.
@@ -281,16 +290,10 @@ impl<'a> JobRunner<'a> {
             InvocationStatus::Fail => 1,
         };
 
-        let mut invocation_buf = Vec::new();
-        attributes::to_writer(&mut invocation_buf, &invocation)?;
-        let invocation_id = self.store.write("invocation", &invocation_buf)?;
+        let invocation_id = self.store.write(&invocation)?;
 
         let outputs = match invocation.production {
-            Some(id) => {
-                let mut reader = self.store.read("production", id)?;
-                let production = Production::from_reader(&mut reader)?;
-                production.outputs
-            }
+            Some(id) => self.store.read(&id)?.outputs,
             None => HashMap::new(),
         };
 
@@ -321,7 +324,7 @@ impl<'a> JobRunner<'a> {
                     // "resolve-input"
                     let mut file_buf = Vec::new();
                     File::open(file)?.read_to_end(&mut file_buf)?;
-                    let id = self.store.write("resource", &file_buf)?;
+                    let id = self.store.write_resource(&file_buf)?;
                     *input = Input::Id(id);
                 }
             }
@@ -332,10 +335,8 @@ impl<'a> JobRunner<'a> {
     }
 }
 
-pub fn run_job(store: &mut dyn cas::Store, job_id: Id) -> Result<Production> {
-    let mut job_buf = Vec::new();
-    store.read("job", job_id)?.read_to_end(&mut job_buf)?;
-    let job = Job::from_reader(&mut job_buf.as_slice())?;
+pub fn run_job(store: &cas::Store, job_id: &Id<Job>) -> Result<Production> {
+    let job = store.read(job_id)?;
 
     if let Process::Identity = job.process {
         let mut outputs = HashMap::new();
@@ -345,7 +346,7 @@ pub fn run_job(store: &mut dyn cas::Store, job_id: Id) -> Result<Production> {
             outputs.insert(key, value);
         }
         return Ok(Production {
-            job: job_id,
+            job: *job_id,
             exit_code: 0,
             outputs,
             // defaults
@@ -364,33 +365,25 @@ pub fn run_job(store: &mut dyn cas::Store, job_id: Id) -> Result<Production> {
 
         let start_ts = local_now_with_offset();
 
-        let params = job
+        let params: Vec<String> = job
             .inputs
             .into_iter()
             .map(|(path, id)| format!("{}={}", path, id))
             .collect();
+
         let invocation = run_flow(store, &unit, &params)?;
-
-        let mut invocation_buf = Vec::new();
-        attributes::to_writer(&mut invocation_buf, &invocation)?;
-        let invocation_id = store.write("invocation", &invocation_buf)?;
-
+        let invocation_id = store.write(&invocation)?;
         let exit_code = match invocation.status {
             InvocationStatus::Ok => 0,
             InvocationStatus::Fail => 1,
         };
-
         let outputs = match invocation.production {
-            Some(id) => {
-                let mut reader = store.read("production", id)?;
-                let production = Production::from_reader(&mut reader)?;
-                production.outputs
-            }
+            Some(id) => store.read(&id)?.outputs,
             None => HashMap::new(),
         };
 
         return Ok(Production {
-            job: job_id,
+            job: *job_id,
             exit_code,
             outputs,
             log: None,
@@ -402,7 +395,6 @@ pub fn run_job(store: &mut dyn cas::Store, job_id: Id) -> Result<Production> {
             dependencies: HashMap::new(),
             source: None,
         });
-        // return Ok(run_composite(store, &unit, job.inputs, &job_id)?);
     }
 
     let runtime = JobRunner::from_job(store, &job)?;
@@ -441,10 +433,15 @@ impl Scheduler {
         }
     }
 
-    fn complete_step(&mut self, completed_pos: &str, production: Production, production_id: Id) {
+    fn complete_step(
+        &mut self,
+        completed_pos: &str,
+        production: Production,
+        production_id: &Id<Production>,
+    ) {
         let step = self.plan.steps.get_mut(completed_pos).unwrap();
         step.exit_code = Some(production.exit_code);
-        step.production = Some(production_id);
+        step.production = Some(*production_id);
         if production.exit_code != 0 {
             return;
         }
@@ -455,7 +452,7 @@ impl Scheduler {
                 if let Input::Pos(pos, ref outpath) = input {
                     if pos == completed_pos {
                         step.dependencies
-                            .insert(format!("_dep:{}", inpath), production_id);
+                            .insert(format!("_dep:{}", inpath), *production_id);
                         // TODO handle missing outputs
                         // TODO would make more sense to evaluate (and fail) dependencies from depender
                         if inpath.ends_with('/') && outpath.ends_with('/') {
@@ -483,8 +480,8 @@ impl Scheduler {
     /// frontier. For a successfully completed plan it should be a single
     /// terminal. Note unlike the shell implementation, this uses the plan graph
     /// not the production graph (should be equivalent except for source).
-    fn reduce_productions(self) -> (Plan, Vec<Id>) {
-        let mut roots: Vec<Id> = self
+    fn reduce_productions(self) -> (Plan, Vec<Id<Production>>) {
+        let mut roots: Vec<_> = self
             .plan
             .steps
             .iter()
@@ -502,20 +499,20 @@ impl Scheduler {
 }
 
 struct StepRunner<'a> {
-    store: &'a mut dyn cas::Store,
+    store: &'a cas::Store,
     step: &'a Step,
 }
 
 impl<'a> StepRunner<'a> {
-    fn to_job(&mut self) -> Result<Id> {
+    fn to_job(&self) -> Result<Id<Job>> {
         let mut inputs = HashMap::new();
         for (path, input) in self.step.inputs.iter() {
             match input {
                 Input::Id(id) => {
-                    inputs.insert(path.clone(), id.clone());
+                    inputs.insert(path.clone(), *id);
                 }
                 Input::Value(value) => {
-                    let id = self.store.write("resource", value.as_bytes())?;
+                    let id = self.store.write_resource(value.as_bytes())?;
                     inputs.insert(path.clone(), id);
                 }
                 _ => panic!("unresolved input"),
@@ -527,14 +524,10 @@ impl<'a> StepRunner<'a> {
             inputs,
         };
 
-        let mut job_buf = Vec::new();
-        attributes::to_writer(&mut job_buf, &job)?;
-        let job_id = self.store.write("job", &job_buf)?;
-
-        Ok(job_id)
+        self.store.write(&job)
     }
 
-    fn run_job(&mut self, job_id: Id) -> Result<(Id, Production)> {
+    fn run_job(&mut self, job_id: &Id<Job>) -> Result<(Id<Production>, Production)> {
         eprintln!(
             "Running job:{} {}",
             &job_id,
@@ -543,16 +536,14 @@ impl<'a> StepRunner<'a> {
 
         let mut production = run_job(self.store, job_id)?;
         production.source = self.step.source.clone();
-        for (path, dependency) in self.step.dependencies.iter() {
+        for (path, &dependency) in self.step.dependencies.iter() {
             production
                 .dependencies
-                .insert(path[1..].to_string(), *dependency); // remove leading _
+                .insert(path[1..].to_string(), dependency); // remove leading _
         }
 
-        let mut production_buf = Vec::new();
-        attributes::to_writer(&mut production_buf, &production)?;
-        let production_id = self.store.write("production", &production_buf)?;
-        shell::write_job_cache(job_id, production_id)?;
+        let production_id = self.store.write(&production)?;
+        shell::write_job_cache(job_id, &production_id)?;
 
         Ok((production_id, production))
     }
@@ -567,42 +558,38 @@ fn hashmap_equals<K: Eq + Hash, V: PartialEq>(a: &HashMap<K, V>, b: &HashMap<K, 
             return false;
         }
     }
-    return true;
+    true
 }
 
 // TODO allow manual jobs
-pub fn run_plan(store: &mut dyn cas::Store, plan: Plan) -> Result<Invocation> {
-    let mut plan_buf = Vec::new();
-    plan.to_writer(&mut plan_buf)?;
-    let initial_plan = store.write("plan", &plan_buf)?;
+pub fn run_plan(store: &cas::Store, plan: Plan) -> Result<Invocation> {
+    let initial_plan = store.write(&plan)?;
 
     let mut scheduler = Scheduler { plan };
     while let Some((pos, step)) = scheduler.schedule_step() {
         let mut runner = StepRunner { store, step };
         let job_id = runner.to_job()?;
 
-        let (production_id, production) = match shell::read_job_cache(job_id)? {
+        let (production_id, production) = match shell::read_job_cache(&job_id)? {
             Some(mut production_id) => {
                 // Cache hit handling is quite messy.
-                let mut production_reader = store.read("production", production_id)?;
-                let mut production = Production::from_reader(&mut production_reader)?;
+                let mut production = store.read(&production_id)?;
                 // Compute expected production dependencies.
                 let mut dependencies = HashMap::new();
-                for (path, dependency) in step.dependencies.iter() {
-                    dependencies.insert(path[1..].to_string(), *dependency); // remove leading _
+                for (path, &dependency) in step.dependencies.iter() {
+                    dependencies.insert(path[1..].to_string(), dependency);
+                    // remove leading _
                 }
                 // If dependencies differ from cached production, synthesize a new one.
                 if !hashmap_equals(&production.dependencies, &dependencies) {
                     production.dependencies = dependencies;
                     production.source = step.source.clone();
                     production.cache = Some(production_id);
-                    let mut buf = Vec::new();
-                    attributes::to_writer(&mut buf, &production)?;
-                    production_id = store.write("production", &buf)?;
+                    production_id = store.write(&production)?;
                 }
                 (production_id, production)
             }
-            None => runner.run_job(job_id)?,
+            None => runner.run_job(&job_id)?,
         };
 
         if production.exit_code != 0 {
@@ -614,13 +601,11 @@ pub fn run_plan(store: &mut dyn cas::Store, plan: Plan) -> Result<Invocation> {
             );
         }
 
-        scheduler.complete_step(&pos, production, production_id);
+        scheduler.complete_step(&pos, production, &production_id);
     }
 
     let (plan, productions) = scheduler.reduce_productions();
-    let mut plan_buf = Vec::new();
-    plan.to_writer(&mut plan_buf)?;
-    let annotated_plan = store.write("plan", &plan_buf)?;
+    let annotated_plan = store.write(&plan)?;
 
     if productions.len() == 1 {
         for step in plan.steps.values() {
@@ -648,13 +633,7 @@ pub fn run_plan(store: &mut dyn cas::Store, plan: Plan) -> Result<Invocation> {
     })
 }
 
-pub fn run_flow(
-    store: &mut dyn cas::Store,
-    unit: &str,
-    params: &Vec<String>,
-) -> Result<Invocation> {
-    // WorkDir here is excessive
-    let workdir = WorkDir::new()?;
+pub fn run_flow(store: &cas::Store, unit: &str, params: &[String]) -> Result<Invocation> {
     let mut plan = Plan::from_unit_file(store, unit, "main")?;
 
     // Avoid populating an orphan param step.
@@ -662,10 +641,7 @@ pub fn run_flow(
         .steps
         .values()
         .flat_map(|step| step.inputs.values())
-        .any(|input| match input {
-            Input::Pos(pos, _) if pos == "_param" => true,
-            _ => false,
-        });
+        .any(|input| matches!(input, Input::Pos(pos, _) if pos == "_param"));
     if param_dependency {
         let unit = "gen/param.unit";
         {
@@ -678,12 +654,9 @@ pub fn run_flow(
         }
         let param_plan = Plan::from_unit_file(store, unit, "_param")?;
         plan.steps.extend(param_plan.steps);
-    } else if params.len() > 0 {
+    } else if !params.is_empty() {
         eprintln!("warn: parameters specified for non-parameterized flow");
     }
-
-    // Seems useless?
-    plan.to_writer(&mut workdir.create("plan")?)?;
 
     run_plan(store, plan)
 }

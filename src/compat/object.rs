@@ -8,20 +8,28 @@ use bstr::ByteSlice;
 use stable_eyre::eyre::{anyhow, bail, ensure, Error, Result};
 
 use crate::attributes::{self, Attributes, StrExt};
+use crate::cas::Storable;
 use crate::object::*;
-use crate::plan::{Input, Plan, Step};
 
-impl Invocation {
-    pub fn from_reader(r: &mut impl Read) -> Result<Self> {
-        let mut attrs = Attributes::from_reader(r)?;
-        let production = attrs.consume_oid("production").ok();
-        let plan = attrs.consume_oid("plan")?;
+impl Storable for Invocation {
+    fn objtype() -> &'static [u8] {
+        b"invocation"
+    }
+
+    fn to_writer(&self, w: &mut dyn Write) -> Result<()> {
+        Ok(w.write_all(&attributes::to_bytes(self))?)
+    }
+
+    fn from_reader(mut r: Box<dyn Read>) -> Result<Self> {
+        let mut attrs = Attributes::from_reader(&mut r)?;
+        let production = attrs.consume("production").ok();
+        let plan = attrs.consume("plan")?;
         let status = match attrs.consume::<String>("status")?.as_str() {
             "ok" => InvocationStatus::Ok,
             "fail" => InvocationStatus::Fail,
             _ => bail!("invalid status"),
         };
-        let annotated_plan = attrs.consume_oid("_annotated_plan")?;
+        let annotated_plan = attrs.consume("_annotated_plan")?;
         let mut partial_productions = HashMap::new();
         for (key, value) in attrs {
             ensure!(key.starts_with("partial_production:"), "unknown key");
@@ -37,15 +45,23 @@ impl Invocation {
     }
 }
 
-impl Production {
-    pub fn from_reader(r: &mut impl Read) -> Result<Self> {
-        let mut attrs = Attributes::from_reader(r)?;
-        let job = attrs.consume_oid("job")?;
+impl Storable for Production {
+    fn objtype() -> &'static [u8] {
+        b"production"
+    }
+
+    fn to_writer(&self, w: &mut dyn Write) -> Result<()> {
+        Ok(w.write_all(&attributes::to_bytes(self))?)
+    }
+
+    fn from_reader(mut r: Box<dyn Read>) -> Result<Self> {
+        let mut attrs = Attributes::from_reader(&mut r)?;
+        let job = attrs.consume("job")?;
         // Does not distinguish between missing and other parse errors.
-        let invocation = attrs.consume_oid("invocation").ok();
-        let cache = attrs.consume_oid("cache").ok();
+        let invocation = attrs.consume("invocation").ok();
+        let cache = attrs.consume("cache").ok();
         let exit_code = attrs.consume("exit_code")?;
-        let log = attrs.consume_oid("log").ok();
+        let log = attrs.consume("log").ok();
         let source = attrs.consume("_source").ok();
         let start_ts = attrs.consume("start_ts").ok();
         let end_ts = attrs.consume("end_ts").ok();
@@ -75,9 +91,17 @@ impl Production {
     }
 }
 
-impl Job {
-    pub fn from_reader(r: &mut impl Read) -> Result<Self> {
-        let mut attrs = Attributes::from_reader(r)?;
+impl Storable for Job {
+    fn objtype() -> &'static [u8] {
+        b"job"
+    }
+
+    fn to_writer(&self, w: &mut dyn Write) -> Result<()> {
+        Ok(w.write_all(&attributes::to_bytes(self))?)
+    }
+
+    fn from_reader(mut r: Box<dyn Read>) -> Result<Self> {
+        let mut attrs = Attributes::from_reader(&mut r)?;
         let process = attrs.consume::<String>("process")?.parse()?;
         let mut inputs = HashMap::new();
         for (key, value) in attrs {
@@ -138,12 +162,12 @@ impl FromStr for Process {
 }
 
 impl Step {
-    pub fn from_reader(r: &mut dyn Read) -> Result<Self> {
+    pub fn from_reader(r: &mut impl Read) -> Result<Self> {
         let mut attrs = Attributes::from_reader(r)?;
         let pos = attrs.consume("_pos").ok();
         let process = attrs.consume::<String>("process")?.parse()?;
         let exit_code = attrs.consume("_exit_code").ok();
-        let production = attrs.consume_oid("_production").ok();
+        let production = attrs.consume("_production").ok();
         let source = attrs.consume("_source").ok();
         let mut inputs = HashMap::new();
         let mut dependencies = HashMap::new();
@@ -168,22 +192,12 @@ impl Step {
     }
 }
 
-impl Plan {
-    pub fn from_reader(r: &mut dyn Read) -> Result<Self> {
-        let mut steps = HashMap::new();
-        let mut buf = Vec::new();
-        r.read_to_end(&mut buf)?;
-        for mut step_buf in buf.split_str(b"\n\n") {
-            if step_buf.len() == 0 {
-                continue;
-            }
-            let step = Step::from_reader(&mut step_buf)?;
-            steps.insert(step.pos.clone().unwrap(), step);
-        }
-        Ok(Plan { steps })
+impl Storable for Plan {
+    fn objtype() -> &'static [u8] {
+        b"production"
     }
 
-    pub fn to_writer(&self, w: &mut impl Write) -> Result<()> {
+    fn to_writer(&self, w: &mut dyn Write) -> Result<()> {
         let mut keys: Vec<&String> = self.steps.keys().collect();
         keys.sort();
         for key in keys {
@@ -192,11 +206,25 @@ impl Plan {
         }
         Ok(())
     }
+
+    fn from_reader(mut r: Box<dyn Read>) -> Result<Self> {
+        let mut steps = HashMap::new();
+        let mut buf = Vec::new();
+        r.read_to_end(&mut buf)?;
+        for mut step_buf in buf.split_str(b"\n\n") {
+            if step_buf.is_empty() {
+                continue;
+            }
+            let step = Step::from_reader(&mut step_buf)?;
+            steps.insert(step.pos.clone().unwrap(), step);
+        }
+        Ok(Plan { steps })
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::plan::{Plan, Step};
+    use crate::object::Id;
 
     use super::*;
 
@@ -208,7 +236,7 @@ plan=00478c2684ff7c617cf87fd103c89114342adddb
 status=ok
 ";
         assert_eq!(
-            Invocation::from_reader(&mut raw.as_ref()).unwrap(),
+            Invocation::from_reader(Box::new(raw.as_ref())).unwrap(),
             Invocation {
                 production: Some("5a85adff7fc597bdb1c2efa56a3a7d758854ced5".parse().unwrap()),
                 partial_productions: HashMap::new(),
@@ -230,7 +258,7 @@ out/_=2d6976f9b54866fa6afeb9080bfd843098f107bb
 start_ts=2021-01-02T04:32:43-0800
 ";
         assert_eq!(
-            Production::from_reader(&mut raw.as_ref()).unwrap(),
+            Production::from_reader(Box::new(raw.as_ref())).unwrap(),
             Production {
                 job: "4233117e9199336269c23534c78a7088dc5e4893".parse().unwrap(),
                 exit_code: 0,
@@ -243,7 +271,9 @@ start_ts=2021-01-02T04:32:43-0800
                 .collect(),
                 dependencies: [(
                     "dep:in/data".into(),
-                    "f16725e71499854fcda3059ac4a2611bfd3a5237".parse().unwrap()
+                    "f16725e71499854fcda3059ac4a2611bfd3a5237"
+                        .parse::<Id<Production>>()
+                        .unwrap()
                 )]
                 .iter()
                 .cloned()
@@ -264,7 +294,7 @@ start_ts=2021-01-02T04:32:43-0800
 process=command:perl -e 'print reverse <>' in/data > out/_
 ";
         assert_eq!(
-            Job::from_reader(&mut raw.as_ref()).unwrap(),
+            Job::from_reader(Box::new(raw.as_ref())).unwrap(),
             Job {
                 process: Process::Command("perl -e 'print reverse <>' in/data > out/_".into()),
                 inputs: [(
@@ -426,7 +456,7 @@ in/data=01e79c32a8c99c557f0757da7cb6d65b3414466d
             },
         );
         assert_eq!(
-            Plan::from_reader(&mut raw.as_ref()).unwrap(),
+            Plan::from_reader(Box::new(raw.as_ref())).unwrap(),
             Plan { steps }
         );
     }
