@@ -1,0 +1,2 @@
+process=command:cat in/file > out/_
+in/file=file:flow/source.txt

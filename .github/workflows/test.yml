@@ -19,3 +19,4 @@ jobs:
       - uses: actions/checkout@v2
       - run: ./test
       - run: USE_RUST=1 ./test
+      - run: USE_RUST=2 ./test

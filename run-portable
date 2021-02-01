@@ -1,0 +1,24 @@
+#!/bin/bash -e
+
+root=${1%/}/
+target=$2
+shift; shift
+
+# map params to in/param
+set -- $(echo "$@" | sed -E 's:(^| )in/:\1in/param/:g')
+
+# Unwrap one invocation layer from the nested flow. t/fail fails without this.
+unwrap() {
+    invocation=$1
+    key=$2
+    production=$(./kgit cat-file blob $invocation | grep ^$key= | cut -d= -f2)
+    ./kgit cat-file blob $production | grep ^invocation= | cut -d= -f2
+}
+
+# Hardcode rust because shell implementation doesn't work with inline inputs.
+if invocation=$(cargo run -q run-flow flow/portable/invoke.unit in/flow/=file:$root in/target=inline:$target "$@"); then
+    unwrap $invocation production
+else
+    unwrap $invocation partial_production:0
+    exit 1
+fi

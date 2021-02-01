@@ -1,6 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 
 plan=$1
 pos=$2
 
-exec awk "/(^|\\n)_pos=$pos\\n/{print}" RS= $plan
+exec awk "/(^|\\n)_pos=${pos//\//\\/}\\n/{print}" RS= $plan

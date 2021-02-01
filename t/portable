@@ -1,0 +1,8 @@
+#!/bin/bash -ex
+
+invocation=$(./run-portable flow/portable/flow.d/ flow/tac.unit)
+diff - <(./show-output $invocation out/_) <<EOF
+3
+2
+1
+EOF

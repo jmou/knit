@@ -5,7 +5,7 @@
 production_or_invocation=$1
 path=$2
 
-if [[ $USE_RUST -eq 1 ]]; then
+if [[ $USE_RUST -gt 0 ]]; then
     exec cargo run -q show-output $production_or_invocation $path
 fi
 

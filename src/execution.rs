@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
 use chrono::prelude::*;
-use stable_eyre::eyre::{bail, ensure, Result};
+use stable_eyre::eyre::{anyhow, bail, ensure, Result};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
@@ -238,7 +238,11 @@ impl<'a> JobRunner<'a> {
                 continue;
             }
             alldeps.push(pos);
-            for input in plan.steps[pos].inputs.values() {
+            let step = plan
+                .steps
+                .get(pos)
+                .ok_or_else(|| anyhow!("missing step {}", pos))?;
+            for input in step.inputs.values() {
                 if let Input::Pos(dep, _) = input {
                     frontier.push(dep);
                 }
@@ -306,7 +310,11 @@ impl<'a> JobRunner<'a> {
         };
         for (filename, path) in self.workdir.scan_files("steps")? {
             let mut step = Step::from_reader(&mut File::open(path)?)?;
-            step.source = Some(format!("nested:_pos:{}", &filename));
+            let nested_source = format!("nested:_pos:{}", &filename);
+            step.source = match step.source {
+                Some(orig_source) => Some(format!("{}@{}", orig_source, nested_source)),
+                None => Some(nested_source),
+            };
             step.pos = Some(filename.clone());
 
             // Kludge for relative file: resources for nested flows.
@@ -512,7 +520,9 @@ impl<'a> StepRunner<'a> {
                     inputs.insert(path.clone(), *id);
                 }
                 Input::Value(value) => {
-                    let id = self.store.write_resource(value.as_bytes())?;
+                    // TODO when this is changed, cache still hits
+                    let terminated = format!("{}\n", value);
+                    let id = self.store.write_resource(terminated.as_bytes())?;
                     inputs.insert(path.clone(), id);
                 }
                 _ => panic!("unresolved input"),

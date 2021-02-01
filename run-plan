@@ -4,7 +4,7 @@
 
 plan=$1
 
-if [[ $USE_RUST -eq 1 ]]; then
+if [[ $USE_RUST -gt 0 ]]; then
     exec cargo run -q run-plan $plan
 fi
 

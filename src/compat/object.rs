@@ -177,7 +177,7 @@ impl Step {
             } else if key.starts_with("_dep:") {
                 dependencies.insert(key.clone(), value.parse()?);
             } else {
-                bail!("unknown key");
+                bail!("unknown key {}", &key);
             }
         }
         Ok(Step {
