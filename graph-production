@@ -34,7 +34,8 @@ plot_resource() {
 
 while IFS== read -r key value; do
     case $key in
-        _source|start_ts|end_ts|exit_code) declare $key="$value" ;;
+        # cache is not shown; decide how to make it useful
+        _source|start_ts|end_ts|exit_code|cache) declare $key="$value" ;;
         dep:*)
             ./graph-production $value
             echo "\"$value\" -> \"$production\";"
@@ -65,4 +66,4 @@ duration=N/A
 if [[ -n $start_ts && -n $end_ts ]]; then
     duration=$(( $(date -d $end_ts +%s) - $(date -d $start_ts +%s) ))
 fi
-echo "\"$production\" [label=\"$_source\",tooltip=\"$process\n${duration}s $exit_code\"];"
+echo "\"$production\" [label=\"$_source\",tooltip=\"$process\n${duration}s $exit_code\",URL=\"http://localhost:8000/cgi-bin/inspect/production/$production\"];"
