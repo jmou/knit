@@ -9,10 +9,25 @@ def create(path, mode):
 
 
 visited = set()
+
+# write params
+if os.path.isdir('in/param'):
+    with open('steps/_param', 'w') as fh:
+        print('process=identity', file=fh)
+        for dirpath, _, filenames in os.walk('in/param'):
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                assert filepath.startswith('in/param/')
+                inpath = 'in/' + filepath[9:]
+                print(f'{inpath}=file:./{filepath}', file=fh)
+    visited.add('_param')
+
 frontier = [t.strip() for t in open('in/targets')]
 raw_root = 'in/raw/'
 while frontier:
     target = frontier.pop()
+    if target in visited:
+        continue
     extension = target.rsplit('.', 1)[-1]
 
     # convert raw to reqs and build
