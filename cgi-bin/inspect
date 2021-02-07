@@ -1,0 +1,43 @@
+#!/usr/bin/python3
+#
+# Browse object store.
+
+import os
+import subprocess
+import sys
+
+_, objtype, objid = os.environ['PATH_INFO'].split('/')
+
+output = subprocess.check_output(['./kgit', 'cat-file', 'blob', objid], text=True)
+if objtype == 'resource':
+    print('Content-Type: text/plain')
+    print()
+    print(output)
+    sys.exit()
+attrs = dict(line.split('=', 1) for line in output.splitlines())
+
+print('Content-Type: text/html')
+print()
+
+print(f'<h1>{objtype}</h1>')
+print(f'<h2>{objid}</h2>')
+
+for key, value in attrs.items():
+    if objtype == 'invocation':
+        if key in ('_annotated_plan', 'plan'):
+            value = f'<a href=/cgi-bin/inspect/plan/{value}>{value}</a>'
+        elif key == 'production':
+            value = f'<a href=/cgi-bin/inspect/production/{value}>{value}</a>'
+    elif objtype == 'production':
+        if key.startswith('dep:') or key == 'cache':
+            value = f'<a href=/cgi-bin/inspect/production/{value}>{value}</a>'
+        elif key == 'invocation':
+            value = f'<a href=/cgi-bin/inspect/invocation/{value}>{value}</a>'
+        elif key == 'job':
+            value = f'<a href=/cgi-bin/inspect/job/{value}>{value}</a>'
+        elif key.startswith('out/'):
+            value = f'<a href=/cgi-bin/inspect/resource/{value}>{value}</a>'
+    elif objtype == 'job':
+        if key.startswith('in/') or key.startswith('inref/'):
+            value = f'<a href=/cgi-bin/inspect/resource/{value}>{value}</a>'
+    print(f'<dt>{key}</dt><dd>{value}</dd>')
