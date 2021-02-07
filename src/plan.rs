@@ -7,7 +7,7 @@ use std::io::{prelude::*, BufReader};
 use std::str;
 
 use sha1::Digest;
-use stable_eyre::eyre::{anyhow, bail, Result};
+use stable_eyre::eyre::{anyhow, bail, Context, Result};
 use walkdir::WalkDir;
 
 use crate::attributes::StrExt;
@@ -67,7 +67,9 @@ impl Plan {
                     }
                 } else {
                     let source = format!("file:{}", path);
-                    let step = self.emit_identity_step(store, source, &fs::read(path)?)?;
+                    let data =
+                        fs::read(path).with_context(|| format!("could not read {}", path))?;
+                    let step = self.emit_identity_step(store, source, &data)?;
                     inputs.insert(key.into(), step);
                 }
             }

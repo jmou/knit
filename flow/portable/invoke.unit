@@ -1,5 +1,5 @@
 process=nested:python3 in/unit-to-steps.py all $(<in/target)
-in/unit-to-steps.py=file:flow/portable/unit-to-steps.py
+in/unit-to-steps.py=file:flow/std/unit-to-steps.py
 in/flow/=param:out/flow/
 in/target=param:out/target
 in/param/=param:out/param/

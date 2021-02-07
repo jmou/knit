@@ -151,7 +151,6 @@ impl FromStr for Process {
             match kind {
                 "command" => Process::Command(suffix.into()),
                 "nested" => Process::Nested(suffix.into()),
-                "composite" => Process::Composite(suffix.into()),
                 _ => bail!("unsupported process"),
             }
         } else {

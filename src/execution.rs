@@ -51,7 +51,6 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
             Process::Identity => unreachable!(), // early return from run_job
             Process::Command(command) => self.run_command(command),
             Process::Nested(command) => self.run_nested(command),
-            Process::Composite(_) => unreachable!(), // early return from run_job
         };
 
         match result {
@@ -249,43 +248,6 @@ pub(crate) fn run_job<'a, Ctx: Context<'a>>(
             source: None,
             start_ts: None,
             end_ts: None,
-        });
-    }
-
-    if let Process::Composite(unit) = job.process {
-        // TODO how to decouple from units? unify w/ nested?
-
-        let start_ts = context.local_now_with_offset();
-
-        let params: Vec<String> = job
-            .inputs
-            .into_iter()
-            .map(|(path, id)| format!("{}={}", path, id))
-            .collect();
-
-        let invocation = run_unit(context, &unit, &params)?;
-        let invocation_id = context.store().write(&invocation)?;
-        let exit_code = match invocation.status {
-            InvocationStatus::Ok => 0,
-            InvocationStatus::Fail => 1,
-        };
-        let outputs = match invocation.production {
-            Some(id) => context.store().read(&id)?.outputs,
-            None => HashMap::new(),
-        };
-
-        return Ok(Production {
-            job: *job_id,
-            exit_code,
-            outputs,
-            log: None,
-            invocation: Some(invocation_id),
-            cache: None,
-            start_ts: Some(start_ts),
-            end_ts: Some(context.local_now_with_offset()),
-            // populated by run-plan
-            dependencies: HashMap::new(),
-            source: None,
         });
     }
 

@@ -1,2 +1,5 @@
-process=composite:flow/composite/upper.unit
-in/input=inline:xyz
+process=nested:python3 in/unit-to-steps.py all $(<in/target)
+in/unit-to-steps.py=file:flow/std/unit-to-steps.py
+in/flow/=file:flow/
+in/target=inline:flow/composite/upper.unit
+in/param/input=inline:xyz
