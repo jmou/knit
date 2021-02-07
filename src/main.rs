@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io;
 use std::process::exit;
 
+use compat::context::RealEnvironment;
 use stable_eyre::eyre::{anyhow, Result};
 use structopt::StructOpt;
 use strum::{EnumString, IntoStaticStr};
@@ -25,7 +26,7 @@ enum Command {
     RunPlan {
         plan_path: String,
     },
-    RunFlow {
+    RunUnit {
         unit: String,
         params: Vec<String>,
     },
@@ -52,9 +53,10 @@ enum ObjectType {
 fn main() -> Result<()> {
     let command = Command::from_args();
     let store = cas::Store(Box::new(GitStore {}));
+    let env = RealEnvironment::new(&store);
     match command {
         Command::RunJob { job_id } => {
-            let production = execution::run_job(&store, &job_id)?;
+            let production = execution::run_job(&env, &job_id)?;
             attributes::to_writer(&mut io::stdout(), &production)?;
             if production.exit_code != 0 {
                 exit(production.exit_code)
@@ -62,15 +64,15 @@ fn main() -> Result<()> {
         }
         Command::RunPlan { plan_path } => {
             let plan = Plan::from_reader(Box::new(File::open(plan_path)?))?;
-            let invocation = execution::run_plan(&store, plan)?;
+            let invocation = execution::run_plan(&env, plan)?;
             let invocation_id = store.write(&invocation)?;
             println!("{}", invocation_id);
             if invocation.status != InvocationStatus::Ok {
                 exit(1);
             }
         }
-        Command::RunFlow { unit, params } => {
-            let invocation = execution::run_flow(&store, &unit, &params)?;
+        Command::RunUnit { unit, params } => {
+            let invocation = execution::run_unit(&env, &unit, &params)?;
             let invocation_id = store.write(&invocation)?;
             println!("{}", invocation_id);
             if invocation.status != InvocationStatus::Ok {

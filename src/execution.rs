@@ -1,139 +1,25 @@
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fs::{self, File};
 use std::hash::Hash;
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::io::{self, prelude::*};
 
 use chrono::prelude::*;
 use stable_eyre::eyre::{anyhow, bail, ensure, Result};
-use tempfile::TempDir;
-use walkdir::WalkDir;
 
-use crate::cas;
 use crate::compat::attributes::{self, Attributes};
-use crate::compat::shell;
+use crate::compat::context::{Context, WorkDir};
 use crate::object::*;
 
-#[cfg(unix)]
-fn exit_status_to_code(exit_status: ExitStatus) -> i32 {
-    use std::os::unix::process::ExitStatusExt;
-    if let Some(code) = exit_status.code() {
-        code
-    } else if let Some(signal) = exit_status.signal() {
-        -signal
-    } else {
-        unreachable!("child process must be exited or signaled")
-    }
-}
-
-#[cfg(not(unix))]
-fn exit_status_to_code(exit_status: ExitStatus) -> i32 {
-    if let Some(code) = exit_status.code() {
-        code
-    } else {
-        unreachable!("child process must be exited")
-    }
-}
-
-// https://github.com/chronotope/chrono/issues/104
-fn local_now_with_offset() -> DateTime<FixedOffset> {
-    let now = Local::now();
-    now.with_timezone(now.offset())
-}
-
-struct WorkDir {
-    dir: TempDir,
-}
-
-impl WorkDir {
-    fn new() -> Result<Self> {
-        let dir = tempfile::Builder::new().prefix("job-").tempdir_in("gen")?;
-        Ok(WorkDir { dir })
-    }
-
-    fn path(&self) -> &Path {
-        self.dir.path()
-    }
-
-    fn create(&self, relpath: impl AsRef<Path>) -> Result<File> {
-        ensure!(
-            relpath.as_ref().is_relative(),
-            "path not relative to workdir"
-        );
-        if let Some(parent) = relpath.as_ref().parent() {
-            fs::create_dir_all(self.dir.path().join(parent))?;
-        }
-        Ok(File::create(self.dir.path().join(relpath))?)
-    }
-
-    fn create_dir(&self, relpath: impl AsRef<Path>) -> Result<()> {
-        ensure!(
-            relpath.as_ref().is_relative(),
-            "path not relative to workdir"
-        );
-        fs::create_dir(self.dir.path().join(relpath))?;
-        Ok(())
-    }
-
-    fn is_dir(&self, relpath: impl AsRef<Path>) -> bool {
-        relpath.as_ref().is_relative() && self.dir.path().join(relpath).is_dir()
-    }
-
-    fn retain(self) -> PathBuf {
-        self.dir.into_path()
-    }
-
-    fn scan_files(
-        &self,
-        relpath: impl AsRef<Path>,
-    ) -> Result<impl IntoIterator<Item = (String, PathBuf)>> {
-        assert!(relpath.as_ref().is_relative());
-        let mut files = Vec::new();
-        let root = self.dir.path().join(relpath);
-        for entry in WalkDir::new(&root) {
-            let entry = entry?;
-            if !entry.file_type().is_file() {
-                continue;
-            }
-            let stripped = entry.path().strip_prefix(&root)?;
-            if let Some(key) = stripped.to_str() {
-                files.push((key.to_owned(), entry.path().to_owned()));
-            }
-        }
-        Ok(files)
-    }
-
-    pub fn run_with_envs<S, E, K, V>(&self, command: S, envs: E) -> Result<(i32, Vec<u8>)>
-    where
-        S: AsRef<OsStr>,
-        E: IntoIterator<Item = (K, V)>,
-        K: AsRef<OsStr>,
-        V: AsRef<OsStr>,
-    {
-        let output = Command::new("/bin/bash")
-            .arg("-c")
-            .arg(command)
-            .current_dir(self.dir.path())
-            .envs(envs)
-            .stderr(Stdio::inherit())
-            .output()?;
-        let exit_code = exit_status_to_code(output.status);
-        Ok((exit_code, output.stdout))
-    }
-}
-
-struct JobRunner<'a> {
-    store: &'a cas::Store,
-    workdir: WorkDir,
+struct JobRunner<'a, Ctx: Context<'a>> {
+    context: &'a Ctx,
+    workdir: Ctx::WorkDir,
     envs: Attributes,
     start_ts: DateTime<FixedOffset>,
 }
 
-impl<'a> JobRunner<'a> {
-    fn from_job(store: &'a cas::Store, job: &Job) -> Result<Self> {
-        let workdir = WorkDir::new()?;
+impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
+    fn from_job(context: &'a Ctx, job: &Job) -> Result<Self> {
+        let workdir = context.new_workdir()?;
         let mut job_buf = Vec::new();
         attributes::to_writer(&mut job_buf, job)?;
         io::copy(&mut job_buf.as_slice(), &mut workdir.create("job")?)?;
@@ -141,7 +27,7 @@ impl<'a> JobRunner<'a> {
         for (input_path, input_id) in job.inputs.iter() {
             let mut input_file = workdir.create(input_path)?;
             if input_path.starts_with("in/") {
-                let mut reader = store.read_resource(input_id)?;
+                let mut reader = context.store().read_resource(input_id)?;
                 io::copy(&mut reader, &mut input_file)?;
             } else if input_path.starts_with("inref/") {
                 writeln!(input_file, "{}", input_id)?;
@@ -151,9 +37,9 @@ impl<'a> JobRunner<'a> {
         }
 
         let envs = Attributes::from_reader(&mut job_buf.as_slice())?;
-        let start_ts = local_now_with_offset();
+        let start_ts = context.local_now_with_offset();
         Ok(JobRunner {
-            store,
+            context,
             workdir,
             envs,
             start_ts,
@@ -178,7 +64,7 @@ impl<'a> JobRunner<'a> {
                     invocation,
                     cache: None,
                     start_ts: Some(self.start_ts),
-                    end_ts: Some(local_now_with_offset()),
+                    end_ts: Some(self.context.local_now_with_offset()),
                     // populated by run-plan
                     dependencies: HashMap::new(),
                     source: None,
@@ -200,7 +86,7 @@ impl<'a> JobRunner<'a> {
         } else {
             // Consider how to save logs with storage system.
             // Write stdout to file first?
-            Ok(Some(self.store.write_resource(log)?))
+            Ok(Some(self.context.store().write_resource(log)?))
         }
     }
 
@@ -224,8 +110,7 @@ impl<'a> JobRunner<'a> {
         let mut outputs = HashMap::new();
         for (filename, path) in self.workdir.scan_files("out")? {
             let key = format!("out/{}", filename);
-            let output_id = self.store.write_resource(&fs::read(path)?)?;
-            outputs.insert(key, output_id);
+            outputs.insert(key, self.context.write_output(path)?);
         }
         Ok((exit_code, outputs, log, None))
     }
@@ -287,17 +172,17 @@ impl<'a> JobRunner<'a> {
         // TODO failed check should still return Ok
         Self::check_plan(&plan, "all")?;
 
-        let invocation = run_plan(self.store, plan)?;
+        let invocation = run_plan(self.context, plan)?;
         let exit_code = match invocation.status {
             InvocationStatus::Ok => 0,
             // This is ambiguous with a failure in the nested process.
             InvocationStatus::Fail => 1,
         };
 
-        let invocation_id = self.store.write(&invocation)?;
+        let invocation_id = self.context.store().write(&invocation)?;
 
         let outputs = match invocation.production {
-            Some(id) => self.store.read(&id)?.outputs,
+            Some(id) => self.context.store().read(&id)?.outputs,
             None => HashMap::new(),
         };
 
@@ -309,7 +194,7 @@ impl<'a> JobRunner<'a> {
             steps: HashMap::new(),
         };
         for (filename, path) in self.workdir.scan_files("steps")? {
-            let mut step = Step::from_reader(&mut File::open(path)?)?;
+            let mut step = self.context.read_nested_step(path)?;
             let nested_source = format!("nested:_pos:{}", &filename);
             step.source = match step.source {
                 Some(orig_source) => Some(format!("{}@{}", orig_source, nested_source)),
@@ -329,11 +214,7 @@ impl<'a> JobRunner<'a> {
                             .to_string_lossy()
                             .to_string();
                     }
-                    // "resolve-input"
-                    let mut file_buf = Vec::new();
-                    File::open(file)?.read_to_end(&mut file_buf)?;
-                    let id = self.store.write_resource(&file_buf)?;
-                    *input = Input::Id(id);
+                    *input = Input::Id(self.context.resolve_input(file)?);
                 }
             }
 
@@ -343,8 +224,11 @@ impl<'a> JobRunner<'a> {
     }
 }
 
-pub fn run_job(store: &cas::Store, job_id: &Id<Job>) -> Result<Production> {
-    let job = store.read(job_id)?;
+pub(crate) fn run_job<'a, Ctx: Context<'a>>(
+    context: &'a Ctx,
+    job_id: &Id<Job>,
+) -> Result<Production> {
+    let job = context.store().read(job_id)?;
 
     if let Process::Identity = job.process {
         let mut outputs = HashMap::new();
@@ -371,7 +255,7 @@ pub fn run_job(store: &cas::Store, job_id: &Id<Job>) -> Result<Production> {
     if let Process::Composite(unit) = job.process {
         // TODO how to decouple from units? unify w/ nested?
 
-        let start_ts = local_now_with_offset();
+        let start_ts = context.local_now_with_offset();
 
         let params: Vec<String> = job
             .inputs
@@ -379,14 +263,14 @@ pub fn run_job(store: &cas::Store, job_id: &Id<Job>) -> Result<Production> {
             .map(|(path, id)| format!("{}={}", path, id))
             .collect();
 
-        let invocation = run_flow(store, &unit, &params)?;
-        let invocation_id = store.write(&invocation)?;
+        let invocation = run_unit(context, &unit, &params)?;
+        let invocation_id = context.store().write(&invocation)?;
         let exit_code = match invocation.status {
             InvocationStatus::Ok => 0,
             InvocationStatus::Fail => 1,
         };
         let outputs = match invocation.production {
-            Some(id) => store.read(&id)?.outputs,
+            Some(id) => context.store().read(&id)?.outputs,
             None => HashMap::new(),
         };
 
@@ -398,14 +282,14 @@ pub fn run_job(store: &cas::Store, job_id: &Id<Job>) -> Result<Production> {
             invocation: Some(invocation_id),
             cache: None,
             start_ts: Some(start_ts),
-            end_ts: Some(local_now_with_offset()),
+            end_ts: Some(context.local_now_with_offset()),
             // populated by run-plan
             dependencies: HashMap::new(),
             source: None,
         });
     }
 
-    let runtime = JobRunner::from_job(store, &job)?;
+    let runtime = JobRunner::from_job(context, &job)?;
     let production = runtime.produce(job_id, &job.process)?;
 
     Ok(production)
@@ -506,12 +390,12 @@ impl Scheduler {
     }
 }
 
-struct StepRunner<'a> {
-    store: &'a cas::Store,
-    step: &'a Step,
+struct StepRunner<'a, 'b, Ctx: Context<'a>> {
+    context: &'a Ctx,
+    step: &'b Step,
 }
 
-impl<'a> StepRunner<'a> {
+impl<'a, 'b, Ctx: Context<'a>> StepRunner<'a, 'b, Ctx> {
     fn to_job(&self) -> Result<Id<Job>> {
         let mut inputs = HashMap::new();
         for (path, input) in self.step.inputs.iter() {
@@ -522,7 +406,7 @@ impl<'a> StepRunner<'a> {
                 Input::Value(value) => {
                     // TODO when this is changed, cache still hits
                     let terminated = format!("{}\n", value);
-                    let id = self.store.write_resource(terminated.as_bytes())?;
+                    let id = self.context.store().write_resource(terminated.as_bytes())?;
                     inputs.insert(path.clone(), id);
                 }
                 _ => panic!("unresolved input"),
@@ -534,7 +418,7 @@ impl<'a> StepRunner<'a> {
             inputs,
         };
 
-        self.store.write(&job)
+        self.context.store().write(&job)
     }
 
     fn run_job(&mut self, job_id: &Id<Job>) -> Result<(Id<Production>, Production)> {
@@ -544,7 +428,7 @@ impl<'a> StepRunner<'a> {
             self.step.source.as_deref().unwrap_or("")
         );
 
-        let mut production = run_job(self.store, job_id)?;
+        let mut production = run_job(self.context, job_id)?;
         production.source = self.step.source.clone();
         for (path, &dependency) in self.step.dependencies.iter() {
             production
@@ -552,8 +436,8 @@ impl<'a> StepRunner<'a> {
                 .insert(path[1..].to_string(), dependency); // remove leading _
         }
 
-        let production_id = self.store.write(&production)?;
-        shell::write_job_cache(job_id, &production_id)?;
+        let production_id = self.context.store().write(&production)?;
+        self.context.write_job_cache(job_id, &production_id)?;
 
         Ok((production_id, production))
     }
@@ -572,18 +456,18 @@ fn hashmap_equals<K: Eq + Hash, V: PartialEq>(a: &HashMap<K, V>, b: &HashMap<K, 
 }
 
 // TODO allow manual jobs
-pub fn run_plan(store: &cas::Store, plan: Plan) -> Result<Invocation> {
-    let initial_plan = store.write(&plan)?;
+pub(crate) fn run_plan<'a, Ctx: Context<'a>>(context: &'a Ctx, plan: Plan) -> Result<Invocation> {
+    let initial_plan = context.store().write(&plan)?;
 
     let mut scheduler = Scheduler { plan };
     while let Some((pos, step)) = scheduler.schedule_step() {
-        let mut runner = StepRunner { store, step };
+        let mut runner = StepRunner { context, step };
         let job_id = runner.to_job()?;
 
-        let (production_id, production) = match shell::read_job_cache(&job_id)? {
+        let (production_id, production) = match context.read_job_cache(&job_id)? {
             Some(mut production_id) => {
                 // Cache hit handling is quite messy.
-                let mut production = store.read(&production_id)?;
+                let mut production = context.store().read(&production_id)?;
                 // Compute expected production dependencies.
                 let mut dependencies = HashMap::new();
                 for (path, &dependency) in step.dependencies.iter() {
@@ -595,7 +479,7 @@ pub fn run_plan(store: &cas::Store, plan: Plan) -> Result<Invocation> {
                     production.dependencies = dependencies;
                     production.source = step.source.clone();
                     production.cache = Some(production_id);
-                    production_id = store.write(&production)?;
+                    production_id = context.store().write(&production)?;
                 }
                 (production_id, production)
             }
@@ -615,7 +499,7 @@ pub fn run_plan(store: &cas::Store, plan: Plan) -> Result<Invocation> {
     }
 
     let (plan, productions) = scheduler.reduce_productions();
-    let annotated_plan = store.write(&plan)?;
+    let annotated_plan = context.store().write(&plan)?;
 
     if productions.len() == 1 {
         for step in plan.steps.values() {
@@ -643,30 +527,25 @@ pub fn run_plan(store: &cas::Store, plan: Plan) -> Result<Invocation> {
     })
 }
 
-pub fn run_flow(store: &cas::Store, unit: &str, params: &[String]) -> Result<Invocation> {
-    let mut plan = Plan::from_unit_file(store, unit, "main")?;
+pub(crate) fn run_unit<'a, Ctx: Context<'a>>(
+    context: &'a Ctx,
+    unit: &str,
+    params: &[String],
+) -> Result<Invocation> {
+    // TODO fold in with run-portable
+    let mut plan = Plan::from_unit_file(context.store(), unit, "main")?;
 
     // Avoid populating an orphan param step.
-    let param_dependency = plan
+    let has_param_dependency = plan
         .steps
         .values()
         .flat_map(|step| step.inputs.values())
         .any(|input| matches!(input, Input::Pos(pos, _) if pos == "_param"));
-    if param_dependency {
-        let unit = "gen/param.unit";
-        {
-            let mut file = File::create(unit)?;
-            file.write_all(b"process=identity\n")?;
-            for param in params.iter() {
-                file.write_all(param.as_bytes())?;
-                file.write_all(b"\n")?;
-            }
-        }
-        let param_plan = Plan::from_unit_file(store, unit, "_param")?;
-        plan.steps.extend(param_plan.steps);
+    if has_param_dependency {
+        plan.steps.extend(context.params_to_steps(params)?);
     } else if !params.is_empty() {
         eprintln!("warn: parameters specified for non-parameterized flow");
     }
 
-    run_plan(store, plan)
+    run_plan(context, plan)
 }
