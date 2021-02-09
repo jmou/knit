@@ -16,7 +16,7 @@ unwrap() {
 }
 
 # Hardcode rust because shell implementation doesn't work with inline inputs.
-if invocation=$(cargo run -q run-unit flow/portable/invoke.unit in/flow/=file:$root in/target=inline:$target "$@"); then
+if invocation=$(./rust run-unit flow/portable/invoke.unit in/flow/=file:$root in/target=inline:$target "$@"); then
     unwrap $invocation production
 elif [[ -n $invocation ]]; then
     unwrap $invocation partial_production:0

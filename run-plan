@@ -5,7 +5,7 @@
 plan=$1
 
 if [[ $USE_RUST -gt 0 ]]; then
-    exec cargo run -q run-plan $plan
+    exec ./rust run-plan $plan
 fi
 
 set -o pipefail

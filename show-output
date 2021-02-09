@@ -6,7 +6,7 @@ production_or_invocation=$1
 path=$2
 
 if [[ $USE_RUST -gt 0 ]]; then
-    exec cargo run -q show-output $production_or_invocation $path
+    exec ./rust show-output $production_or_invocation $path
 fi
 
 # As a convenience, allow the user to specify an actual file in gen/out/, since
