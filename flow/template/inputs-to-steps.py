@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import subprocess
 
 
@@ -12,14 +13,15 @@ visited = set()
 
 # write params
 if os.path.isdir('in/param'):
-    with open('steps/_param', 'w') as fh:
+    shutil.copytree('in/param', 'out/param')
+    with create('out/steps/_param', 'w') as fh:
         print('process=identity', file=fh)
-        for dirpath, _, filenames in os.walk('in/param'):
+        for dirpath, _, filenames in os.walk('out/param'):
             for filename in filenames:
                 filepath = os.path.join(dirpath, filename)
-                assert filepath.startswith('in/param/')
-                inpath = 'in/' + filepath[9:]
-                print(f'{inpath}=file:./{filepath}', file=fh)
+                assert filepath.startswith('out/param/')
+                inpath = 'in/' + filepath[10:]
+                print(f'{inpath}=file:{filepath}', file=fh)
     visited.add('_param')
 
 frontier = [t.strip() for t in open('in/targets')]
@@ -45,15 +47,15 @@ while frontier:
 
     # write the step and build
     visited.add(target)
-    with create(f'builds/{target}', 'wb') as fh:
+    with create(f'out/builds/{target}', 'wb') as fh:
         fh.write(build)
-    with create(f'steps/{target}', 'w') as fh:
+    with create(f'out/steps/{target}', 'w') as fh:
         # TODO remove stdout if empty
         print('process=command:chmod +x in/driver && '
-              './in/driver in/build > out/-', file=fh)
+              'in/driver in/build > out/-', file=fh)
         driver = open(f'inref/drivers/{extension}').read().strip()
         print(f'in/driver={driver}', file=fh)
-        print(f'in/build=file:./builds/{target}', file=fh)
+        print(f'in/build=file:out/builds/{target}', file=fh)
         for req in reqs:
             print(req, file=fh)
             match = re.fullmatch(r'in/[^=]*=_pos:([^:]*):.*', req)
@@ -61,7 +63,7 @@ while frontier:
                 frontier.append(match[1])
 
 # copy outputs to all
-with open('steps/all', 'w') as fh:
+with open('out/steps/all', 'w') as fh:
     print('process=identity', file=fh)
     for step in visited:
         print(f'in/{step}/=_pos:{step}:out/', file=fh)
