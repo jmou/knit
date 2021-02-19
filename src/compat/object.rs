@@ -146,6 +146,8 @@ impl FromStr for Process {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == "identity" {
             return Ok(Process::Identity);
+        } else if s == "dynamic" {
+            return Ok(Process::Dynamic);
         }
         let process = if let Some((kind, suffix)) = s.split_once_ext(':') {
             match kind {

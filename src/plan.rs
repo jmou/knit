@@ -7,7 +7,7 @@ use std::io::{prelude::*, BufReader};
 use std::str;
 
 use sha1::Digest;
-use stable_eyre::eyre::{anyhow, bail, Context, Result};
+use stable_eyre::eyre::{anyhow, bail, ensure, Context, Result};
 use walkdir::WalkDir;
 
 use crate::attributes::StrExt;
@@ -159,5 +159,38 @@ impl Plan {
         };
         plan.translate_unit(store, unit, root_pos, &mut -1)?;
         Ok(plan)
+    }
+
+    pub fn check_terminal(&self, terminal: &str) -> Result<()> {
+        let mut alldeps = Vec::new();
+        let mut frontier = vec![terminal];
+        while let Some(pos) = frontier.pop() {
+            if alldeps.contains(&pos) {
+                continue;
+            }
+            alldeps.push(pos);
+            let step = self
+                .steps
+                .get(pos)
+                .ok_or_else(|| anyhow!("missing step {}", pos))?;
+            for input in step.inputs.values() {
+                if let Input::Pos(dep, _) = input {
+                    frontier.push(dep);
+                }
+            }
+        }
+
+        let extra_steps: Vec<_> = self
+            .steps
+            .keys()
+            .filter(|s| !alldeps.contains(&s.as_str()))
+            .collect();
+        ensure!(
+            extra_steps.is_empty(),
+            "{} is not the plan terminal: {:?}",
+            terminal,
+            extra_steps
+        );
+        Ok(())
     }
 }

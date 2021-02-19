@@ -1,0 +1,2 @@
+process=command:find in/inputs -type f | sort | xargs cat > out/_
+in/inputs/=unit:flow/dynamic/map.unit:out/

@@ -51,6 +51,7 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
             Process::Identity => unreachable!(), // early return from run_job
             Process::Command(command) => self.run_command(command),
             Process::Nested(command) => self.run_nested(command),
+            Process::Dynamic => unreachable!(), // early return from run_job
         };
 
         match result {
@@ -98,10 +99,6 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
         Option<Id<Resource>>,
         Option<Id<Invocation>>,
     )> {
-        if self.workdir.is_dir("inref") {
-            eprintln!("warning: inref used in command process");
-        }
-
         self.workdir.create_dir("out")?;
         let (exit_code, output) = self.workdir.run_with_envs(command, self.envs.clone())?;
         let log = self.save_log(&output)?;
@@ -114,39 +111,7 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
         Ok((exit_code, outputs, log, None))
     }
 
-    fn check_plan(plan: &Plan, terminal: &str) -> Result<()> {
-        let mut alldeps = Vec::new();
-        let mut frontier = vec![terminal];
-        while let Some(pos) = frontier.pop() {
-            if alldeps.contains(&pos) {
-                continue;
-            }
-            alldeps.push(pos);
-            let step = plan
-                .steps
-                .get(pos)
-                .ok_or_else(|| anyhow!("missing step {}", pos))?;
-            for input in step.inputs.values() {
-                if let Input::Pos(dep, _) = input {
-                    frontier.push(dep);
-                }
-            }
-        }
-
-        let extra_steps: Vec<_> = plan
-            .steps
-            .keys()
-            .filter(|s| !alldeps.contains(&s.as_str()))
-            .collect();
-        ensure!(
-            extra_steps.is_empty(),
-            "{} is not the plan terminal: {:?}",
-            terminal,
-            extra_steps
-        );
-        Ok(())
-    }
-
+    // TODO replace with dynamic
     fn run_nested(
         &mut self,
         command: impl AsRef<OsStr>,
@@ -169,7 +134,7 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
         let plan = self.plan_nested_steps()?;
         // all is hardcoded as the nested flow terminal pos.
         // TODO failed check should still return Ok
-        Self::check_plan(&plan, "all")?;
+        plan.check_terminal("all")?;
 
         let invocation = run_plan(self.context, plan)?;
         let exit_code = match invocation.status {
@@ -223,6 +188,76 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
     }
 }
 
+fn run_dynamic<'a, Ctx: Context<'a>>(
+    context: &'a Ctx,
+    job_id: &Id<Job>,
+    job: &Job,
+) -> Result<Production> {
+    let start_ts = Some(context.local_now_with_offset());
+
+    let mut steps = HashMap::new();
+    for (path, resource_id) in job.inputs.iter() {
+        if let Some(filename) = path.strip_prefix("in/steps/") {
+            let mut resource = context.store().read_resource(resource_id)?;
+            let mut step = Step::from_reader(&mut resource)?;
+            let nested_source = format!("nested:_pos:{}", filename);
+            step.source = match step.source {
+                Some(orig_source) => Some(format!("{}@{}", orig_source, nested_source)),
+                None => Some(nested_source),
+            };
+            step.pos = Some(filename.to_string());
+            for (_, input) in step.inputs.iter_mut() {
+                // Map file to corresponding input (output of previous step).
+                if let Input::File(path) = input {
+                    let suffix = path
+                        .strip_prefix("out/")
+                        .ok_or_else(|| anyhow!("file must be output"))?;
+                    let resource = job
+                        .inputs
+                        .get(&format!("in/{}", suffix))
+                        .ok_or_else(|| anyhow!("missing input"))?;
+                    *input = Input::Id(*resource);
+                }
+            }
+            steps.insert(filename.to_string(), step);
+        }
+    }
+
+    let plan = Plan { steps };
+
+    // all is hardcoded as the nested flow terminal pos.
+    // TODO failed check should still return Ok
+    plan.check_terminal("all")?;
+
+    let invocation = run_plan(context, plan)?;
+    let exit_code = match invocation.status {
+        InvocationStatus::Ok => 0,
+        InvocationStatus::Fail => 1,
+    };
+
+    let invocation_id = context.store().write(&invocation)?;
+
+    let outputs = match invocation.production {
+        Some(id) => context.store().read(&id)?.outputs,
+        None => HashMap::new(),
+    };
+
+    let production = Production {
+        job: *job_id,
+        exit_code,
+        outputs,
+        log: None,
+        invocation: Some(invocation_id),
+        cache: None,
+        start_ts,
+        end_ts: Some(context.local_now_with_offset()),
+        // populated by run-plan
+        dependencies: HashMap::new(),
+        source: None,
+    };
+    Ok(production)
+}
+
 pub(crate) fn run_job<'a, Ctx: Context<'a>>(
     context: &'a Ctx,
     job_id: &Id<Job>,
@@ -249,6 +284,10 @@ pub(crate) fn run_job<'a, Ctx: Context<'a>>(
             start_ts: None,
             end_ts: None,
         });
+    }
+
+    if let Process::Dynamic = job.process {
+        return run_dynamic(context, job_id, &job);
     }
 
     let runtime = JobRunner::from_job(context, &job)?;

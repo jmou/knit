@@ -1,0 +1,4 @@
+process=command:bash -e in/make-steps.sh
+in/make-steps.sh=file:flow/dynamic/make-steps.sh
+inref/transform.sh=file:flow/dynamic/upper.sh
+in/inputs/=unit:flow/dynamic/split.unit:out/

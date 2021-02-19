@@ -1,0 +1,2 @@
+process=command:split -l1 in/input out/
+in/input=file:flow/dynamic/input.txt

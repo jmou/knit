@@ -57,6 +57,7 @@ pub enum Process {
     Identity,
     Command(String),
     Nested(String),
+    Dynamic,
 }
 
 #[derive(Debug, PartialEq)]
