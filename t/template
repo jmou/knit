@@ -20,7 +20,7 @@ bob,8,b
 alice,3,a
 EOF
 
-invocation=$(./run-flow flow/template/param.unit in/raw/=file:flow/template/inputs.d/ in/targets=inline:param.sh)
-diff - <(./show-output $invocation out/param.sh/-) <<EOF
+invocation=$(./run-template flow/template/inputs.d/param.sh in/a=inline:x)
+diff - gen/out/param.sh/- <<EOF
 x
 EOF

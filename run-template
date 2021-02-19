@@ -1,25 +1,21 @@
 #!/bin/bash -e
 
-for target in $@; do
-    # find _ktroot from first argument
-    if [[ -z $ktroot ]]; then
-        ktroot=$(dirname $target)
-        while [[ ! -e $ktroot/_ktroot ]]; do
-            if [[ ${#ktroot} -eq 1 ]]; then
-                echo 'no _ktroot found' >&2
-                exit 1
-            fi
-            ktroot=$(dirname $ktroot)
-        done
-    fi
-    if [[ $target != $ktroot/* ]]; then
-        echo 'targets have different _ktroot?' >&2
+target=$1
+shift
+
+# map params to in/param
+set -- $(echo "$@" | sed -E 's:(^| )in/:\1in/param/:g')
+
+ktroot=$(dirname $target)
+while [[ ! -e $ktroot/_ktroot ]]; do
+    if [[ ${#ktroot} -eq 1 ]]; then
+        echo 'no _ktroot found' >&2
         exit 1
     fi
-    echo ${target#$ktroot/}
-done > >(sort > gen/targets)  # avoid subshelling loop
+    ktroot=$(dirname $ktroot)
+done
 
-if ! invocation=$(./run-flow flow/template/pipeline.unit in/raw/=file:$ktroot/ in/targets=file:gen/targets); then
+if ! invocation=$(./run-flow flow/template/pipeline.unit in/raw/=file:$ktroot/ in/targets=inline:${target#$ktroot/} "$@"); then
     echo $invocation
     exit 1
 fi
