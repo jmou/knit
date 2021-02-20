@@ -5,9 +5,14 @@
 #   in the shell implementation.
 
 import os
+import shutil
 import sys
 
 pos = 0
+
+def copy_input(path):
+    os.makedirs(os.path.dirname(f'out/{path}'), exist_ok=True)
+    return shutil.copy(path, f'out/{path}')
 
 def interpret_input(inkey, invalue):
     if ':' not in invalue:
@@ -21,10 +26,10 @@ def interpret_input(inkey, invalue):
                     filepath = os.path.join(dirpath, filename)
                     assert filepath.startswith(input_path)
                     outkey = inkey + filepath[len(input_path):]
-                    value = f'{input_type}:./{filepath}'
+                    value = f'{input_type}:{copy_input(filepath)}'
                     lines.append(f'{outkey}={value}')
             return lines
-        value = f'{input_type}:./{input_path}'
+        value = f'{input_type}:{copy_input(input_path)}'
         return [f'{inkey}={value}']
     elif input_type == 'inline':
         return [f'{inkey}={invalue}']
@@ -36,7 +41,7 @@ def interpret_input(inkey, invalue):
         raise Exception('unknown input type', input_type)
 
 def add_step(step, source, process, inputs):
-    with open(f'steps/{step}', 'w') as fh:
+    with open(f'out/steps/{step}', 'w') as fh:
         print(f'_source={source}', file=fh)
         print(f'process={process}', file=fh)
         for inline in inputs:
@@ -74,16 +79,18 @@ def translate(unit, appendsuffix=True):
 
 
 _, root_pos, unit = sys.argv
+os.mkdir('out/steps')
 os.symlink('in/flow', 'flow')  # always rooted at flow/
 translate(unit, appendsuffix=False)
 
 # write params
 if os.path.isdir('in/param'):
-    with open('steps/_param', 'w') as fh:
+    shutil.copytree('in/param', 'out/param')
+    with open('out/steps/_param', 'w') as fh:
         print('process=identity', file=fh)
-        for dirpath, _, filenames in os.walk('in/param'):
+        for dirpath, _, filenames in os.walk('out/param'):
             for filename in filenames:
                 filepath = os.path.join(dirpath, filename)
-                assert filepath.startswith('in/param/')
-                inpath = 'in/' + filepath[9:]
-                print(f'{inpath}=file:./{filepath}', file=fh)
+                assert filepath.startswith('out/param/')
+                inpath = 'in/' + filepath[10:]
+                print(f'{inpath}=file:{filepath}', file=fh)

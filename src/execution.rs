@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::hash::Hash;
 use std::io::{self, prelude::*};
 
@@ -46,38 +45,38 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
         })
     }
 
-    fn produce(mut self, job_id: &Id<Job>, process: &Process) -> Result<Production> {
-        let result = match process {
-            Process::Identity => unreachable!(), // early return from run_job
-            Process::Command(command) => self.run_command(command),
-            Process::Nested(command) => self.run_nested(command),
-            Process::Dynamic => unreachable!(), // early return from run_job
-        };
+    fn run_command(mut self, job_id: &Id<Job>, command: &str) -> Result<Production> {
+        self.workdir.create_dir("out")?;
+        // TODO failure to run should be reflected in exit code?
+        let (exit_code, output) = self.workdir.run_with_envs(command, self.envs.clone())?;
+        let log = self.save_log(&output)?;
 
-        match result {
-            Ok((exit_code, outputs, log, invocation)) => {
-                Ok(Production {
-                    job: *job_id,
-                    exit_code,
-                    outputs,
-                    log,
-                    invocation,
-                    cache: None,
-                    start_ts: Some(self.start_ts),
-                    end_ts: Some(self.context.local_now_with_offset()),
-                    // populated by run-plan
-                    dependencies: HashMap::new(),
-                    source: None,
-                })
-            }
-            Err(e) => {
-                eprintln!(
-                    "warn: job dir retained: {}",
-                    self.workdir.retain().display()
-                );
-                Err(e)
-            }
+        let mut outputs = HashMap::new();
+        for (filename, path) in self.workdir.scan_files("out")? {
+            let key = format!("out/{}", filename);
+            outputs.insert(key, self.context.write_output(path)?);
         }
+
+        if exit_code != 0 {
+            eprintln!(
+                "warn: job dir retained: {}",
+                self.workdir.retain().display()
+            );
+        }
+
+        Ok(Production {
+            job: *job_id,
+            exit_code,
+            outputs,
+            log,
+            invocation: None,
+            cache: None,
+            start_ts: Some(self.start_ts),
+            end_ts: Some(self.context.local_now_with_offset()),
+            // populated by run-plan
+            dependencies: HashMap::new(),
+            source: None,
+        })
     }
 
     fn save_log(&mut self, log: &[u8]) -> Result<Option<Id<Resource>>> {
@@ -88,103 +87,6 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
             // Write stdout to file first?
             Ok(Some(self.context.store().write_resource(log)?))
         }
-    }
-
-    fn run_command(
-        &mut self,
-        command: impl AsRef<OsStr>,
-    ) -> Result<(
-        i32,
-        HashMap<String, Id<Resource>>,
-        Option<Id<Resource>>,
-        Option<Id<Invocation>>,
-    )> {
-        self.workdir.create_dir("out")?;
-        let (exit_code, output) = self.workdir.run_with_envs(command, self.envs.clone())?;
-        let log = self.save_log(&output)?;
-
-        let mut outputs = HashMap::new();
-        for (filename, path) in self.workdir.scan_files("out")? {
-            let key = format!("out/{}", filename);
-            outputs.insert(key, self.context.write_output(path)?);
-        }
-        Ok((exit_code, outputs, log, None))
-    }
-
-    // TODO replace with dynamic
-    fn run_nested(
-        &mut self,
-        command: impl AsRef<OsStr>,
-    ) -> Result<(
-        i32,
-        HashMap<String, Id<Resource>>,
-        Option<Id<Resource>>,
-        Option<Id<Invocation>>,
-    )> {
-        // Nested flows don't really need parameterization because the
-        // command can wire inputs as parameters. But it's natural to
-        // consider if params should be exposed in some consistent way here.
-        self.workdir.create_dir("steps")?;
-        let (exit_code, output) = self.workdir.run_with_envs(command, self.envs.clone())?;
-        let log = self.save_log(&output)?;
-        if exit_code != 0 {
-            return Ok((exit_code, HashMap::new(), log, None));
-        }
-
-        let plan = self.plan_nested_steps()?;
-        // all is hardcoded as the nested flow terminal pos.
-        // TODO failed check should still return Ok
-        plan.check_terminal("all")?;
-
-        let invocation = run_plan(self.context, plan)?;
-        let exit_code = match invocation.status {
-            InvocationStatus::Ok => 0,
-            // This is ambiguous with a failure in the nested process.
-            InvocationStatus::Fail => 1,
-        };
-
-        let invocation_id = self.context.store().write(&invocation)?;
-
-        let outputs = match invocation.production {
-            Some(id) => self.context.store().read(&id)?.outputs,
-            None => HashMap::new(),
-        };
-
-        Ok((exit_code, outputs, log, Some(invocation_id)))
-    }
-
-    fn plan_nested_steps(&mut self) -> Result<Plan> {
-        let mut plan = Plan {
-            steps: HashMap::new(),
-        };
-        for (filename, path) in self.workdir.scan_files("steps")? {
-            let mut step = self.context.read_nested_step(path)?;
-            let nested_source = format!("nested:_pos:{}", &filename);
-            step.source = match step.source {
-                Some(orig_source) => Some(format!("{}@{}", orig_source, nested_source)),
-                None => Some(nested_source),
-            };
-            step.pos = Some(filename.clone());
-
-            // Kludge for relative file: resources for nested flows.
-            for input in step.inputs.values_mut() {
-                if let Input::File(file) = input {
-                    if let Some(suffix) = file.strip_prefix("./") {
-                        // Doesn't properly handle edge cases.
-                        *file = self
-                            .workdir
-                            .path()
-                            .join(suffix)
-                            .to_string_lossy()
-                            .to_string();
-                    }
-                    *input = Input::Id(self.context.resolve_input(file)?);
-                }
-            }
-
-            plan.steps.insert(filename, step);
-        }
-        Ok(plan)
     }
 }
 
@@ -264,36 +166,36 @@ pub(crate) fn run_job<'a, Ctx: Context<'a>>(
 ) -> Result<Production> {
     let job = context.store().read(job_id)?;
 
-    if let Process::Identity = job.process {
-        let mut outputs = HashMap::new();
-        for (key, value) in job.inputs {
-            ensure!(key.starts_with("in/"), "expected in/");
-            let key = "out/".to_owned() + &key[3..];
-            outputs.insert(key, value);
+    match &job.process {
+        Process::Identity => {
+            let mut outputs = HashMap::new();
+            for (key, value) in job.inputs {
+                ensure!(key.starts_with("in/"), "expected in/");
+                let key = "out/".to_owned() + &key[3..];
+                outputs.insert(key, value);
+            }
+            Ok(Production {
+                job: *job_id,
+                exit_code: 0,
+                outputs,
+                // defaults
+                dependencies: Default::default(),
+                log: None,
+                invocation: None,
+                cache: None,
+                source: None,
+                start_ts: None,
+                end_ts: None,
+            })
         }
-        return Ok(Production {
-            job: *job_id,
-            exit_code: 0,
-            outputs,
-            // defaults
-            dependencies: Default::default(),
-            log: None,
-            invocation: None,
-            cache: None,
-            source: None,
-            start_ts: None,
-            end_ts: None,
-        });
+        Process::Command(command) => {
+            let runtime = JobRunner::from_job(context, &job)?;
+            let production = runtime.run_command(job_id, command)?;
+            Ok(production)
+        }
+        Process::Nested(_) => unreachable!(), // translated into dynamic in run_plan
+        Process::Dynamic => run_dynamic(context, job_id, &job),
     }
-
-    if let Process::Dynamic = job.process {
-        return run_dynamic(context, job_id, &job);
-    }
-
-    let runtime = JobRunner::from_job(context, &job)?;
-    let production = runtime.produce(job_id, &job.process)?;
-
-    Ok(production)
 }
 
 struct Scheduler {
@@ -457,8 +359,45 @@ fn hashmap_equals<K: Eq + Hash, V: PartialEq>(a: &HashMap<K, V>, b: &HashMap<K, 
 }
 
 // TODO allow manual jobs
-pub(crate) fn run_plan<'a, Ctx: Context<'a>>(context: &'a Ctx, plan: Plan) -> Result<Invocation> {
+pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
+    context: &'a Ctx,
+    mut plan: Plan,
+) -> Result<Invocation> {
     let initial_plan = context.store().write(&plan)?;
+
+    plan.steps = plan
+        .steps
+        .into_iter()
+        .flat_map(|(pos, mut step)| {
+            if let Process::Nested(command) = step.process {
+                let command_pos = format!("{}@plan", pos);
+                let dynamic_pos = step.pos.replace(pos.clone());
+                step.process = Process::Command(command);
+                let mut dynamic_inputs = HashMap::new();
+                dynamic_inputs.insert("in/".into(), Input::Pos(command_pos.clone(), "out/".into()));
+                let dynamic_step = Step {
+                    pos: dynamic_pos,
+                    process: Process::Dynamic,
+                    exit_code: None,
+                    production: None,
+                    source: step
+                        .source
+                        .as_ref()
+                        .map(|s| format!("{}@plan", s))
+                        .or_else(|| Some("plan".into())),
+                    inputs: dynamic_inputs,
+                    dependencies: HashMap::new(),
+                };
+                // Rust doesn't allow us to return array literals here. Maybe it
+                // wouldn't work anyway because the arrays are different sizes?
+                // https://github.com/rust-lang/rust/pull/65819
+                // https://stackoverflow.com/q/59115305/13773246
+                vec![(command_pos, step), (pos, dynamic_step)]
+            } else {
+                vec![(pos, step)]
+            }
+        })
+        .collect();
 
     let mut scheduler = Scheduler { plan };
     while let Some((pos, step)) = scheduler.schedule_step() {
