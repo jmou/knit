@@ -51,6 +51,8 @@ enum ObjectType {
 }
 
 fn main() -> Result<()> {
+    stable_eyre::install()?;
+
     let command = Command::from_args();
     let store = cas::Store(Box::new(GitStore {}));
     let env = RealEnvironment::new(&store);

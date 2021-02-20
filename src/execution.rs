@@ -248,9 +248,8 @@ impl Scheduler {
                     if pos == completed_pos {
                         step.dependencies
                             .insert(format!("_dep:{}", inpath), *production_id);
-                        // TODO handle missing outputs
-                        // TODO would make more sense to evaluate (and fail) dependencies from depender
                         if inpath.ends_with('/') && outpath.ends_with('/') {
+                            // TODO handle missing outputs
                             for (outfull, &output) in production.outputs.iter() {
                                 if let Some(suffix) = outfull.strip_prefix(outpath) {
                                     let infull = inpath.to_string() + suffix;
@@ -258,8 +257,20 @@ impl Scheduler {
                                 }
                             }
                         } else {
-                            mapped_inputs
-                                .insert(inpath.clone(), Input::Id(production.outputs[outpath]));
+                            match production.outputs.get(outpath) {
+                                Some(output) => {
+                                    mapped_inputs.insert(inpath.clone(), Input::Id(*output));
+                                }
+                                // TODO would make more sense to evaluate (and fail) dependencies from depender
+                                None => panic!(
+                                    "missing output {} in step {}",
+                                    outpath,
+                                    step.source
+                                        .as_ref()
+                                        .or_else(|| step.pos.as_ref())
+                                        .map_or("<unknown>", String::as_str)
+                                ),
+                            }
                         }
                         continue;
                     }

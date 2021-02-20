@@ -121,7 +121,9 @@ impl Plan {
                                 .split_once_ext(':')
                                 .ok_or_else(|| anyhow!("expected :"))?;
                             *index += 1;
-                            let pos = self.translate_unit(store, input_unit, step, index)?;
+                            let pos = self
+                                .translate_unit(store, input_unit, step, index)
+                                .with_context(|| format!("failed to translate {}", unit))?;
                             Input::Pos(pos, path.into())
                         }
                         None => {
@@ -157,7 +159,8 @@ impl Plan {
         let mut plan = Plan {
             steps: HashMap::new(),
         };
-        plan.translate_unit(store, unit, root_pos, &mut -1)?;
+        plan.translate_unit(store, unit, root_pos, &mut -1)
+            .with_context(|| format!("failed to translate {}", unit))?;
         Ok(plan)
     }
 
