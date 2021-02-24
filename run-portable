@@ -15,8 +15,8 @@ unwrap() {
     ./kgit cat-file blob $production | grep ^invocation= | cut -d= -f2
 }
 
-# Hardcode rust because shell implementation doesn't work with inline inputs.
-if invocation=$(cargo run -q run-unit flow/portable/invoke.unit in/flow/=file:$root in/target=inline:$target "$@"); then
+unset RUN_PORTABLE
+if invocation=$(./run-flow flow/portable/invoke.unit in/flow/=file:$root in/target=inline:$target "$@"); then
     unwrap $invocation production
 elif [[ -n $invocation ]]; then
     unwrap $invocation partial_production:0

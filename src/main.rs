@@ -26,10 +26,6 @@ enum Command {
     RunPlan {
         plan_path: String,
     },
-    RunUnit {
-        unit: String,
-        params: Vec<String>,
-    },
     ShowOutput {
         production_or_invocation: UntypedId,
         path: String,
@@ -65,20 +61,12 @@ fn main() -> Result<()> {
             }
         }
         Command::RunPlan { plan_path } => {
-            let plan = Plan::from_reader(Box::new(File::open(plan_path)?))?;
+            let mut plan = Plan::from_reader(Box::new(File::open(plan_path)?))?;
+            plan.preprocess(&store)?;
             let invocation = execution::run_plan(&env, plan)?;
             let invocation_id = store.write(&invocation)?;
             println!("{}", invocation_id);
             if invocation.status != InvocationStatus::Ok {
-                exit(1);
-            }
-        }
-        Command::RunUnit { unit, params } => {
-            let invocation = execution::run_unit(&env, &unit, &params)?;
-            let invocation_id = store.write(&invocation)?;
-            println!("{}", invocation_id);
-            if invocation.status != InvocationStatus::Ok {
-                eprintln!("fail: some jobs failed");
                 exit(1);
             }
         }

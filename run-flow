@@ -10,4 +10,6 @@ if [[ -n $RUN_PORTABLE ]]; then
     fi
 fi
 
-exec cargo run -q run-unit "$@"
+# Somewhat obscure arguments when frontend is not hosted in a flow.
+./flow/frontend/unit . '' "$@" > gen/plan
+exec cargo run -q run-plan gen/plan

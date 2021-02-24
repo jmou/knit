@@ -1,6 +1,5 @@
 //! Temporary refactoring of execution context into trait.
 
-use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::prelude::*;
@@ -42,7 +41,6 @@ pub(crate) trait Context<'a> {
     // Violates Demeter's Law
     fn store(&self) -> &'a cas::Store;
     fn local_now_with_offset(&self) -> DateTime<FixedOffset>;
-    fn params_to_steps(&self, params: &[String]) -> Result<HashMap<String, Step>>;
     fn write_job_cache(&self, job_id: &Id<Job>, production_id: &Id<Production>) -> Result<()>;
     fn read_job_cache(&self, job_id: &Id<Job>) -> Result<Option<Id<Production>>>;
     fn resolve_input(&self, path: impl AsRef<Path>) -> Result<Id<Resource>>;
@@ -87,20 +85,6 @@ impl<'a> Context<'a> for RealEnvironment<'a> {
     fn local_now_with_offset(&self) -> DateTime<FixedOffset> {
         let now = Local::now();
         now.with_timezone(now.offset())
-    }
-
-    fn params_to_steps(&self, params: &[String]) -> Result<HashMap<String, Step>> {
-        let unit = "gen/param.unit";
-        {
-            let mut file = File::create(unit)?;
-            file.write_all(b"process=identity\n")?;
-            for param in params.iter() {
-                file.write_all(param.as_bytes())?;
-                file.write_all(b"\n")?;
-            }
-        }
-        let param_plan = Plan::from_unit_file(self.store, unit, "_param")?;
-        Ok(param_plan.steps)
     }
 
     fn write_job_cache(&self, job_id: &Id<Job>, production_id: &Id<Production>) -> Result<()> {

@@ -1,5 +1,0 @@
-process=nested:cp in/steps/* steps && echo -e 'process=command:cat in/a in/b > out/_\nin/a=_pos:a\nin/b=_pos:b' > steps/all
-in/steps/a=file:flow/param/a.unit
-in/steps/b=file:flow/param/b.unit
-inref/param/x=inline:nx
-inref/param/y=inline:ny

@@ -1,5 +1,5 @@
-process=nested:python3 in/unit-to-steps.py all $(<in/target)
-in/unit-to-steps.py=file:flow/std/unit-to-steps.py
+process=nested:chmod +x in/unit && in/unit in out $(<in/target) in/=file:in/param/ > out/plan
+in/unit=file:flow/frontend/unit
 in/flow/=file:flow/
 in/target=inline:flow/composite/upper.unit
 in/param/input=inline:xyz

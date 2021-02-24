@@ -1,3 +1,5 @@
+# TODO refactor as a frontend
+
 import os
 import re
 import shutil
@@ -10,18 +12,20 @@ def create(path, mode):
 
 
 visited = set()
+plan = open('out/plan', 'w')
 
 # write params
 if os.path.isdir('in/param'):
     shutil.copytree('in/param', 'out/param')
-    with create('out/steps/_param', 'w') as fh:
-        print('process=identity', file=fh)
-        for dirpath, _, filenames in os.walk('out/param'):
-            for filename in filenames:
-                filepath = os.path.join(dirpath, filename)
-                assert filepath.startswith('out/param/')
-                inpath = 'in/' + filepath[10:]
-                print(f'{inpath}=file:{filepath}', file=fh)
+    print('_pos=_param', file=plan)
+    print('process=identity', file=plan)
+    for dirpath, _, filenames in os.walk('out/param'):
+        for filename in filenames:
+            filepath = os.path.join(dirpath, filename)
+            assert filepath.startswith('out/param/')
+            inpath = 'in/' + filepath[10:]
+            print(f'{inpath}=file:{filepath[4:]}', file=plan)
+    print(file=plan)
     visited.add('_param')
 
 frontier = [t.strip() for t in open('in/targets')]
@@ -49,21 +53,23 @@ while frontier:
     visited.add(target)
     with create(f'out/builds/{target}', 'wb') as fh:
         fh.write(build)
-    with create(f'out/steps/{target}', 'w') as fh:
-        # TODO remove stdout if empty
-        print('process=command:chmod +x in/driver && '
-              'in/driver in/build > out/-', file=fh)
-        driver = open(f'inref/drivers/{extension}').read().strip()
-        print(f'in/driver={driver}', file=fh)
-        print(f'in/build=file:out/builds/{target}', file=fh)
-        for req in reqs:
-            print(req, file=fh)
-            match = re.fullmatch(r'in/[^=]*=_pos:([^:]*):.*', req)
-            if match:
-                frontier.append(match[1])
+    print(f'_pos={target}', file=plan)
+    # TODO remove stdout if empty
+    print('process=command:chmod +x in/driver && '
+          'in/driver in/build > out/-', file=plan)
+    driver = open(f'inref/drivers/{extension}').read().strip()
+    print(f'in/driver={driver}', file=plan)
+    print(f'in/build=file:builds/{target}', file=plan)
+    for req in reqs:
+        print(req, file=plan)
+        match = re.fullmatch(r'in/[^=]*=_pos:([^:]*):.*', req)
+        if match:
+            frontier.append(match[1])
+    print(file=plan)
 
-# copy outputs to all
-with open('out/steps/all', 'w') as fh:
-    print('process=identity', file=fh)
-    for step in visited:
-        print(f'in/{step}/=_pos:{step}:out/', file=fh)
+# copy outputs to main
+print('_pos=main', file=plan)
+print('process=identity', file=plan)
+for step in visited:
+    print(f'in/{step}/=_pos:{step}:out/', file=plan)
+print(file=plan)

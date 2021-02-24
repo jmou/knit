@@ -1,0 +1,109 @@
+#!/usr/bin/python3
+#
+# Translate unit to plan.
+
+import os
+import shutil
+import sys
+from collections import namedtuple
+
+
+Step = namedtuple('Step', ['process', 'inputs', 'source'])
+
+
+class PlanCompiler:
+    def __init__(self, flow_dir, copy_dir):
+        self.pos = -1
+        self.steps = {}
+        self.flow_dir = flow_dir
+        self.copy_dir = copy_dir
+
+    def copy_input(self, root, path):
+        if self.copy_dir:
+            copy_path = f'{self.copy_dir}/{path}'
+            os.makedirs(os.path.dirname(copy_path), exist_ok=True)
+            shutil.copy(f'{root}/{path}', copy_path)
+        return path
+
+    def interpret_input(self, inkey, invalue, root):
+        if ':' not in invalue:
+            return [f'{inkey}={invalue}']
+        input_type, input_path = invalue.split(':', 1)
+        if input_type == 'file':
+            if inkey.endswith('/') and input_path.endswith('/'):  # directory
+                lines = []
+                for dirpath, _, filenames in os.walk(f'{root}/{input_path}'):
+                    for filename in filenames:
+                        assert dirpath.startswith(f'{root}/')
+                        filepath = os.path.join(dirpath[len(f'{root}/'):], filename)
+                        assert filepath.startswith(input_path)
+                        outkey = inkey + filepath[len(input_path):]
+                        value = f'{input_type}:{self.copy_input(root, filepath)}'
+                        lines.append(f'{outkey}={value}')
+                return lines
+            value = f'{input_type}:{self.copy_input(root, input_path)}'
+            return [f'{inkey}={value}']
+        elif input_type == 'inline':
+            return [f'{inkey}={invalue}']
+        elif input_type == '_pos':
+            return [f'{inkey}={invalue}']
+        elif input_type == 'param':
+            # This should fail if the param resource is missing.
+            if '_param' not in self.steps:
+                raise Exception('expected param', input_path)
+            return [f'{inkey}=_pos:_param:{input_path}']
+        else:
+            raise Exception('unknown input type', input_type)
+
+    def translate(self, unit):
+        pos = f'main@{self.pos}' if self.pos >= 0 else 'main'
+        self.pos += 1
+
+        process = None
+        inputs = []
+        with open(f'{self.flow_dir}/{unit}') as fh:
+            for line in fh:
+                if line.startswith('#') or line.isspace():
+                    continue
+                key, value = line.rstrip().split('=', 1)
+                if key == 'process':
+                    process = value
+                elif key.startswith('in/') or key.startswith('inref/'):
+                    if value.startswith('unit:'):
+                        _, unit_path, artifact_path = value.split(':', 2)
+                        dep = self.translate(unit_path)
+                        value = f'_pos:{dep}:{artifact_path}'
+                    elif value.startswith('_pos:'):
+                        print(f'warning: passing through _pos input in {unit}',
+                              file=sys.stderr)
+                    inputs.extend(self.interpret_input(key, value, self.flow_dir))
+                else:
+                    raise Exception('unsupported key', key)
+
+        self.steps[pos] = Step(process, inputs, f'unit:{unit}')
+        return pos
+
+    def add_param(self, line):
+        lines = self.interpret_input(*line.split('=', 1), '.')
+        if lines:
+            step = self.steps.setdefault('_param', Step('identity', [], 'param'))
+            step.inputs.extend(lines)
+
+    def emit_plan(self, fh):
+        for pos, step in self.steps.items():
+            print(f'_pos={pos}', file=fh)
+            print(f'process={step.process}', file=fh)
+            print(f'_source={step.source}', file=fh)
+            for line in step.inputs:
+                print(line, file=fh)
+            print(file=fh)
+
+
+_, flow_dir, copy_dir, unit, *params = sys.argv
+compiler = PlanCompiler(flow_dir, copy_dir)
+
+for param in params:
+    compiler.add_param(param)
+
+compiler.translate(unit)
+compiler.emit_plan(sys.stdout)

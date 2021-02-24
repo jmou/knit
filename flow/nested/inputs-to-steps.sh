@@ -1,23 +1,37 @@
-mkdir out/steps
+exec > out/plan
+mkdir steps
 
-echo process=identity > out/steps/all
 for inpath in inref/inputs/*; do
     name="${inpath#inref/inputs/}"
 
-    echo 'process=command:cp in/drivers/$(<in/mode) out/_' > "out/steps/driver__$name"
-    echo in/mode=$(<$inpath/mode) >> "out/steps/driver__$name"
-    for driverpath in inref/drivers/*; do
-        driver=${driverpath#inref/drivers/}
-        echo in/drivers/$driver=$(<$driverpath) >> "out/steps/driver__$name"
-    done
+    if [[ ! -f "steps/driver__$name" ]]; then
+        touch "steps/driver__$name"
+        echo "_pos=driver__$name"
+        echo 'process=command:cp in/drivers/$(<in/mode) out/_'
+        echo in/mode=$(<$inpath/mode)
+        for driverpath in inref/drivers/*; do
+            driver=${driverpath#inref/drivers/}
+            echo in/drivers/$driver=$(<$driverpath)
+        done
+        echo
+    fi
 
-    echo 'process=command:chmod +x in/driver && ./in/driver in/script' > "out/steps/$name"
-    echo in/driver=_pos:driver__$name:out/_ >> "out/steps/$name"
-    echo in/script=$(<$inpath/script) >> "out/steps/$name"
+    touch steps/$name
+    echo _pos=$name
+    echo 'process=command:chmod +x in/driver && ./in/driver in/script'
+    echo in/driver=_pos:driver__$name:out/_
+    echo in/script=$(<$inpath/script)
     # TODO this should depend on the driver. would need another subflow?
     grep -Eo '\bin/inputs/(\w+)' "in/inputs/$name/script" | cut -d/ -f3- | while read -r dep; do
-        echo "in/inputs/$dep=_pos:$dep:out/_" >> "out/steps/$name"
+        echo "in/inputs/$dep=_pos:$dep:out/_"
     done
-
-    echo "in/$name=_pos:$name:out/_" >> out/steps/all
+    echo
 done
+
+echo _pos=main
+echo process=identity
+for step in steps/*; do
+    name=${step#steps/}
+    echo "in/$name=_pos:$name:out/_"
+done
+echo

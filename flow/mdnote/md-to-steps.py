@@ -14,21 +14,22 @@ def driver_ref(driver):
     with open(f'inref/drivers/{driver}') as fh:
         return fh.read().strip()
 
-def write_step(name, prereqs, driver, script):
+def make_step(name, prereqs, driver, script):
     with open(f'out/scripts/{name}', 'w') as fh:
         fh.write(script)
-    with open(f'out/steps/{name}', 'w') as fh:
-        print('process=command:chmod +x in/driver && ./in/driver', file=fh)
-        print(f'in/driver={driver_ref(driver)}', file=fh)
-        print(f'in/script=file:out/scripts/{name}', file=fh)
-        for prereq in prereqs:
-            print(f'in/inputs/{prereq}/=_pos:{prereq}:out/', file=fh)
+    step = [
+        'process=command:chmod +x in/driver && ./in/driver',
+        f'in/driver={driver_ref(driver)}',
+        f'in/script=file:scripts/{name}',
+    ]
+    for prereq in prereqs:
+        step.append(f'in/inputs/{prereq}/=_pos:{prereq}:out/')
+    return step
 
 def main():
-    os.mkdir('out/steps')
     os.mkdir('out/scripts')  # needed by scan_to_cell
     os.mkdir('out/cells')  # needed to write cellbuf
-    steps = []
+    steps = {}
     while True:
         name = scan_to_cell()
         if not name:
@@ -50,18 +51,26 @@ def main():
                 break
             script.append(line)
         script = ''.join(script)
-        write_step(name, prereqs, driver, script)
+        steps[name] = make_step(name, prereqs, driver, script)
         with open(f'out/cells/{name}', 'w') as fh:
             fh.write(''.join(cellbuf))
-        steps.append(name)
     with open('out/order', 'w') as fh:
         print('\n'.join(steps), file=fh)
-    with open('out/steps/all', 'w') as fh:
+
+    with open('out/plan', 'w') as fh:
+        for name, step in steps.items():
+            print(f'_pos={name}', file=fh)
+            for line in step:
+                print(line, file=fh)
+            print(file=fh)
+
+        print('_pos=main', file=fh)
         print('process=identity', file=fh)
-        print('in/order=file:out/order', file=fh)
+        print('in/order=file:order', file=fh)
         for name in steps:
             print(f'in/outs/{name}/=_pos:{name}:out/', file=fh)
-            print(f'in/cells/{name}=file:out/cells/{name}', file=fh)
+            print(f'in/cells/{name}=file:cells/{name}', file=fh)
+        print(file=fh)
 
 
 if __name__ == '__main__':

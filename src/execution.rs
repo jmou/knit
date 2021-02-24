@@ -5,6 +5,7 @@ use std::io::{self, prelude::*};
 use chrono::prelude::*;
 use stable_eyre::eyre::{anyhow, bail, ensure, Result};
 
+use crate::cas::Storable;
 use crate::compat::attributes::{self, Attributes};
 use crate::compat::context::{Context, WorkDir};
 use crate::object::*;
@@ -97,39 +98,32 @@ fn run_dynamic<'a, Ctx: Context<'a>>(
 ) -> Result<Production> {
     let start_ts = Some(context.local_now_with_offset());
 
-    let mut steps = HashMap::new();
-    for (path, resource_id) in job.inputs.iter() {
-        if let Some(filename) = path.strip_prefix("in/steps/") {
-            let mut resource = context.store().read_resource(resource_id)?;
-            let mut step = Step::from_reader(&mut resource)?;
-            let nested_source = format!("nested:_pos:{}", filename);
-            step.source = match step.source {
-                Some(orig_source) => Some(format!("{}@{}", orig_source, nested_source)),
-                None => Some(nested_source),
-            };
-            step.pos = Some(filename.to_string());
-            for (_, input) in step.inputs.iter_mut() {
-                // Map file to corresponding input (output of previous step).
-                if let Input::File(path) = input {
-                    let suffix = path
-                        .strip_prefix("out/")
-                        .ok_or_else(|| anyhow!("file must be output"))?;
-                    let resource = job
-                        .inputs
-                        .get(&format!("in/{}", suffix))
-                        .ok_or_else(|| anyhow!("missing input"))?;
-                    *input = Input::Id(*resource);
-                }
+    // TODO failures should just be for the process
+    let resource_id = job
+        .inputs
+        .get("in/plan")
+        .ok_or_else(|| anyhow!("missing plan"))?;
+    let resource = context.store().read_resource(resource_id)?;
+    let mut plan = Plan::from_reader(resource)?;
+    for (pos, step) in plan.steps.iter_mut() {
+        if step.source.is_none() {
+            step.source = Some(format!("nested:_pos:{}", pos));
+        }
+        for (_, input) in step.inputs.iter_mut() {
+            // Map file to corresponding input (output of previous step).
+            if let Input::File(path) = input {
+                let resource = job
+                    .inputs
+                    .get(&format!("in/{}", path))
+                    .ok_or_else(|| anyhow!(format!("missing input {}", path)))?;
+                *input = Input::Id(*resource);
             }
-            steps.insert(filename.to_string(), step);
         }
     }
 
-    let plan = Plan { steps };
-
-    // all is hardcoded as the nested flow terminal pos.
+    // main is hardcoded as the nested flow terminal pos.
     // TODO failed check should still return Ok
-    plan.check_terminal("all")?;
+    plan.check_terminal("main")?;
 
     let invocation = run_plan(context, plan)?;
     let exit_code = match invocation.status {
@@ -383,6 +377,11 @@ pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
             if let Process::Nested(command) = step.process {
                 let command_pos = format!("{}@plan", pos);
                 let dynamic_pos = step.pos.replace(pos.clone());
+                let dynamic_source = step.source;
+                step.source = dynamic_source
+                    .as_ref()
+                    .map(|s| format!("{}@plan", s))
+                    .or_else(|| Some("plan".into()));
                 step.process = Process::Command(command);
                 let mut dynamic_inputs = HashMap::new();
                 dynamic_inputs.insert("in/".into(), Input::Pos(command_pos.clone(), "out/".into()));
@@ -391,11 +390,7 @@ pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
                     process: Process::Dynamic,
                     exit_code: None,
                     production: None,
-                    source: step
-                        .source
-                        .as_ref()
-                        .map(|s| format!("{}@plan", s))
-                        .or_else(|| Some("plan".into())),
+                    source: dynamic_source,
                     inputs: dynamic_inputs,
                     dependencies: HashMap::new(),
                 };
@@ -476,27 +471,4 @@ pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
         plan: initial_plan,
         annotated_plan,
     })
-}
-
-pub(crate) fn run_unit<'a, Ctx: Context<'a>>(
-    context: &'a Ctx,
-    unit: &str,
-    params: &[String],
-) -> Result<Invocation> {
-    // TODO fold in with run-portable
-    let mut plan = Plan::from_unit_file(context.store(), unit, "main")?;
-
-    // Avoid populating an orphan param step.
-    let has_param_dependency = plan
-        .steps
-        .values()
-        .flat_map(|step| step.inputs.values())
-        .any(|input| matches!(input, Input::Pos(pos, _) if pos == "_param"));
-    if has_param_dependency {
-        plan.steps.extend(context.params_to_steps(params)?);
-    } else if !params.is_empty() {
-        eprintln!("warn: parameters specified for non-parameterized flow");
-    }
-
-    run_plan(context, plan)
 }
