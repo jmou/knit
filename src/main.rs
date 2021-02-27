@@ -28,7 +28,7 @@ enum Command {
     },
     ShowOutput {
         production_or_invocation: UntypedId,
-        path: String,
+        path: Option<String>,
     },
     Print {
         objtype: ObjectType,
@@ -74,6 +74,7 @@ fn main() -> Result<()> {
             production_or_invocation,
             path,
         } => {
+            let path = path.as_deref().unwrap_or("out/");
             // As a convenience, allow the user to specify an actual file in gen/out/,
             // since it will be easier to tab complete.
             let path = match path.strip_prefix("gen/") {
@@ -91,12 +92,20 @@ fn main() -> Result<()> {
 
             let production = store.read(&production_id)?;
 
-            let mut reader = production
-                .outputs
-                .get(path)
-                .ok_or_else(|| anyhow!("output not found"))
-                .and_then(|id| store.read_resource(id))?;
-            io::copy(&mut reader, &mut io::stdout())?;
+            if path.ends_with('/') {
+                for (out, id) in production.outputs.iter() {
+                    if out.starts_with(path) {
+                        println!("{} {}", id, out);
+                    }
+                }
+            } else {
+                let mut reader = production
+                    .outputs
+                    .get(path)
+                    .ok_or_else(|| anyhow!("output not found"))
+                    .and_then(|id| store.read_resource(id))?;
+                io::copy(&mut reader, &mut io::stdout())?;
+            }
         }
         Command::Print { objtype, id } => match objtype {
             ObjectType::Invocation => {

@@ -1,21 +1,36 @@
-#!/bin/bash -e
+#!/bin/bash -ex
 
-target=$1
+target="$1"
 shift
+
+# Hack so we can be invoked from inside the flow directory. Any file param
+# inputs will get confused.
+script_dir="$(dirname "$0")"
+if [[ ! . -ef $script_dir ]]; then
+    if [[ $target != /* ]]; then
+        target="$PWD/$target"
+    fi
+    cd "$script_dir"
+fi
+
+# Default target.
+if [[ -s $target/_ktroot ]]; then
+    target="$target/$(<"$target/_ktroot")"
+fi
 
 # map params to in/param
 set -- $(echo "$@" | sed -E 's:(^| )in/:\1in/param/:g')
 
-ktroot=$(dirname $target)
+ktroot="$(dirname "$target")"
 while [[ ! -e $ktroot/_ktroot ]]; do
     if [[ ${#ktroot} -eq 1 ]]; then
         echo 'no _ktroot found' >&2
         exit 1
     fi
-    ktroot=$(dirname $ktroot)
+    ktroot="$(dirname "$ktroot")"
 done
 
-if ! invocation=$(./run-flow flow/template/pipeline.unit in/raw/=file:$ktroot/ in/targets=inline:${target#$ktroot/} "$@"); then
+if ! invocation=$(./run-flow flow/template/pipeline.unit "in/raw/=file:$ktroot/" "in/targets=inline:${target#$ktroot/}" "$@"); then
     echo $invocation
     exit 1
 fi

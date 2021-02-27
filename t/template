@@ -12,7 +12,7 @@ b
 a
 EOF
 
-invocation=$(./run-template flow/template/inputs.d/recombine.py)
+invocation=$(./run-template flow/template/inputs.d)
 diff - gen/out/recombine.py/- <<EOF
 name,sum(score),letter
 charlie,10,c

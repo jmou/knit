@@ -18,18 +18,23 @@ class PlanCompiler:
         self.flow_dir = flow_dir
         self.copy_dir = copy_dir
 
+    # Buggy if path contains .. ?
     def copy_input(self, root, path):
         if self.copy_dir:
             copy_path = f'{self.copy_dir}/{path}'
             os.makedirs(os.path.dirname(copy_path), exist_ok=True)
             shutil.copy(f'{root}/{path}', copy_path)
-        return path
+        # Awkward absolute path special case.
+        return path if root else f'/{path}'
 
     def interpret_input(self, inkey, invalue, root):
         if ':' not in invalue:
             return [f'{inkey}={invalue}']
         input_type, input_path = invalue.split(':', 1)
         if input_type == 'file':
+            if input_path.startswith('/'):  # absolute path
+                input_path = input_path[1:]
+                root = ''
             if inkey.endswith('/') and input_path.endswith('/'):  # directory
                 lines = []
                 for dirpath, _, filenames in os.walk(f'{root}/{input_path}'):
