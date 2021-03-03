@@ -5,10 +5,10 @@ use std::io::{self, prelude::*};
 use chrono::prelude::*;
 use stable_eyre::eyre::{anyhow, bail, ensure, Result};
 
-use crate::cas::Storable;
 use crate::compat::attributes::{self, Attributes};
 use crate::compat::context::{Context, WorkDir};
 use crate::object::*;
+use crate::plan::{TextInput, TextPlan};
 
 struct JobRunner<'a, Ctx: Context<'a>> {
     context: &'a Ctx,
@@ -99,33 +99,36 @@ fn run_dynamic<'a, Ctx: Context<'a>>(
     let start_ts = Some(context.local_now_with_offset());
 
     // TODO failures should just be for the process
-    let resource_id = job
+    let plan_id = job
         .inputs
         .get("in/plan")
         .ok_or_else(|| anyhow!("missing plan"))?;
-    let resource = context.store().read_resource(resource_id)?;
-    let mut plan = Plan::from_reader(resource)?;
-    for (pos, step) in plan.steps.iter_mut() {
+    let resource = context.store().read_resource(plan_id)?;
+    let mut plan = TextPlan::from_reader(resource)?;
+    for step in plan.steps.iter_mut() {
         if step.source.is_none() {
-            step.source = Some(format!("nested:_pos:{}", pos));
+            step.source = Some(format!("nested:_pos:{}", step.pos));
         }
+        // TODO should this happen during plan conversion?
         for (_, input) in step.inputs.iter_mut() {
             // Map file to corresponding input (output of previous step).
-            if let Input::File(path) = input {
+            if let TextInput::File(path) = input {
                 let resource = job
                     .inputs
                     .get(&format!("in/{}", path))
                     .ok_or_else(|| anyhow!(format!("missing input {}", path)))?;
-                *input = Input::Id(*resource);
+                *input = TextInput::Id(*resource);
             }
         }
     }
+
+    let plan = plan.encode(context.store())?;
 
     // main is hardcoded as the nested flow terminal pos.
     // TODO failed check should still return Ok
     plan.check_terminal("main")?;
 
-    let invocation = run_plan(context, plan)?;
+    let invocation = run_plan(context, plan, plan_id)?;
     let exit_code = match invocation.status {
         InvocationStatus::Ok => 0,
         InvocationStatus::Fail => 1,
@@ -311,12 +314,6 @@ impl<'a, 'b, Ctx: Context<'a>> StepRunner<'a, 'b, Ctx> {
                 Input::Id(id) => {
                     inputs.insert(path.clone(), *id);
                 }
-                Input::Value(value) => {
-                    // TODO when this is changed, cache still hits
-                    let terminated = format!("{}\n", value);
-                    let id = self.context.store().write_resource(terminated.as_bytes())?;
-                    inputs.insert(path.clone(), id);
-                }
                 _ => panic!("unresolved input"),
             }
         }
@@ -367,9 +364,8 @@ fn hashmap_equals<K: Eq + Hash, V: PartialEq>(a: &HashMap<K, V>, b: &HashMap<K, 
 pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
     context: &'a Ctx,
     mut plan: Plan,
+    plan_id: &Id<Resource>,
 ) -> Result<Invocation> {
-    let initial_plan = context.store().write(&plan)?;
-
     plan.steps = plan
         .steps
         .into_iter()
@@ -445,7 +441,6 @@ pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
     }
 
     let (plan, productions) = scheduler.reduce_productions();
-    let annotated_plan = context.store().write(&plan)?;
 
     if productions.len() == 1 {
         for step in plan.steps.values() {
@@ -454,8 +449,7 @@ pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
                     production: Some(productions[0]),
                     partial_productions: HashMap::new(),
                     status: InvocationStatus::Ok,
-                    plan: initial_plan,
-                    annotated_plan,
+                    plan: *plan_id,
                 });
             }
         }
@@ -468,7 +462,6 @@ pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
             .map(|(i, id)| (format!("partial_production:{}", i), id))
             .collect(),
         status: InvocationStatus::Fail,
-        plan: initial_plan,
-        annotated_plan,
+        plan: *plan_id,
     })
 }

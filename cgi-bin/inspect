@@ -24,7 +24,7 @@ print(f'<h2>{objid}</h2>')
 
 for key, value in attrs.items():
     if objtype == 'invocation':
-        if key in ('_annotated_plan', 'plan'):
+        if key == 'plan':
             value = f'<a href=/cgi-bin/inspect/plan/{value}>{value}</a>'
         elif key == 'production':
             value = f'<a href=/cgi-bin/inspect/production/{value}>{value}</a>'

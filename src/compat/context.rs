@@ -2,7 +2,6 @@
 
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
@@ -43,17 +42,13 @@ pub(crate) trait Context<'a> {
     fn local_now_with_offset(&self) -> DateTime<FixedOffset>;
     fn write_job_cache(&self, job_id: &Id<Job>, production_id: &Id<Production>) -> Result<()>;
     fn read_job_cache(&self, job_id: &Id<Job>) -> Result<Option<Id<Production>>>;
-    fn resolve_input(&self, path: impl AsRef<Path>) -> Result<Id<Resource>>;
-    fn read_nested_step(&self, path: impl AsRef<Path>) -> Result<Step>;
     fn write_output(&self, path: impl AsRef<Path>) -> Result<Id<Resource>>;
     fn new_workdir(&self) -> Result<Self::WorkDir>;
 }
 
 pub(crate) trait WorkDir {
-    fn path(&self) -> &Path;
     fn create(&self, relpath: impl AsRef<Path>) -> Result<File>;
     fn create_dir(&self, relpath: impl AsRef<Path>) -> Result<()>;
-    fn is_dir(&self, relpath: impl AsRef<Path>) -> bool;
     fn retain(self) -> PathBuf;
     fn scan_files(&self, relpath: impl AsRef<Path>) -> Result<Vec<(String, PathBuf)>>;
     fn run_with_envs<S, E, K, V>(&self, command: S, envs: E) -> Result<(i32, Vec<u8>)>
@@ -117,16 +112,6 @@ impl<'a> Context<'a> for RealEnvironment<'a> {
         }
     }
 
-    fn resolve_input(&self, path: impl AsRef<Path>) -> Result<Id<Resource>> {
-        let mut file_buf = Vec::new();
-        File::open(path)?.read_to_end(&mut file_buf)?;
-        self.store.write_resource(&file_buf)
-    }
-
-    fn read_nested_step(&self, path: impl AsRef<Path>) -> Result<Step> {
-        Step::from_reader(&mut File::open(path)?)
-    }
-
     fn write_output(&self, path: impl AsRef<Path>) -> Result<Id<Resource>> {
         self.store.write_resource(&fs::read(path)?)
     }
@@ -144,10 +129,6 @@ pub(crate) struct RealWorkDir {
 impl RealWorkDir {}
 
 impl WorkDir for RealWorkDir {
-    fn path(&self) -> &Path {
-        self.dir.path()
-    }
-
     fn create(&self, relpath: impl AsRef<Path>) -> Result<File> {
         ensure!(
             relpath.as_ref().is_relative(),
@@ -166,10 +147,6 @@ impl WorkDir for RealWorkDir {
         );
         fs::create_dir(self.dir.path().join(relpath))?;
         Ok(())
-    }
-
-    fn is_dir(&self, relpath: impl AsRef<Path>) -> bool {
-        relpath.as_ref().is_relative() && self.dir.path().join(relpath).is_dir()
     }
 
     fn retain(self) -> PathBuf {

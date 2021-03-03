@@ -14,9 +14,7 @@ pub struct Invocation {
     #[serde(flatten)]
     pub partial_productions: HashMap<String, Id<Production>>,
     pub status: InvocationStatus,
-    pub plan: Id<Plan>,
-    #[serde(rename = "_annotated_plan")]
-    pub annotated_plan: Id<Plan>,
+    pub plan: Id<Resource>,
 }
 
 #[derive(Debug, Serialize, PartialEq)]
@@ -65,23 +63,17 @@ pub struct Plan {
     pub steps: HashMap<String, Step>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Step {
-    #[serde(rename = "_pos")]
     pub pos: Option<String>,
     pub process: Process,
 
     // TODO DRY with Production
-    #[serde(rename = "_exit_code")]
     pub exit_code: Option<i32>,
-    #[serde(rename = "_production")]
     pub production: Option<Id<Production>>,
-    #[serde(rename = "_source")]
     pub source: Option<String>,
 
-    #[serde(flatten)]
     pub inputs: HashMap<String, Input>,
-    #[serde(flatten)]
     pub dependencies: HashMap<String, Id<Production>>,
 }
 
@@ -90,10 +82,6 @@ pub struct Step {
 pub enum Input {
     #[serde(rename = "")]
     Id(Id<Resource>),
-    File(String),
     #[serde(rename = "_pos")]
     Pos(String, String),
-    // TODO reconcile name
-    #[serde(rename = "inline")]
-    Value(String),
 }

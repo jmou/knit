@@ -3,7 +3,6 @@
 invocation=$(./run-flow flow/basic/tac.unit)
 
 diff - <(cargo run -q print invocation $invocation | cut -d= -f1) <<EOF
-_annotated_plan
 plan
 production
 status

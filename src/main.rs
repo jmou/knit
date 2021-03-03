@@ -7,10 +7,11 @@ use stable_eyre::eyre::{anyhow, Result};
 use structopt::StructOpt;
 use strum::{EnumString, IntoStaticStr};
 
-use cas::{Storable, UntypedId};
+use cas::UntypedId;
 use compat::attributes;
 use compat::cas::GitStore;
 use object::*;
+use plan::TextPlan;
 
 mod cas;
 mod compat;
@@ -61,9 +62,10 @@ fn main() -> Result<()> {
             }
         }
         Command::RunPlan { plan_path } => {
-            let mut plan = Plan::from_reader(Box::new(File::open(plan_path)?))?;
-            plan.preprocess(&store)?;
-            let invocation = execution::run_plan(&env, plan)?;
+            let plan = TextPlan::from_reader(Box::new(File::open(plan_path)?))?;
+            let plan_id = store.write_resource(&plan.to_bytes())?;
+            let plan = plan.encode(&store)?;
+            let invocation = execution::run_plan(&env, plan, &plan_id)?;
             let invocation_id = store.write(&invocation)?;
             println!("{}", invocation_id);
             if invocation.status != InvocationStatus::Ok {
