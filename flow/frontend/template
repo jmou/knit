@@ -1,9 +1,15 @@
-# TODO refactor as a frontend
+#!/usr/bin/python3
+#
+# Translate template to plan.
 
 import os
 import re
 import shutil
 import subprocess
+import sys
+
+
+_, source_root, action_root, out_root, out_dir, target, *params = sys.argv
 
 
 def create(path, mode):
@@ -12,35 +18,32 @@ def create(path, mode):
 
 
 visited = set()
-plan = open('out/plan', 'w')
+plan = sys.stdout
 
 # write params
-if os.path.isdir('in/param'):
-    shutil.copytree('in/param', 'out/param')
+if params:
     print('_pos=_param', file=plan)
     print('process=identity', file=plan)
-    for dirpath, _, filenames in os.walk('out/param'):
-        for filename in filenames:
-            filepath = os.path.join(dirpath, filename)
-            assert filepath.startswith('out/param/')
-            inpath = 'in/' + filepath[10:]
-            print(f'{inpath}=file:{filepath[4:]}', file=plan)
+    for param in params:
+        print(param, file=plan)
     print(file=plan)
     visited.add('_param')
 
-frontier = [t.strip() for t in open('in/targets')]
-raw_root = 'in/raw/'
+frontier = [target]
 while frontier:
     target = frontier.pop()
     if target in visited:
         continue
     extension = target.rsplit('.', 1)[-1]
 
-    # convert raw to reqs and build
-    converter = f'in/converters/{extension}'
-    output = subprocess.check_output(
-        f'chmod +x {converter} && {converter} < in/raw/{target}',
-        shell=True)
+    # convert source to reqs and build
+    converter = f'{action_root}/converters/{extension}'
+    if not os.access(converter, os.X_OK):
+        # TODO hardcoded /tmp
+        shutil.copy(converter, '/tmp/converter')
+        converter = '/tmp/converter'
+        os.chmod(converter, 0o755)
+    output = subprocess.check_output(f'{converter} < {source_root}/{target}', shell=True)
     # delimited by blank line
     if output.startswith(b'\n'):
         reqs = []
@@ -51,15 +54,19 @@ while frontier:
 
     # write the step and build
     visited.add(target)
-    with create(f'out/builds/{target}', 'wb') as fh:
+    with create(f'{out_root}/{out_dir}/builds/{target}', 'wb') as fh:
         fh.write(build)
     print(f'_pos={target}', file=plan)
     # TODO remove stdout if empty
     print('process=command:chmod +x in/driver && '
           'in/driver in/build > out/-', file=plan)
-    driver = open(f'inref/drivers/{extension}').read().strip()
-    print(f'in/driver={driver}', file=plan)
-    print(f'in/build=file:builds/{target}', file=plan)
+    # awkward generalized driver copying
+    driver = f'{out_root}/{out_dir}/drivers/{extension}'
+    os.makedirs(os.path.dirname(driver), exist_ok=True)
+    shutil.copy(f'{action_root}/drivers/{extension}', driver)
+    file_root = '' if out_dir == '.' else f'{out_dir}/'
+    print(f'in/driver=file:{file_root}drivers/{extension}', file=plan)
+    print(f'in/build=file:{file_root}builds/{target}', file=plan)
     for req in reqs:
         print(req, file=plan)
         match = re.fullmatch(r'in/[^=]*=_pos:([^:]*):.*', req)

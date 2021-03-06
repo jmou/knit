@@ -1,4 +1,4 @@
-#!/bin/bash -ex
+#!/bin/bash -e
 
 target="$1"
 shift
@@ -18,9 +18,6 @@ if [[ -s $target/_ktroot ]]; then
     target="$target/$(<"$target/_ktroot")"
 fi
 
-# map params to in/param
-set -- $(echo "$@" | sed -E 's:(^| )in/:\1in/param/:g')
-
 ktroot="$(dirname "$target")"
 while [[ ! -e $ktroot/_ktroot ]]; do
     if [[ ${#ktroot} -eq 1 ]]; then
@@ -30,7 +27,9 @@ while [[ ! -e $ktroot/_ktroot ]]; do
     ktroot="$(dirname "$ktroot")"
 done
 
-if ! invocation=$(./run-flow flow/template/pipeline.unit "in/raw/=file:$ktroot/" "in/targets=inline:${target#$ktroot/}" "$@"); then
+./flow/frontend/template "$ktroot" flow/template . gen/template "${target#$ktroot/}" "$@" > gen/plan
+
+if ! invocation=$(cargo run -q run-plan gen/plan); then
     echo $invocation
     exit 1
 fi
