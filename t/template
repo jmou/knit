@@ -1,6 +1,6 @@
 #!/bin/bash -ex
 
-invocation=$(./run-template flow/template/inputs.d/tac.py)
+./run-template flow/template/inputs.d/tac.py
 diff - gen/out/abc.sh/- <<EOF
 a
 b
@@ -12,7 +12,7 @@ b
 a
 EOF
 
-invocation=$(./run-template flow/template/inputs.d)
+./run-template flow/template/inputs.d
 diff - gen/out/recombine.py/- <<EOF
 name,sum(score),letter
 charlie,10,c
@@ -20,7 +20,7 @@ bob,8,b
 alice,3,a
 EOF
 
-invocation=$(./run-template flow/template/inputs.d/param.sh in/a=inline:x in/dir/=file:flow/template/inputs.d/dir/)
+./run-template flow/template/inputs.d/param.sh in/a=inline:x in/dir/=file:flow/template/inputs.d/dir/
 diff - gen/out/param.sh/- <<EOF
 x
 dir/file

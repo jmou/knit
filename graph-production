@@ -1,22 +1,29 @@
 #!/bin/bash -e
 
-if [[ -z $graphroot ]]; then
+if [[ -z $graph_recursive ]]; then
+    # accept an invocation instead
+    if [[ $# -eq 1 ]]; then
+        while IFS== read -r key value; do
+            if [[ $key = production || $key = partial_production:* ]]; then
+                set -- $@ $value
+            fi
+        done < <(./kgit cat-file blob $1)
+        # if we pushed any productions, remove the invocation
+        [[ $# -gt 1 ]] && shift || true
+    fi
+
     # strict simplifies duplicate outputs.
     echo strict digraph G {
     echo 'rankdir=BT;'
     echo 'node [shape=box,style=filled,fillcolor=white];'
-    graphroot=1 ./graph-production "$@"
+    for production in $@; do
+        graph_recursive=1 ./graph-production $production
+    done
     echo }
     exit
 fi
 
 production=$1
-# accept an invocation instead
-while IFS== read -r key value; do
-    if [[ $key = production ]]; then
-        production=$value
-    fi
-done < <(./kgit cat-file blob $production)
 
 plot_resource() {
     [[ -n $graphresources ]] || return 0
@@ -41,11 +48,12 @@ while IFS== read -r key value; do
             echo "\"$value\" -> \"$production\";"
             ;;
         invocation)
-            value=$(./kgit cat-file blob $value | grep ^production= | cut -d= -f2)
-            echo subgraph cluster_$value {
-            ./graph-production $value
-            echo }
-            echo "\"$value\" -> \"$production\";"
+            ./kgit cat-file blob $value | grep -e ^production= -e ^partial_production: | cut -d= -f2 | while read subproduction; do
+                echo subgraph cluster_$subproduction {
+                ./graph-production $subproduction
+                echo }
+                echo "\"$subproduction\" -> \"$production\";"
+            done
             ;;
         job)
             while IFS== read -r key value; do

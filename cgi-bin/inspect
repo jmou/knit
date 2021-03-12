@@ -23,21 +23,25 @@ print(f'<h1>{objtype}</h1>')
 print(f'<h2>{objid}</h2>')
 
 for key, value in attrs.items():
+    value_type = None
     if objtype == 'invocation':
         if key == 'plan':
-            value = f'<a href=/cgi-bin/inspect/plan/{value}>{value}</a>'
-        elif key == 'production':
-            value = f'<a href=/cgi-bin/inspect/production/{value}>{value}</a>'
+            value_type = 'resource'
+        elif key == 'production' or key.startswith('partial_production:'):
+            value_type = 'production'
     elif objtype == 'production':
         if key.startswith('dep:') or key == 'cache':
-            value = f'<a href=/cgi-bin/inspect/production/{value}>{value}</a>'
+            value_type = 'production'
         elif key == 'invocation':
-            value = f'<a href=/cgi-bin/inspect/invocation/{value}>{value}</a>'
+            value_type = 'invocation'
         elif key == 'job':
-            value = f'<a href=/cgi-bin/inspect/job/{value}>{value}</a>'
+            value_type = 'job'
         elif key.startswith('out/'):
-            value = f'<a href=/cgi-bin/inspect/resource/{value}>{value}</a>'
+            value_type = 'resource'
     elif objtype == 'job':
         if key.startswith('in/') or key.startswith('inref/'):
-            value = f'<a href=/cgi-bin/inspect/resource/{value}>{value}</a>'
+            value_type = 'resource'
+
+    if value_type is not None:
+        value = f'<a href=/cgi-bin/inspect/{value_type}/{value}>{value}</a>'
     print(f'<dt>{key}</dt><dd>{value}</dd>')
