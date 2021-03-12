@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fs;
 use std::io::prelude::*;
 use std::str::{self, FromStr};
 
@@ -89,6 +88,15 @@ impl TextStep {
     }
 }
 
+pub trait ResourceAccessor {
+    fn read(&self, path: &str) -> Result<Id<Resource>>;
+
+    /// Call f for each suffix enumerated from root.
+    fn for_each_file_suffix<F>(&self, root: &str, f: F) -> Result<()>
+    where
+        F: FnMut(&str, &Id<Resource>) -> Result<()>;
+}
+
 impl TextPlan {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -112,13 +120,12 @@ impl TextPlan {
         Ok(TextPlan { steps })
     }
 
-    fn make_identity_step(store: &cas::Store, source: String, data: &[u8]) -> Result<Step> {
+    fn make_identity_step(source: String, id: &Id<Resource>) -> Step {
         let name = hex::encode(sha1::Sha1::digest(source.as_bytes()));
-        let id = store.write_resource(data)?;
         let mut inputs = HashMap::new();
-        inputs.insert("in/_".into(), Input::Id(id));
+        inputs.insert("in/_".into(), Input::Id(*id));
         // This step only exists to propagate source.
-        let step = Step {
+        Step {
             pos: Some(name),
             process: Process::Identity,
             exit_code: None,
@@ -126,38 +133,66 @@ impl TextPlan {
             source: Some(source),
             inputs,
             dependencies: HashMap::new(),
-        };
-        Ok(step)
+        }
     }
 
-    pub fn encode(self, store: &cas::Store) -> Result<Plan> {
+    fn add_file_input(
+        path: &str,
+        resource_id: &Id<Resource>,
+        steps: &mut HashMap<String, Step>,
+    ) -> Input {
+        let source = format!("file:{}", path);
+        let step = Self::make_identity_step(source, resource_id);
+        let name = step.pos.clone().unwrap();
+        steps.insert(name.clone(), step);
+        Input::Pos(name, "out/_".to_string())
+    }
+
+    pub fn encode(self, accessor: &impl ResourceAccessor, store: &cas::Store) -> Result<Plan> {
         let mut steps = HashMap::new();
         for step in self.steps {
+            let step_source = step.source.as_ref().unwrap_or(&step.pos);
             let mut inputs = HashMap::new();
-            for (path, text_input) in step.inputs {
+            for (input_key, text_input) in step.inputs {
                 let input = match text_input {
                     TextInput::Id(id) => Input::Id(id),
                     TextInput::File(ref path) => {
-                        let source = format!("file:{}", path);
-                        // TODO hardcoded to filesystem
-                        let data =
-                            fs::read(path).with_context(|| format!("could not read {}", path))?;
-                        let step = Self::make_identity_step(store, source, &data)?;
-                        let name = step.pos.clone().unwrap();
-                        steps.insert(name.clone(), step);
-                        Input::Pos(name, "out/_".to_string())
+                        if input_key.ends_with('/') && path.ends_with('/') {
+                            let inputs_len = inputs.len();
+                            accessor.for_each_file_suffix(path, |suffix, resource_id| {
+                                let input = Self::add_file_input(
+                                    &format!("{}{}", path, suffix),
+                                    resource_id,
+                                    &mut steps,
+                                );
+                                inputs.insert(format!("{}{}", input_key, suffix), input);
+                                Ok(())
+                            })?;
+                            if inputs_len == inputs.len() {
+                                eprintln!(
+                                    "warn: step {} empty input directory {}",
+                                    step_source, path
+                                );
+                            }
+                            continue;
+                        }
+                        let id = accessor
+                            .read(path)
+                            .with_context(|| format!("in step {}", step_source))?;
+                        Self::add_file_input(path, &id, &mut steps)
                     }
                     TextInput::Pos(step, path) => Input::Pos(step, path),
                     TextInput::Value(mut value) => {
                         let source = format!("value:{}", value);
                         value.push('\n');
-                        let step = Self::make_identity_step(store, source, value.as_bytes())?;
+                        let id = store.write_resource(value.as_bytes())?;
+                        let step = Self::make_identity_step(source, &id);
                         let name = step.pos.clone().unwrap();
                         steps.insert(name.clone(), step);
                         Input::Pos(name, "out/_".to_string())
                     }
                 };
-                inputs.insert(path, input);
+                inputs.insert(input_key, input);
             }
             steps.insert(
                 step.pos.clone(),

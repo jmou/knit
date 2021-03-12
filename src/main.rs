@@ -2,7 +2,6 @@ use std::fs::File;
 use std::io;
 use std::process::exit;
 
-use compat::context::RealEnvironment;
 use stable_eyre::eyre::{anyhow, Result};
 use structopt::StructOpt;
 use strum::{EnumString, IntoStaticStr};
@@ -10,6 +9,7 @@ use strum::{EnumString, IntoStaticStr};
 use cas::UntypedId;
 use compat::attributes;
 use compat::cas::GitStore;
+use compat::context::RealEnvironment;
 use object::*;
 use plan::TextPlan;
 
@@ -64,7 +64,7 @@ fn main() -> Result<()> {
         Command::RunPlan { plan_path } => {
             let plan = TextPlan::from_reader(Box::new(File::open(plan_path)?))?;
             let plan_id = store.write_resource(&plan.to_bytes())?;
-            let plan = plan.encode(&store)?;
+            let plan = plan.encode(&env, &store)?;
             let invocation = execution::run_plan(&env, plan, &plan_id)?;
             let invocation_id = store.write(&invocation)?;
             println!("{}", invocation_id);

@@ -125,8 +125,6 @@ impl FromStr for Input {
                         Err(anyhow!("expected : in _pos input"))
                     }
                 }
-                // This seems like the wrong way to do this
-                "param" => Ok(Input::Pos("_param".into(), suffix.into())),
                 _ => Err(anyhow!("unknown input type: {}", prefix)),
             }
         } else {

@@ -1,0 +1,8 @@
+# Confusingly, the command is run in the command step, whose outputs are
+# available in the dynamic step. So file: param inputs are evaluated in the step
+# after the command is run.
+process=nested:cp -R in/raw/dir out/dir && chmod +x in/template && in/template in/raw in out . nested.sh in/value=inline:x in/dir/=file:dir/ > out/plan
+in/template=file:flow/frontend/template
+in/converters/=file:flow/template/converters/
+in/drivers/=file:flow/template/drivers/
+in/raw/=file:flow/template/inputs.d/

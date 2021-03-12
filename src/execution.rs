@@ -8,7 +8,7 @@ use stable_eyre::eyre::{anyhow, bail, ensure, Result};
 use crate::compat::attributes::{self, Attributes};
 use crate::compat::context::{Context, WorkDir};
 use crate::object::*;
-use crate::plan::{TextInput, TextPlan};
+use crate::plan::{ResourceAccessor, TextPlan};
 
 struct JobRunner<'a, Ctx: Context<'a>> {
     context: &'a Ctx,
@@ -91,6 +91,49 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
     }
 }
 
+impl ResourceAccessor for Job {
+    fn read(&self, path: &str) -> Result<Id<Resource>> {
+        self.inputs
+            .get(&format!("in/{}", path))
+            .cloned()
+            .ok_or_else(|| anyhow!(format!("missing input {}", path)))
+    }
+
+    fn for_each_file_suffix<F>(&self, root: &str, mut f: F) -> Result<()>
+    where
+        F: FnMut(&str, &Id<Resource>) -> Result<()>,
+    {
+        for (path, resource_id) in self.inputs.iter() {
+            if let Some(suffix) = path.strip_prefix(&format!("in/{}", root)) {
+                f(suffix, resource_id)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn try_run_dynamic<'a, Ctx: Context<'a>>(context: &'a Ctx, job: &Job) -> Result<Invocation> {
+    let plan_id = job
+        .inputs
+        .get("in/plan")
+        .ok_or_else(|| anyhow!("missing plan"))?;
+    let resource = context.store().read_resource(&plan_id)?;
+    let mut text_plan = TextPlan::from_reader(resource)?;
+    for step in text_plan.steps.iter_mut() {
+        if step.source.is_none() {
+            step.source = Some(format!("nested:_pos:{}", step.pos));
+        }
+    }
+
+    let plan = text_plan.encode(job, context.store())?;
+
+    // main is hardcoded as the nested flow terminal pos.
+    // TODO failed check should still return Ok
+    plan.check_terminal("main")?;
+
+    run_plan(context, plan, plan_id)
+}
+
 fn run_dynamic<'a, Ctx: Context<'a>>(
     context: &'a Ctx,
     job_id: &Id<Job>,
@@ -98,47 +141,28 @@ fn run_dynamic<'a, Ctx: Context<'a>>(
 ) -> Result<Production> {
     let start_ts = Some(context.local_now_with_offset());
 
-    // TODO failures should just be for the process
-    let plan_id = job
-        .inputs
-        .get("in/plan")
-        .ok_or_else(|| anyhow!("missing plan"))?;
-    let resource = context.store().read_resource(plan_id)?;
-    let mut plan = TextPlan::from_reader(resource)?;
-    for step in plan.steps.iter_mut() {
-        if step.source.is_none() {
-            step.source = Some(format!("nested:_pos:{}", step.pos));
+    // Messy error handling. Internal errors should not fail the job.
+    let (exit_code, invocation_id, outputs) = match try_run_dynamic(context, job) {
+        Ok(invocation) => {
+            let exit_code = match invocation.status {
+                InvocationStatus::Ok => 0,
+                InvocationStatus::Fail => 1,
+            };
+
+            let invocation_id = context.store().write(&invocation)?;
+
+            let outputs = match invocation.production {
+                Some(id) => context.store().read(&id)?.outputs,
+                None => HashMap::new(),
+            };
+
+            (exit_code, Some(invocation_id), outputs)
         }
-        // TODO should this happen during plan conversion?
-        for (_, input) in step.inputs.iter_mut() {
-            // Map file to corresponding input (output of previous step).
-            if let TextInput::File(path) = input {
-                let resource = job
-                    .inputs
-                    .get(&format!("in/{}", path))
-                    .ok_or_else(|| anyhow!(format!("missing input {}", path)))?;
-                *input = TextInput::Id(*resource);
-            }
+        // TODO propagate error better
+        Err(e) => {
+            eprintln!("{}", e);
+            (1, None, HashMap::new())
         }
-    }
-
-    let plan = plan.encode(context.store())?;
-
-    // main is hardcoded as the nested flow terminal pos.
-    // TODO failed check should still return Ok
-    plan.check_terminal("main")?;
-
-    let invocation = run_plan(context, plan, plan_id)?;
-    let exit_code = match invocation.status {
-        InvocationStatus::Ok => 0,
-        InvocationStatus::Fail => 1,
-    };
-
-    let invocation_id = context.store().write(&invocation)?;
-
-    let outputs = match invocation.production {
-        Some(id) => context.store().read(&id)?.outputs,
-        None => HashMap::new(),
     };
 
     let production = Production {
@@ -146,7 +170,7 @@ fn run_dynamic<'a, Ctx: Context<'a>>(
         exit_code,
         outputs,
         log: None,
-        invocation: Some(invocation_id),
+        invocation: invocation_id,
         cache: None,
         start_ts,
         end_ts: Some(context.local_now_with_offset()),
@@ -230,12 +254,12 @@ impl Scheduler {
         completed_pos: &str,
         production: Production,
         production_id: &Id<Production>,
-    ) {
+    ) -> Result<()> {
         let step = self.plan.steps.get_mut(completed_pos).unwrap();
         step.exit_code = Some(production.exit_code);
         step.production = Some(*production_id);
         if production.exit_code != 0 {
-            return;
+            return Ok(());
         }
 
         for step in self.plan.steps.values_mut() {
@@ -258,14 +282,14 @@ impl Scheduler {
                                 Some(output) => {
                                     mapped_inputs.insert(inpath.clone(), Input::Id(*output));
                                 }
-                                // TODO would make more sense to evaluate (and fail) dependencies from depender
-                                None => panic!(
-                                    "missing output {} in step {}",
-                                    outpath,
+                                None => bail!(
+                                    "step {} expects missing output {} from step {}",
                                     step.source
                                         .as_ref()
                                         .or_else(|| step.pos.as_ref())
-                                        .map_or("<unknown>", String::as_str)
+                                        .map_or("<unknown>", String::as_str),
+                                    outpath,
+                                    pos,
                                 ),
                             }
                         }
@@ -276,6 +300,7 @@ impl Scheduler {
             }
             step.inputs = mapped_inputs;
         }
+        Ok(())
     }
 
     /// Get the production roots of an execution plan. These are the roots of
@@ -364,6 +389,7 @@ fn hashmap_equals<K: Eq + Hash, V: PartialEq>(a: &HashMap<K, V>, b: &HashMap<K, 
 pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
     context: &'a Ctx,
     mut plan: Plan,
+    // confusingly, this is the TextPlan id
     plan_id: &Id<Resource>,
 ) -> Result<Invocation> {
     plan.steps = plan
@@ -437,7 +463,11 @@ pub(crate) fn run_plan<'a, Ctx: Context<'a>>(
             );
         }
 
-        scheduler.complete_step(&pos, production, &production_id);
+        // Failing to complete a step leaves unresolved steps that will fail the
+        // overall invocation.
+        if let Err(error) = scheduler.complete_step(&pos, production, &production_id) {
+            eprintln!("warn: {}", error);
+        }
     }
 
     let (plan, productions) = scheduler.reduce_productions();

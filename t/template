@@ -20,7 +20,15 @@ bob,8,b
 alice,3,a
 EOF
 
-invocation=$(./run-template flow/template/inputs.d/param.sh in/a=inline:x)
+invocation=$(./run-template flow/template/inputs.d/param.sh in/a=inline:x in/dir/=file:flow/template/inputs.d/dir/)
 diff - gen/out/param.sh/- <<EOF
 x
+dir/file
+EOF
+
+invocation=$(./run-flow flow/template/nested.unit)
+diff - <(./show-output $invocation out/nested.sh/-) <<EOF
+x
+dir/file
+dir/file
 EOF

@@ -6,3 +6,8 @@ a1
 x
 y
 EOF
+
+invocation=$(./run-flow flow/param/dir.unit in/dir/=file:flow/param/dir.d/)
+diff - <(./show-output $invocation out/_) <<EOF
+dir.d/c
+EOF

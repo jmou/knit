@@ -1,1 +1,2 @@
-cat @OUT(_param,out/a)
+cat @PARAM(a)
+cat @PARAM(dir/file)

@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
 use chrono::prelude::*;
-use stable_eyre::eyre::{ensure, Result};
+use stable_eyre::eyre::{ensure, Context as _, Result};
 use tempfile::TempDir;
 use walkdir::WalkDir;
 
 use crate::cas::{self, UntypedId};
 use crate::object::*;
+use crate::plan::ResourceAccessor;
 
 #[cfg(unix)]
 fn exit_status_to_code(exit_status: ExitStatus) -> i32 {
@@ -122,6 +123,31 @@ impl<'a> Context<'a> for RealEnvironment<'a> {
     }
 }
 
+impl<'a> ResourceAccessor for RealEnvironment<'a> {
+    fn read(&self, path: &str) -> Result<Id<Resource>> {
+        let data = fs::read(path).with_context(|| format!("could not read {}", path))?;
+        let id = self.store.write_resource(&data)?;
+        Ok(id)
+    }
+
+    fn for_each_file_suffix<F>(&self, root: &str, mut f: F) -> Result<()>
+    where
+        F: FnMut(&str, &Id<Resource>) -> Result<()>,
+    {
+        for entry in WalkDir::new(root).follow_links(true) {
+            let entry = entry?;
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let stripped = entry.path().strip_prefix(root)?;
+            let suffix = stripped.to_str().expect("non-UTF-8 path");
+            let resource_id = self.read(&format!("{}{}", root, suffix))?;
+            f(suffix, &resource_id)?;
+        }
+        Ok(())
+    }
+}
+
 pub(crate) struct RealWorkDir {
     dir: TempDir,
 }
@@ -157,7 +183,7 @@ impl WorkDir for RealWorkDir {
         assert!(relpath.as_ref().is_relative());
         let mut files = Vec::new();
         let root = self.dir.path().join(relpath);
-        for entry in WalkDir::new(&root) {
+        for entry in WalkDir::new(&root).follow_links(true) {
             let entry = entry?;
             if !entry.file_type().is_file() {
                 continue;
