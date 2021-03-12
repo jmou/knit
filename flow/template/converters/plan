@@ -1,0 +1,9 @@
+#!/bin/bash
+
+echo plan
+# Pass through any file: inputs.
+grep ^in/ $1 | cut -d= -f2 | grep file: | cut -d: -f2 | while read -r path; do
+    echo "in/files/$path=file:$path"
+done
+echo
+cat $1

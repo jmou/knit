@@ -43,7 +43,8 @@ while frontier:
         shutil.copy(converter, '/tmp/converter')
         converter = '/tmp/converter'
         os.chmod(converter, 0o755)
-    output = subprocess.check_output(f'{converter} < {source_root}/{target}', shell=True)
+    output = subprocess.check_output(f'{converter} {source_root}/{target}', shell=True)
+    is_plan = False
     # delimited by blank line
     if output.startswith(b'\n'):
         reqs = []
@@ -51,22 +52,29 @@ while frontier:
     else:
         reqs, build = output.split(b'\n\n', 1)
         reqs = reqs.decode('utf-8').split('\n')
+        if reqs[0] == 'plan':
+            is_plan = True
+            del reqs[0]
 
     # write the step and build
     visited.add(target)
     with create(f'{out_root}/{out_dir}/builds/{target}', 'wb') as fh:
         fh.write(build)
     print(f'_pos={target}', file=plan)
-    # TODO remove stdout if empty
-    print('process=command:chmod +x in/driver && '
-          'in/driver in/build > out/-', file=plan)
-    # awkward generalized driver copying
-    driver = f'{out_root}/{out_dir}/drivers/{extension}'
-    os.makedirs(os.path.dirname(driver), exist_ok=True)
-    shutil.copy(f'{action_root}/drivers/{extension}', driver)
     file_root = '' if out_dir == '.' else f'{out_dir}/'
-    print(f'in/driver=file:{file_root}drivers/{extension}', file=plan)
-    print(f'in/build=file:{file_root}builds/{target}', file=plan)
+    if is_plan:
+        print('process=dynamic', file=plan)
+        print(f'in/plan=file:{file_root}builds/{target}', file=plan)
+    else:
+        # TODO remove stdout if empty
+        print('process=command:chmod +x in/driver && '
+              'in/driver in/build > out/-', file=plan)
+        # awkward generalized driver copying
+        driver = f'{out_root}/{out_dir}/drivers/{extension}'
+        os.makedirs(os.path.dirname(driver), exist_ok=True)
+        shutil.copy(f'{action_root}/drivers/{extension}', driver)
+        print(f'in/driver=file:{file_root}drivers/{extension}', file=plan)
+        print(f'in/build=file:{file_root}builds/{target}', file=plan)
     for req in reqs:
         print(req, file=plan)
         match = re.fullmatch(r'in/[^=]*=_pos:([^:]*):.*', req)

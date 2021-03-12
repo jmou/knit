@@ -1,0 +1,5 @@
+_pos=main
+process=dynamic
+in/=file:modules/stores/fs/
+in/param/root=inline:/var/tmp/knit
+

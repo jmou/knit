@@ -16,3 +16,11 @@ EOF
 diff - /var/tmp/knit/f1d2d2f924e986ac86fdf7b36c94bcdf32beec15 <<EOF
 foo
 EOF
+
+./run-template flow/module/template/read.sh
+diff - gen/out/read.sh/- <<EOF
+file:///var/tmp/knit/e242ed3bffccdf271b7fbaf34ed72d089537b42f
+EOF
+diff - /var/tmp/knit/e242ed3bffccdf271b7fbaf34ed72d089537b42f <<EOF
+bar
+EOF

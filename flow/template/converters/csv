@@ -1,3 +1,3 @@
 #!/bin/sh
 echo  # no reqs
-cat
+cat $1
