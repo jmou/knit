@@ -9,7 +9,7 @@ use strum::{EnumString, IntoStaticStr};
 use cas::UntypedId;
 use compat::attributes;
 use compat::cas::GitStore;
-use compat::context::RealEnvironment;
+use compat::context::{DirectoryResourceAccessor, RealEnvironment};
 use object::*;
 use plan::TextPlan;
 
@@ -26,6 +26,7 @@ enum Command {
     },
     RunPlan {
         plan_path: String,
+        dir: Option<String>,
     },
     ShowOutput {
         production_or_invocation: UntypedId,
@@ -61,10 +62,11 @@ fn main() -> Result<()> {
                 exit(production.exit_code)
             }
         }
-        Command::RunPlan { plan_path } => {
+        Command::RunPlan { plan_path, dir } => {
+            let accessor = DirectoryResourceAccessor::new(dir.as_deref().unwrap_or(""), &store);
             let plan = TextPlan::from_reader(Box::new(File::open(plan_path)?))?;
             let plan_id = store.write_resource(&plan.to_bytes())?;
-            let plan = plan.encode(&env, &store)?;
+            let plan = plan.encode(&accessor, &store)?;
             let invocation = execution::run_plan(&env, plan, &plan_id)?;
             let invocation_id = store.write(&invocation)?;
             println!("{}", invocation_id);

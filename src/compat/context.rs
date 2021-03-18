@@ -123,9 +123,24 @@ impl<'a> Context<'a> for RealEnvironment<'a> {
     }
 }
 
-impl<'a> ResourceAccessor for RealEnvironment<'a> {
+pub struct DirectoryResourceAccessor<'a> {
+    dir: PathBuf,
+    store: &'a cas::Store,
+}
+
+impl<'a> DirectoryResourceAccessor<'a> {
+    pub fn new(dir: impl Into<PathBuf>, store: &'a cas::Store) -> Self {
+        Self {
+            dir: dir.into(),
+            store,
+        }
+    }
+}
+
+impl<'a> ResourceAccessor for DirectoryResourceAccessor<'a> {
     fn read(&self, path: &str) -> Result<Id<Resource>> {
-        let data = fs::read(path).with_context(|| format!("could not read {}", path))?;
+        let path = self.dir.join(path);
+        let data = fs::read(&path).with_context(|| format!("could not read {}", path.display()))?;
         let id = self.store.write_resource(&data)?;
         Ok(id)
     }
@@ -134,12 +149,13 @@ impl<'a> ResourceAccessor for RealEnvironment<'a> {
     where
         F: FnMut(&str, &Id<Resource>) -> Result<()>,
     {
-        for entry in WalkDir::new(root).follow_links(true) {
+        let fullroot = self.dir.join(root);
+        for entry in WalkDir::new(&fullroot).follow_links(true) {
             let entry = entry?;
             if !entry.file_type().is_file() {
                 continue;
             }
-            let stripped = entry.path().strip_prefix(root)?;
+            let stripped = entry.path().strip_prefix(&fullroot)?;
             let suffix = stripped.to_str().expect("non-UTF-8 path");
             let resource_id = self.read(&format!("{}{}", root, suffix))?;
             f(suffix, &resource_id)?;
