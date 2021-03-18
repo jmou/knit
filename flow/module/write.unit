@@ -1,0 +1,3 @@
+process=command:chmod +x in/store/bin/save && in/store/bin/save in/resource > out/_
+in/resource=inline:foo
+in/store/=unit:flow/module/store.unit:out/

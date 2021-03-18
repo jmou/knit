@@ -1,0 +1,13 @@
+#!/bin/bash -e
+
+declare -A attrs
+while IFS== read -r key value; do
+    attrs["$key"]="$value"
+done < "$1"
+
+if [[ ${#attrs[@]} -ne 2 || ${attrs[store]} != fs || -z ${attrs[path]} ]]; then
+    echo malformed fs resource >&2
+    exit 1
+fi
+
+echo "file://${attrs[path]}"

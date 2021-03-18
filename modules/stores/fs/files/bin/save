@@ -1,0 +1,9 @@
+#!/bin/bash -e
+
+root="$(<"${0%/*}/../root")"
+source="$1"
+
+path="$root/$(openssl dgst -sha1 -binary "$source" | xxd -p)"
+mkdir -p "$root"
+cp "$source" "$path"
+echo -e "path=$path\nstore=fs"

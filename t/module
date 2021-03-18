@@ -1,0 +1,18 @@
+#!/bin/bash -ex
+
+invocation=$(./run-flow flow/module/write.unit)
+diff - <(./show-output $invocation out/_) <<EOF
+path=/var/tmp/knit/f1d2d2f924e986ac86fdf7b36c94bcdf32beec15
+store=fs
+EOF
+diff - /var/tmp/knit/f1d2d2f924e986ac86fdf7b36c94bcdf32beec15 <<EOF
+foo
+EOF
+
+invocation=$(./run-flow flow/module/read.unit)
+diff - <(./show-output $invocation out/_) <<EOF
+file:///var/tmp/knit/f1d2d2f924e986ac86fdf7b36c94bcdf32beec15
+EOF
+diff - /var/tmp/knit/f1d2d2f924e986ac86fdf7b36c94bcdf32beec15 <<EOF
+foo
+EOF

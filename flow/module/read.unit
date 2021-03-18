@@ -1,0 +1,3 @@
+process=command:chmod +x in/store/bin/url && in/store/bin/url in/resource > out/_
+in/resource=unit:flow/module/write.unit:out/_
+in/store/=unit:flow/module/store.unit:out/

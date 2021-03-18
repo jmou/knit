@@ -1,0 +1,5 @@
+_pos=main
+process=identity
+in/bin/=file:bin/
+in/root=param:out/root
+

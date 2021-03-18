@@ -8,7 +8,7 @@ use stable_eyre::eyre::{anyhow, bail, ensure, Result};
 use crate::compat::attributes::{self, Attributes};
 use crate::compat::context::{Context, WorkDir};
 use crate::object::*;
-use crate::plan::{ResourceAccessor, TextPlan};
+use crate::plan::{ResourceAccessor, TextInput, TextPlan, TextStep};
 
 struct JobRunner<'a, Ctx: Context<'a>> {
     context: &'a Ctx,
@@ -119,9 +119,31 @@ fn try_run_dynamic<'a, Ctx: Context<'a>>(context: &'a Ctx, job: &Job) -> Result<
         .ok_or_else(|| anyhow!("missing plan"))?;
     let resource = context.store().read_resource(&plan_id)?;
     let mut text_plan = TextPlan::from_reader(resource)?;
+    let mut param_step = None;
     for step in text_plan.steps.iter_mut() {
         if step.source.is_none() {
             step.source = Some(format!("nested:_pos:{}", step.pos));
+        }
+        if step.pos == "_param" {
+            param_step.replace(step);
+        }
+    }
+    for (path, resource_id) in job.inputs.iter() {
+        if let Some(suffix) = path.strip_prefix("in/param/") {
+            if param_step.is_none() {
+                text_plan.steps.push(TextStep {
+                    pos: "_param".into(),
+                    source: None,
+                    process: Process::Identity,
+                    inputs: HashMap::new(),
+                });
+                param_step = text_plan.steps.last_mut();
+            }
+            param_step
+                .as_deref_mut()
+                .unwrap()
+                .inputs
+                .insert(format!("in/{}", suffix), TextInput::Id(*resource_id));
         }
     }
 
