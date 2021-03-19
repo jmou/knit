@@ -1,4 +1,5 @@
-cp -R in/inputs/ out/inputs
+mkdir out/files
+cp -R in/inputs/ out/files/inputs
 
 for input in in/inputs/*; do
     step=${input#in/inputs/}

@@ -94,7 +94,7 @@ impl<'a, Ctx: Context<'a>> JobRunner<'a, Ctx> {
 impl ResourceAccessor for Job {
     fn read(&self, path: &str) -> Result<Id<Resource>> {
         self.inputs
-            .get(&format!("in/{}", path))
+            .get(&format!("in/files/{}", path))
             .cloned()
             .ok_or_else(|| anyhow!(format!("missing input {}", path)))
     }
@@ -104,7 +104,7 @@ impl ResourceAccessor for Job {
         F: FnMut(&str, &Id<Resource>) -> Result<()>,
     {
         for (path, resource_id) in self.inputs.iter() {
-            if let Some(suffix) = path.strip_prefix(&format!("in/{}", root)) {
+            if let Some(suffix) = path.strip_prefix(&format!("in/files/{}", root)) {
                 f(suffix, resource_id)?;
             }
         }

@@ -1,4 +1,4 @@
-process=nested:chmod +x in/unit && in/unit in out $(<in/target) in/=file:in/param/ > out/plan
+process=nested:chmod +x in/unit && in/unit in out/files $(<in/target) in/=file:in/param/ > out/plan
 in/unit=file:flow/frontend/unit
 in/flow/=param:out/flow/
 in/target=param:out/target
