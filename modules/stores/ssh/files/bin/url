@@ -1,0 +1,13 @@
+#!/bin/bash -e
+
+declare -A attrs
+while IFS== read -r key value; do
+    attrs["$key"]="$value"
+done < "$1"
+
+if [[ ${attrs[store]} != ssh || -z ${attrs[url_path]} ]]; then
+    echo malformed ssh resource >&2
+    exit 1
+fi
+
+echo "${attrs[url_path]}"

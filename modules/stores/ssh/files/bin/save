@@ -1,0 +1,12 @@
+#!/bin/bash -e
+
+module_root="${0%/*}/.."
+ssh_base="$(<"$module_root/ssh_base")"
+url_base="$(<"$module_root/url_base")"
+source="$1"
+
+filename="$(openssl dgst -sha1 -binary "$source" | xxd -p)"
+ssh_path="$ssh_base/$filename"
+url_path="$url_base/$filename"
+rsync "$source" "$ssh_path"
+echo -e "ssh_path=$ssh_path\nstore=ssh\nurl_path=$url_path"

@@ -1,0 +1,6 @@
+_pos=main
+process=identity
+in/bin/=file:bin/
+in/ssh_base=param:out/ssh_base
+in/url_base=param:out/url_base
+
