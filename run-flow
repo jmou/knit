@@ -4,7 +4,7 @@
 
 if [[ -n $RUN_PORTABLE ]]; then
     if [[ $1 = flow/* ]]; then
-        exec ./run-portable flow/ "$@"
+        exec ./run-portable . "$@"
     else
         echo warn: downgrading to run-flow for flow outside of flow/ >&2
     fi

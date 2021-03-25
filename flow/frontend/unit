@@ -2,6 +2,7 @@
 #
 # Translate unit to plan.
 
+import distutils.dir_util
 import os
 import shutil
 import sys
@@ -31,7 +32,10 @@ class PlanCompiler:
             if src.is_file():
                 shutil.copy(src, copy_path)
             elif src.is_dir():
-                shutil.copytree(src, copy_path, symlinks=True)
+                # We may copy the same or overlapping directories. This
+                # recursive copy will overwrite in those cases.
+                # https://stackoverflow.com/a/12686557/13773246
+                distutils.dir_util.copy_tree(src, copy_path)
             else:
                 return None
         # Awkward absolute path special case.
