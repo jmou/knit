@@ -1,0 +1,45 @@
+digraph {
+    rankdir=LR;
+    node [shape=box];
+
+    {
+        node [style=filled,fillcolor=lightyellow];
+
+        // session canonicalization to detect duplicate flows?
+        "plan.knit";
+        {
+            rank=same;
+            // .knit/sessions/xxxx
+            session;
+            // .knit/cas/xx/yyyy
+            cas;
+            // .knit/jobcache/xx/yyyy
+            // .knit/jobcache/xx/yyyy.pending
+            jobcache [label="jobcache\njobstate"];
+        }
+        // .knit/workdirs/xx/yyyy/root
+        // .knit/workdirs/xx/yyyy/pid
+        workdir;
+    }
+
+    "plan.knit" -> session [label=compile];
+    "plan.knit" -> resources;
+    step -> job [label=resolve];
+    job -> session [label=record];
+    job -> jobcache [label=check];
+    session -> step [label=runnable];
+    session -> invocation [label=close];
+
+    // dispatch
+    job -> workdir [label=prepare];
+    workdir -> production [label=assemble];
+    production -> jobcache [label=complete];
+
+    {
+        edge [style=dotted,arrowhead=empty];
+        resources -> cas;
+        job -> cas;
+        production -> cas;
+        invocation -> cas;
+    }
+}

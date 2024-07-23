@@ -1,0 +1,9 @@
+#!/bin/bash -e
+
+[[ $# -eq 2 ]]
+# TODO job directory
+jobdir="$1"
+workdir="$2"
+
+ln -s "$jobdir" "$workdir/in"
+mkdir "$workdir/out"

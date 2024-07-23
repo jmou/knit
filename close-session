@@ -1,0 +1,10 @@
+#!/bin/bash -e
+
+[[ $# -eq 1 ]]
+# TODO session directory
+sessiondir="$(<$1)"
+
+cmp -s <(cd $sessiondir/inputs && ls) <(cd $sessiondir/productions && ls)
+
+# TODO invocation id
+echo "$sessiondir/productions"

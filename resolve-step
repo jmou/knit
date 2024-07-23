@@ -1,0 +1,10 @@
+#!/bin/bash -e
+
+[[ $# -eq 2 ]]
+# TODO session directory
+sessiondir="$(<$1)"
+step="$2"
+
+touch "$sessiondir/resolved/$step"
+# TODO job id
+echo "$sessiondir/inputs/$step"

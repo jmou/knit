@@ -1,0 +1,9 @@
+#!/bin/bash -ex
+
+shopt -s nullglob
+for i in .knit/sessions/*; do
+    rm -rf "$(<"$i")"
+done
+
+rm -r .knit
+mkdir -p .knit/sessions

@@ -1,0 +1,53 @@
+#!/bin/bash -e
+
+KNIT_DIR=${KNIT_DIR-.knit}
+
+[[ $# -eq 1 ]]
+job_id="$1"
+
+# TODO job directory
+hashed_job_id="$(sha256sum <<< "$1" | cut -d' ' -f1)"
+workdir="$KNIT_DIR/workdirs/${hashed_job_id:0:2}/${hashed_job_id:2}"
+
+# TODO think more carefully about workdir locks; store state in session?
+mkdir -p "$(dirname "$workdir")"
+exec 3> "$workdir.lock"
+if ! flock -n 3; then
+    echo "Job already running: $(<$workdir.lock)" >&2
+    exit 1
+fi
+if [[ -s "$workdir.lock" ]]; then
+    echo "Found stale lockfile $workdir.lock: $(<$workdir.lock)" >&2
+    truncate -s 0 "$workdir.lock"
+fi
+# TODO handle manual processes
+echo PID $$ > "$workdir.lock"
+
+rm -rf "$workdir"
+mkdir -p "$workdir"
+./prepare-workdir "$job_id" "$workdir"
+
+cd "$workdir"
+# TODO keep special .knit directory out of workdir
+mkdir out/.knit.d
+
+set +e
+$SHELL -e in/shell <&- 3>&- &> out/.knit.d/log
+rc=$?
+set -e
+
+if [[ ! -s out/.knit.d/log ]]; then
+    rm out/.knit.d/log
+fi
+echo $rc > out/.knit.d/exitcode
+if [[ $rc -eq 0 ]]; then
+    mkdir -p out/.knit/ok.d
+fi
+
+cd "$OLDPWD"
+production_id=$(./assemble-production "$job_id" "$workdir/out")
+# TODO when to keep workdirs?
+rm -rf "$workdir"
+./complete-job "$job_id" "$production_id"
+
+rm "$workdir.lock"
