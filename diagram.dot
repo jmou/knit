@@ -14,25 +14,25 @@ digraph {
             // .knit/cas/xx/yyyy
             cas;
             // .knit/jobcache/xx/yyyy
+            // TODO this seems more appropriate on the workdir
             // .knit/jobcache/xx/yyyy.pending
             jobcache [label="jobcache\njobstate"];
         }
-        // .knit/workdirs/xx/yyyy/root
-        // .knit/workdirs/xx/yyyy/pid
+        // .knit/workdirs/xx/yyyy
         workdir;
     }
 
     "plan.knit" -> session [label=compile];
     "plan.knit" -> resources;
     step -> job [label=resolve];
-    job -> session [label=record];
     job -> jobcache [label=check];
-    session -> step [label=runnable];
+    job -> step [label=record];
+    session -> step [label=list];
     session -> invocation [label=close];
 
     // dispatch
-    job -> workdir [label=prepare];
-    workdir -> production [label=assemble];
+    job -> workdir [label="unpack\nextract"];
+    workdir -> production [label="assemble\npack\nbundle"];
     production -> jobcache [label=complete];
 
     {
@@ -42,4 +42,21 @@ digraph {
         production -> cas;
         invocation -> cas;
     }
+
+    // step states
+    blocked [label="blocked\nwaiting"];
+    available [label="available\nunblocked\nresolvable\nready\nfree"];
+    prepared [label="prepared\nemployed\nopen\nactive\npending\nscheduled"];
+    blocked -> available;
+    available -> prepared [label=resolve];
+    prepared -> "recorded\nconcluded\nclosed" [label="record\nproduce\nconclude"];
+    { blocked available } -> "unresolvable\nunsatisfied\nincomplete";
+
+    // job states
+    processing [label="processing\nactive"];
+    idle -> processing -> complete;
+    processing -> canceled [label=terminate];
+    processing -> idle [label=lost];
+
+    { rank=same; blocked; idle; cas; }
 }

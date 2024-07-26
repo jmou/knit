@@ -2,9 +2,15 @@
 
 [[ $# -eq 1 ]]
 # TODO session directory
+session="$1"
 sessiondir="$(<$1)"
 
-cmp -s <(cd $sessiondir/inputs && ls) <(cd $sessiondir/productions && ls)
+cmp -s <(./list-steps --all "$session" | sort) <({ ./list-steps --recorded "$session"; ./list-steps --unresolvable "$session"; } | sort)
+
+if [[ -n $(./list-steps --unresolvable "$session") ]]; then
+    echo 'Some steps were unresolvable:' >&2
+    ./list-steps --unresolvable "$session" >&2
+fi
 
 # TODO invocation id
 echo "$sessiondir/productions"

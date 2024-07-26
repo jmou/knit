@@ -25,7 +25,7 @@ echo PID $$ > "$workdir.lock"
 
 rm -rf "$workdir"
 mkdir -p "$workdir"
-./prepare-workdir "$job_id" "$workdir"
+./unpack-job "$job_id" "$workdir"
 
 cd "$workdir"
 # TODO keep special .knit directory out of workdir
@@ -51,3 +51,5 @@ rm -rf "$workdir"
 ./complete-job "$job_id" "$production_id"
 
 rm "$workdir.lock"
+
+echo "Complete $job_id -> $production_id" >&2

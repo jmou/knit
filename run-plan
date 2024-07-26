@@ -15,14 +15,14 @@ session="$KNIT_DIR/sessions/$$"
 
 echo "Session $session" >&2
 
-# Keep runnable steps in positional args.
+# Keep available steps in positional args.
 set --
 while true; do
     if [[ $# -eq 0 ]]; then
         if ./close-session "$session"; then
             break
         fi
-        set -- $(./runnable-steps "$session")
+        set -- $(./list-steps --available "$session")
         if [[ $# -eq 0 ]]; then
             wait -n  # wait for dispatch-job
             continue
@@ -44,7 +44,7 @@ while true; do
         echo "Dispatch $job_id" >&2
         ./dispatch-job "$job_id" &
     else
-        echo "Cache hit $job_id $production_id" >&2
+        echo "Cache hit $job_id -> $production_id" >&2
         ./record-step-production "$session" "$step" "$production_id"
     fi
 done
