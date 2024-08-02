@@ -1,2 +1,5 @@
+*.o
 /.knit/
 /compile-plan
+/lexer
+/lexer.c
