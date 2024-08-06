@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "lexer.h"
+#include "util.h"
 
 enum value_tag {
     VALUE_CONSTANT,

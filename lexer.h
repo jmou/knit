@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stddef.h>
-#include <stdlib.h>
 
 enum token {
     TOKEN_COLON,
@@ -22,23 +21,6 @@ enum token {
     TOKEN_EOF,
     TOKEN_ERROR,
 };
-
-void die(const char* format, ...);
-int error(const char* format, ...);
-
-static inline void* xmalloc(size_t size) {
-    void* buf = malloc(size);
-    if (!buf)
-        die("out of memory in malloc");
-    return buf;
-}
-
-static inline void* xrealloc(void* ptr, size_t size) {
-    void* buf = realloc(ptr, size);
-    if (!buf)
-        die("out of memory in realloc");
-    return buf;
-}
 
 struct lex_input {
     char* curr;
