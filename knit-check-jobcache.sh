@@ -1,7 +1,5 @@
 #!/bin/bash -e
 
-KNIT_DIR=${KNIT_DIR-.knit}
-
 [[ $# -eq 3 ]]
 job_id="$1"
 session="$2"

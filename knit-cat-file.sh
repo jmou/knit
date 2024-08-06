@@ -1,7 +1,5 @@
 #!/bin/bash -e
 
-KNIT_DIR=${KNIT_DIR-.knit}
-
 # Assume all objects are actually git blobs; see hash-object.
 if [[ $1 != -* ]]; then
     shift

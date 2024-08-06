@@ -1,14 +1,12 @@
 #!/bin/bash -e
 
-KNIT_DIR=${KNIT_DIR-.knit}
-
 [[ $# -le 1 ]]
 plan="${1-plan.knit}"
 
 session="$KNIT_DIR/sessions/$$"
 (
     flock -n 3
-    ./compile-plan "$plan" > "$session.tmp"
+    knit-compile-plan "$plan" > "$session.tmp"
     mv "$session.tmp" "$session"
     rm "$session.lock"
 ) 3> "$session.lock"
@@ -19,10 +17,10 @@ echo "Session $session" >&2
 set --
 while true; do
     if [[ $# -eq 0 ]]; then
-        if ./close-session "$session"; then
+        if knit-close-session "$session"; then
             break
         fi
-        set -- $(./list-steps --available "$session")
+        set -- $(knit-list-steps --available "$session")
         if [[ $# -eq 0 ]]; then
             wait -n  # wait for dispatch-job
             continue
@@ -33,18 +31,18 @@ while true; do
 
     echo "Step $step" >&2
 
-    job_id=$(./resolve-step "$session" "$step")
+    job_id=$(knit-resolve-step "$session" "$step")
 
-    production_id=$(./check-jobcache "$job_id" "$session" "$step")
+    production_id=$(knit-check-jobcache "$job_id" "$session" "$step")
     # TODO crash recovery: restart job
     if [[ $production_id == queued ]]; then
         echo "Queued $job_id [$session $step]" >&2
         continue
     elif [[ $production_id == initial ]]; then
         echo "Dispatch $job_id" >&2
-        ./dispatch-job "$job_id" &
+        knit-dispatch-job "$job_id" &
     else
         echo "Cache hit $job_id -> $production_id" >&2
-        ./record-step-production "$session" "$step" "$production_id"
+        knit-record-step-production "$session" "$step" "$production_id"
     fi
 done

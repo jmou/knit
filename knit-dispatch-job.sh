@@ -1,7 +1,5 @@
 #!/bin/bash -e
 
-KNIT_DIR=${KNIT_DIR-.knit}
-
 [[ $# -eq 1 ]]
 job_id="$1"
 
@@ -22,7 +20,7 @@ fi
 echo PID $$ > "$workdir.lock"
 
 rm -rf "$workdir"
-./unpack-job "$job_id" "$workdir"
+knit-unpack-job "$job_id" "$workdir"
 mkdir "$workdir/out"
 
 cd "$workdir"
@@ -43,10 +41,10 @@ if [[ $rc -eq 0 ]]; then
 fi
 
 cd "$OLDPWD"
-production_id=$(./assemble-production "$job_id" "$workdir/out")
+production_id=$(knit-assemble-production "$job_id" "$workdir/out")
 # TODO when to keep workdirs?
 rm -rf "$workdir"
-./complete-job "$job_id" "$production_id"
+knit-complete-job "$job_id" "$production_id"
 
 rm "$workdir.lock"
 
