@@ -354,9 +354,9 @@ static void compile_plan(const char* /*plan*/, FILE* fd) {
     mksubdir("%s/productions", dir);
 
     // TODO hardcoded plan
-    char buf[] = "step a: shell\n  shell = \"mkdir out/result.d\nseq 1 3 > out/result.d/data\n\"\n\n"
-        "step b: shell\n  shell = \"cp -RL in/input.d out/result.d\"\n  a.ok.d = a:.knit/ok.d\n  input.d = a:result.d\n\n"
-        "step c: shell\n  shell = \"mkdir out/result.d && tac in/lines.d/data > out/result.d/data\n\"\n  b.ok.d = b:.knit/ok.d\n  lines.d = b:result.d";
+    char buf[] = "step a: shell\n  shell = \"seq 1 3 > out/data\n\"\n\n"
+        "step b: shell\n  shell = \"cp -RL in/* out\"\n  a.ok = a:.knit/ok\n  data = a:data\n\n"
+        "step c: shell\n  shell = \"tac in/lines > out/data\n\"\n  b.ok = b:.knit/ok\n  lines = b:data";
 
     struct lex_input in = { .curr = buf };
     static struct section plan = { 0 };

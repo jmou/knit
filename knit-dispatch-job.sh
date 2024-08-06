@@ -25,19 +25,19 @@ mkdir "$workdir/out"
 
 cd "$workdir"
 # TODO keep special .knit directory out of workdir
-mkdir out/.knit.d
+mkdir out/.knit
 
 set +e
-$SHELL -e in/shell <&- 3>&- &> out/.knit.d/log
+$SHELL -e in/shell <&- 3>&- &> out/.knit/log
 rc=$?
 set -e
 
-if [[ ! -s out/.knit.d/log ]]; then
-    rm out/.knit.d/log
+if [[ ! -s out/.knit/log ]]; then
+    rm out/.knit/log
 fi
-echo $rc > out/.knit.d/exitcode
+echo $rc > out/.knit/exitcode
 if [[ $rc -eq 0 ]]; then
-    mkdir -p out/.knit/ok.d
+    touch out/.knit/ok
 fi
 
 cd "$OLDPWD"
