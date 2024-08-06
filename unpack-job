@@ -1,9 +1,20 @@
-#!/bin/bash -e
+#!/usr/bin/perl
 
-[[ $# -eq 2 ]]
-# TODO job directory
-jobdir="$1"
-workdir="$2"
+use v5.12;
+use File::Basename;
 
-ln -s "$jobdir" "$workdir/in"
-mkdir "$workdir/out"
+my ($job_id, $dir) = @ARGV or die;
+
+mkdir $dir or die $!;
+
+open my $fh, "./cat-file job $job_id |" or die $!;
+local $/ = "\0";
+while (<$fh>) {
+    chomp(my $path = $_);
+    my $digest;
+    read $fh, $digest, 20 or die $!;
+    system('mkdir', '-p', dirname "$dir/in/$path") == 0 or die $?;
+    open STDOUT, '>', "$dir/in/$path" or die $!;
+    system('./cat-file', 'resource', unpack('H*', $digest)) == 0 or die $?;
+}
+close $fh or die $!;

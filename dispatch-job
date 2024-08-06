@@ -5,9 +5,7 @@ KNIT_DIR=${KNIT_DIR-.knit}
 [[ $# -eq 1 ]]
 job_id="$1"
 
-# TODO job directory
-hashed_job_id="$(sha256sum <<< "$1" | cut -d' ' -f1)"
-workdir="$KNIT_DIR/workdirs/${hashed_job_id:0:2}/${hashed_job_id:2}"
+workdir="$KNIT_DIR/workdirs/${job_id:0:2}/${job_id:2}"
 
 # TODO think more carefully about workdir locks; store state in session?
 mkdir -p "$(dirname "$workdir")"
@@ -24,8 +22,8 @@ fi
 echo PID $$ > "$workdir.lock"
 
 rm -rf "$workdir"
-mkdir -p "$workdir"
 ./unpack-job "$job_id" "$workdir"
+mkdir "$workdir/out"
 
 cd "$workdir"
 # TODO keep special .knit directory out of workdir

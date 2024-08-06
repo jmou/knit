@@ -5,5 +5,9 @@ for i in .knit/sessions/*; do
     rm -rf "$(<"$i")"
 done
 
-rm -r .knit
+rm -rf .knit
 mkdir -p .knit/sessions
+# Fake a Git repo for hash-object.
+echo 'ref: refs/heads/main' > .knit/HEAD
+mkdir .knit/objects
+mkdir .knit/refs

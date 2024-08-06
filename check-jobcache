@@ -3,8 +3,7 @@
 KNIT_DIR=${KNIT_DIR-.knit}
 
 [[ $# -eq 3 ]]
-# TODO job directory
-job_id="$(sha256sum <<< "$1" | cut -d' ' -f1)"
+job_id="$1"
 session="$2"
 step="$3"
 
