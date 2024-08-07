@@ -15,6 +15,6 @@ while (<$fh>) {
     read $fh, $digest, 32 or die $!;
     system('mkdir', '-p', dirname "$dir/in/$path") == 0 or die $?;
     open STDOUT, '>', "$dir/in/$path" or die $!;
-    system('knit-cat-file', 'resource', unpack('H*', $digest)) == 0 or die $?;
+    system('knit-cat-file', 'res', unpack('H*', $digest)) == 0 or die $?;
 }
 close $fh or die $!;

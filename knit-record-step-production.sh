@@ -9,5 +9,5 @@ production_id="$3"
 knit-cat-file -p "$production_id" | sed '1,/^$/d' | while IFS=$'\t' read -r resource name; do
     path="$sessiondir/productions/$step/$name"
     mkdir -p "$(dirname "$path")"
-    knit-cat-file resource "$resource" > "$path"
+    knit-cat-file res "$resource" > "$path"
 done

@@ -52,7 +52,7 @@ static int visit_output(const char* filename, const struct stat* /*st*/,
     struct bytebuf bbuf;
     struct object_id oid;
     if (mmap_file(filename, &bbuf) < 0 ||
-            write_object("resource", bbuf.data, bbuf.size, &oid) < 0) {
+            write_object(TYPE_RESOURCE, bbuf.data, bbuf.size, &oid) < 0) {
         errno = EIO;
         return 1;
     }
@@ -81,7 +81,7 @@ int write_production(const struct object_id* job,
         p += KNIT_HASH_RAWSZ;
     }
 
-    int rc = write_object("production", buf, size, production);
+    int rc = write_object(TYPE_PRODUCTION, buf, size, production);
     free(buf);
     return rc;
 }

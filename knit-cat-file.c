@@ -32,30 +32,31 @@ int main(int argc, char** argv) {
 
     int pretty = !strcmp(argv[1], "-p");
 
-    const char* hex = argv[2];
-    if (!is_valid_hex_oid(hex))
+    struct object_id oid;
+    if (hex_to_oid(argv[2], &oid) < 0)
         die("invalid object id");
 
     struct bytebuf bbuf;
-    char type[TYPE_MAX];
-    size_t hdr_len;
-    if (read_object_hex(hex, &bbuf, type, &hdr_len) < 0)
+    uint32_t typesig;
+    if (read_object(&oid, &bbuf, &typesig) < 0)
         exit(1);
+    char* data = bbuf.data + OBJECT_HEADER_SIZE;
+    size_t size = bbuf.size - OBJECT_HEADER_SIZE;
 
+    const char* type = strtypesig(typesig);
     if (!pretty && strcmp(type, argv[1]))
         die("type mismatch %s != %s", type, argv[1]);
 
     if (!pretty) {
-        char* ptr = bbuf.data + hdr_len;
-        char* limit = bbuf.data + bbuf.size;
-        while (ptr < limit) {
-            int nwritten = write(1, ptr, limit - ptr);
+        char* limit = data + size;
+        while (data < limit) {
+            int nwritten = write(1, data, limit - data);
             if (nwritten < 0 && errno != EAGAIN && errno != EINTR)
                 die("write failed: %s", strerror(errno));
-            ptr += nwritten;
+            data += nwritten;
         }
-    } else if (!strcmp(type, "production")) {
-        if (pretty_production(bbuf.data + hdr_len, bbuf.size - hdr_len) < 0)
+    } else if (typesig == TYPE_PRODUCTION) {
+        if (pretty_production(data, size) < 0)
             die("bad production");
     } else {
         die("don't know how to pretty print %s", type);

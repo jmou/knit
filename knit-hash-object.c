@@ -1,17 +1,9 @@
-#include <errno.h>
-#include <fcntl.h>
 #include <getopt.h>
-#include <linux/limits.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 #include "hash.h"
 
 static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s -t resource -w [--stdin] <file> ...\n", arg0);
+    fprintf(stderr, "usage: %s -t <type> -w [--stdin] <file>...\n", arg0);
     exit(1);
 }
 
@@ -45,7 +37,9 @@ int main(int argc, char** argv) {
             die_usage(argv[0]);
         }
     }
-    if ((optind == argc && !read_stdin) || type == NULL || !should_write)
+    if ((optind == argc && !read_stdin) ||
+            type == NULL || strlen(type) != 3 ||
+            !should_write)
         die_usage(argv[0]);
 
     int rc = 0;
@@ -63,7 +57,7 @@ int main(int argc, char** argv) {
         }
 
         struct object_id oid;
-        if (write_object(type, bbuf.data, bbuf.size, &oid) < 0) {
+        if (write_object(make_typesig(type), bbuf.data, bbuf.size, &oid) < 0) {
             rc = 1;
         } else {
             puts(oid_to_hex(&oid));

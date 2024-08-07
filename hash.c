@@ -52,7 +52,22 @@ const char* oid_to_hex(const struct object_id* oid) {
     return hex;
 }
 
-static char* hex_object_path(const char* hex) {
+uint32_t make_typesig(const char* type) {
+    uint32_t u32;
+    memcpy(&u32, type, 4);
+    return ntohl(u32);
+}
+
+char* strtypesig(uint32_t typesig) {
+    static char buf[5];
+    uint32_t be = htonl(typesig);
+    memcpy(buf, &be, 4);
+    buf[4] = '\0';
+    return buf;
+}
+
+static char* object_path(const struct object_id* oid) {
+    const char* hex = oid_to_hex(oid);
     static char filename[PATH_MAX];
     if (snprintf(filename, PATH_MAX, "%s/objects/%c%c/%s",
                  get_knit_dir(), hex[0], hex[1], &hex[2]) >= PATH_MAX)
@@ -73,20 +88,25 @@ static int move_temp_to_file(const char* tmpfile, const char* filename) {
     return ret;
 }
 
-int write_object(const char* type, void* data, size_t size,
+struct object_header {
+    uint32_t typesig;
+    uint32_t size;
+};
+
+int write_object(uint32_t typesig, void* data, size_t size,
                  struct object_id* out_oid) {
-    char hdr[32];
-    int hdr_size = snprintf(hdr, sizeof(hdr), "%s %zu", type, size) + 1;
-    if (hdr_size >= (int)sizeof(hdr))
-        die("header overflow");
+    struct object_header hdr = {
+        .typesig = ntohl(typesig),
+        .size = ntohl(size),
+    };
 
     SHA256_CTX ctx;
     SHA256_Init(&ctx);
-    SHA256_Update(&ctx, hdr, hdr_size);
+    SHA256_Update(&ctx, &hdr, sizeof(hdr));
     SHA256_Update(&ctx, data, size);
     SHA256_Final(out_oid->hash, &ctx);
 
-    const char* filename = hex_object_path(oid_to_hex(out_oid));
+    const char* filename = object_path(out_oid);
     struct stat st;
     if (stat(filename, &st) == 0 && st.st_size > 0)
         return 0; // object already exists
@@ -98,7 +118,7 @@ int write_object(const char* type, void* data, size_t size,
     if (fd < 0)
         return error("cannot open object temp file: %s", strerror(errno));
     // TODO compress
-    if (write(fd, hdr, hdr_size) != hdr_size ||
+    if (write(fd, &hdr, sizeof(hdr)) != sizeof(hdr) ||
             write(fd, data, size) != (ssize_t)size)
         return error("write failed");
     fchmod(fd, 0444);
@@ -111,38 +131,20 @@ int write_object(const char* type, void* data, size_t size,
     return 0;
 }
 
-static int parse_header(const char* hdr, char* type, size_t* size) {
-    int i = TYPE_MAX;
-    while (1) {
-        char c = *hdr++;
-        if (c == ' ') {
-            break;
-        } else if (--i == 0 || c == '\0') {
-            return -1;
-        }
-        *type++ = c;
-    }
-    *type = '\0';
-
-    char* end;
-    *size = strtoul(hdr, &end, 10);
-    if (*end != '\0')
-        return -1;
-    return 0;
-}
-
-int read_object_hex(const char* hex, struct bytebuf* bbuf,
-                    char* type, size_t* hdr_len) {
-    if (mmap_file(hex_object_path(hex), bbuf) < 0)
+int read_object(const struct object_id* oid,
+                struct bytebuf* bbuf,
+                uint32_t* typesig) {
+    if (mmap_file(object_path(oid), bbuf) < 0)
         return -1;
 
-    *hdr_len = strnlen(bbuf->data, bbuf->size) + 1;
-    size_t nrem;
-    if (*hdr_len > bbuf->size ||
-            parse_header(bbuf->data, type, &nrem) < 0)
-        return error("invalid header");
+    struct object_header* hdr = bbuf->data;
+    if (bbuf->size < sizeof(*hdr))
+        return error("truncated header");
 
-    if (bbuf->size != *hdr_len + nrem)
+    *typesig = ntohl(hdr->typesig);
+    size_t nrem = ntohl(hdr->size);
+
+    if (bbuf->size != sizeof(*hdr) + nrem)
         return error("size mismatch");
 
     return 0;
