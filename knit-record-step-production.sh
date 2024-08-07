@@ -4,7 +4,10 @@
 # TODO session directory
 sessiondir="$(<$1)"
 step="$2"
-# TODO production directory
-productiondir="$3"
+production_id="$3"
 
-ln -sT "$PWD/$productiondir" "$sessiondir/productions/$step"
+knit-cat-file -p "$production_id" | sed '1,/^$/d' | while IFS=$'\t' read -r resource name; do
+    path="$sessiondir/productions/$step/$name"
+    mkdir -p "$(dirname "$path")"
+    knit-cat-file resource "$resource" > "$path"
+done

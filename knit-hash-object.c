@@ -8,69 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// The "modern" EVP API is clunky. We probably won't use it but could vendor an
-// implementation of SHA-256 to avoid this API deprecation.
-#define OPENSSL_SUPPRESS_DEPRECATED
-#include <openssl/sha.h>
-
 #include "hash.h"
-#include "util.h"
-
-static int move_temp_to_file(const char* tmpfile, const char* filename) {
-    int ret = rename(tmpfile, filename);
-    if (ret < 0 && errno == ENOENT) {
-        // Retry after trying to create the object subdirectory.
-        char* dir = strrchr(filename, '/');
-        *dir = '\0';
-        mkdir(filename, 0777);
-        *dir = '/';
-        return rename(tmpfile, filename);
-    }
-    return ret;
-}
-
-static int write_object(const char* type, void* data, size_t size,
-                        struct object_id* out_oid) {
-    char hdr[32];
-    int hdr_size = snprintf(hdr, sizeof(hdr), "%s %zu", type, size) + 1;
-    if (hdr_size >= (int)sizeof(hdr))
-        die("header overflow");
-
-    SHA256_CTX ctx;
-    SHA256_Init(&ctx);
-    SHA256_Update(&ctx, hdr, hdr_size);
-    SHA256_Update(&ctx, data, size);
-    SHA256_Final(out_oid->hash, &ctx);
-
-    const char* hex = oid_to_hex(out_oid);
-    char filename[PATH_MAX];
-    if (snprintf(filename, PATH_MAX, "%s/objects/%c%c/%s",
-                 get_knit_dir(), hex[0], hex[1], &hex[2]) >= PATH_MAX)
-        return error("path overflow");
-
-    struct stat st;
-    if (stat(filename, &st) == 0 && st.st_size > 0)
-        return 0; // object already exists
-
-    char tmpfile[PATH_MAX];
-    if (snprintf(tmpfile, PATH_MAX, "%s/tmp-XXXXXX", get_knit_dir()) >= PATH_MAX)
-        return error("path overflow");
-    int fd = mkstemp(tmpfile);
-    if (fd < 0)
-        return error("cannot open object temp file: %s", strerror(errno));
-    // TODO compress
-    if (write(fd, hdr, hdr_size) != hdr_size ||
-        write(fd, data, size) != (ssize_t)size)
-        return error("write failed");
-    fchmod(fd, 0444);
-    if (close(fd) < 0)
-        return error("close failed: %s", strerror(errno));
-
-    if (move_temp_to_file(tmpfile, filename) < 0)
-        return error("failed to rename object file: %s", strerror(errno));
-
-    return 0;
-}
 
 static void die_usage(const char* arg0) {
     fprintf(stderr, "usage: %s -t resource -w [--stdin] <file> ...\n", arg0);
