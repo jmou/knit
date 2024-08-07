@@ -2,6 +2,8 @@
 
 #include <stddef.h>
 
+#include "util.h"
+
 enum token {
     TOKEN_COLON,
     TOKEN_DOTSLASH,
@@ -35,13 +37,6 @@ char* lex_stuff_null(struct lex_input* in);
 enum token lex(struct lex_input* in);
 // Recognize keywords instead of ident.
 enum token lex_keyword(struct lex_input* in);
-
-struct bytebuf {
-    void* data;
-    size_t size;
-    unsigned should_free : 1;
-    unsigned should_munmap : 1;
-};
 
 int lex_path(struct lex_input* in);
 

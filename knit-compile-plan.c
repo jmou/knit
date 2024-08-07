@@ -7,12 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include "lexer.h"
-#include "util.h"
 
 enum value_tag {
     VALUE_CONSTANT,
@@ -64,29 +62,6 @@ struct section {
 
 static struct section* active_plan = NULL;
 static struct section* active_partials = NULL;
-
-#if 0
-static char* read_file_nullterm(const char* filename) {
-    off_t size = lseek(fd, 0, SEEK_END);
-    if (size < 0 || lseek(fd, 0, SEEK_SET) < 0)
-        die("cannot seek %s: %s", filename, strerror(errno));
-
-    char* buf = (char*)malloc(size + 1);
-    if (!buf)
-        die("malloc: %s", strerror(errno));
-    buf[size] = '\0';
-
-    char* p = buf;
-    while (size > 0) {
-        ssize_t nread = read(fd, p, size);
-        if (nread < 0 && errno != EINTR)
-            die("cannot read %s: %s", filename, strerror(ferror(fp)));
-        size -= nread;
-        p += nread;
-    }
-    return buf;
-}
-#endif
 
 static int find_step(struct section* sect, const char* name) {
     for (int i = 0; i < sect->num_steps; i++) {
@@ -153,19 +128,7 @@ static int populate_value(struct value* val) {
         if (val->dep_pos < 0)
             return error("unknown dependency %s", val->dep_name);
     } else if (val->tag == VALUE_CONSTANT && val->con_filename) {
-        int fd = open(val->con_filename, O_RDONLY);
-        if (fd < 0)
-            return error("cannot open %s: %s", val->con_filename, strerror(errno));
-        struct stat st;
-        if (fstat(fd, &st) < 0)
-            return error("cannot stat %s: %s", val->con_filename, strerror(errno));
-
-        val->con_bb.data = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-        close(fd);
-        if (val->con_bb.data == MAP_FAILED)
-            return error("mmap failed: %s", strerror(errno));
-        val->con_bb.should_munmap = 1;
-        val->con_bb.size = st.st_size;
+        mmap_file(val->con_filename, &val->con_bb);
     }
     return 0;
 }

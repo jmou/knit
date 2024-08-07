@@ -1,22 +1,30 @@
-CC = gcc
 CFLAGS = -Wall -Wextra -ggdb
 
+CC = gcc
+PKGCONFIG = pkg-config
 RE2C = re2c
+
+-include config.mk
 
 BIN = \
 	knit \
-	knit-compile-plan
+	knit-cat-file \
+	knit-compile-plan \
+	knit-hash-object
 
 SCRIPTS = \
 	$(patsubst %.sh,%,$(wildcard *.sh)) \
 	$(patsubst %.pl,%,$(wildcard *.pl))
 
-OBJS = lexer.o util.o
+OBJS = hash.o lexer.o util.o
 
 all: $(BIN) $(SCRIPTS)
 
 lexer.c: lexer.re.c
 	$(RE2C) -W -Werror -o $@ $<
+
+knit-hash-object: CFLAGS += $(shell $(PKGCONFIG) --cflags libcrypto)
+knit-hash-object: LDFLAGS += $(shell $(PKGCONFIG) --libs libcrypto)
 
 knit-%: knit-%.o $(OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^

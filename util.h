@@ -1,6 +1,14 @@
 #pragma once
 
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 void die(const char* format, ...);
 int error(const char* format, ...);
@@ -18,3 +26,17 @@ static inline void* xrealloc(void* ptr, size_t size) {
         die("out of memory in realloc");
     return buf;
 }
+
+const char* get_knit_dir();
+
+struct bytebuf {
+    void* data;
+    size_t size;
+    unsigned should_free : 1;
+    unsigned should_munmap : 1;
+};
+
+void cleanup_bytebuf(struct bytebuf* bbuf);
+
+int mmap_file(const char* filename, struct bytebuf* out);
+int slurp_fd(int fd, struct bytebuf* out);
