@@ -1,6 +1,7 @@
 *.o
 knit
 knit-assemble-production
+knit-bash-setup
 knit-cat-file
 knit-check-jobcache
 knit-close-session

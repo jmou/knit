@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+. knit-bash-setup
+
 [[ $# -eq 1 ]]
 job_id="$1"
 

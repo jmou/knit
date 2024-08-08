@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+. knit-bash-setup
+
 [[ $# -le 1 ]]
 plan="${1-plan.knit}"
 

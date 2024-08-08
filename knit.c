@@ -16,11 +16,6 @@ int main(int argc, char** argv) {
     if (argc < 2 || strlen(argv[1]) > COMMAND_MAX)
         die_usage(argv[0]);
 
-    if (setenv("KNIT_DIR", ".knit", 0) < 0) {
-        perror("setenv");
-        exit(1);
-    }
-
     char* bin_dir = dirname(argv[0]);
     char* env_path = getenv("PATH");
     if (env_path) {

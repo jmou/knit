@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+. knit-bash-setup
+
 [[ $# -eq 2 ]]
 job_id="$1"
 production_id="$2"

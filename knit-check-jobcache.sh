@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+. knit-bash-setup
+
 [[ $# -eq 3 ]]
 job_id="$1"
 session="$2"
