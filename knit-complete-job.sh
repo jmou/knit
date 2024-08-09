@@ -24,6 +24,6 @@ mv $cache.tmp $cache
 # TODO possible to orphan pending sessions if we crash
 # TODO drop the lock?
 while IFS=$'\t' read -r session step; do
-    knit-record-step-production "$session" "$step" "$production_id"
+    knit-fulfill-step "$session" "$step" "$production_id"
 done < $cache.pending
 rm $cache.pending

@@ -16,23 +16,23 @@ digraph {
             // .knit/jobcache/xx/yyyy
             // TODO this seems more appropriate on the workdir
             // .knit/jobcache/xx/yyyy.pending
-            jobcache [label="jobcache\njobstate"];
+            jobcache;
         }
         // .knit/workdirs/xx/yyyy
         workdir;
     }
 
-    "plan.knit" -> session [label=compile];
+    "plan.knit" -> session [label="parse\nbuild"];
     "plan.knit" -> resources;
-    step -> job [label=resolve];
+    step -> job [label="resolve\ncompile"];
     job -> jobcache [label=check];
-    job -> step [label=record];
+    job -> step [label="fulfill\nproduce"];
     session -> step [label=list];
     session -> invocation [label=close];
 
     // dispatch
-    job -> workdir [label="unpack\nextract"];
-    workdir -> production [label="assemble\npack\nbundle"];
+    job -> workdir [label=unpack];
+    workdir -> production [label="pack\nassemble\nbundle"];
     production -> jobcache [label=complete];
 
     {
@@ -44,13 +44,13 @@ digraph {
     }
 
     // step states
-    blocked [label="blocked\nwaiting"];
-    available [label="available\nunblocked\nresolvable\nready\nfree"];
-    prepared [label="prepared\nemployed\nopen\nactive\npending\nscheduled"];
-    blocked -> available;
-    available -> prepared [label=resolve];
-    prepared -> "recorded\nconcluded\nclosed" [label="record\nproduce\nconclude"];
-    { blocked available } -> "unresolvable\nunsatisfied\nincomplete";
+    blocked;
+    resolvable [label="resolvable\navailable\napplicant\nprospect\nunblocked\nfree"];
+    prepared [label="prepared\nprovisioned\ncompiled\nassembled"];
+    blocked -> resolvable;
+    resolvable -> prepared [label="resolve\ncompile\nassemble"];
+    prepared -> "fulfilled\nproduced\nconcluded\nclosed";
+    blocked -> "unresolvable\nmissing dependencies";
 
     // step flags
     NONE -> SS_JOB -> "SS_JOB|SS_FINAL";

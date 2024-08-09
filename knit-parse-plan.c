@@ -260,27 +260,12 @@ void puts_value(const struct value* val) {
     }
 }
 
-static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s <plan>\n", arg0);
-    exit(1);
-}
-
-static int compile_plan(const char* /*plan*/) {
+static int build_session(const struct section* plan) {
     // TODO convert to flag or remove
     const int debug = 0;
 
-    // TODO hardcoded plan
-    char buf[] = "step a: shell\n  shell = \"seq 1 3 > out/data\n\"\n\n"
-        "step b: shell\n  shell = \"cp -RL in/* out\"\n  a.ok = a:.knit/ok\n  data = a:data\n\n"
-        "step c: shell\n  shell = \"tac in/lines > out/data\n\"\n  b.ok = b:.knit/ok\n  lines = b:data";
-
-    struct lex_input in = { .curr = buf };
-    static struct section plan = { 0 };
-    if (parse_plan(&in, &plan) < 0)
-        return -1;
-
-    for (int i = 0; i < plan.num_steps; i++) {
-        const struct step* step = plan.steps[i];
+    for (int i = 0; i < plan->num_steps; i++) {
+        const struct step* step = plan->steps[i];
         if (debug)
             fprintf(stderr, "step %s: ", step->name);
         ssize_t step_pos = create_session_step(step->name);
@@ -327,11 +312,24 @@ static int compile_plan(const char* /*plan*/) {
     return save_session();
 }
 
+static void die_usage(const char* arg0) {
+    fprintf(stderr, "usage: %s <plan>\n", arg0);
+    exit(1);
+}
+
 int main(int argc, char** argv) {
     if (argc != 2)
         die_usage(argv[0]);
 
-    if (compile_plan(argv[1]) < 0)
+    // TODO hardcoded plan
+    char buf[] = "step a: shell\n  shell = \"seq 1 3 > out/data\n\"\n\n"
+        "step b: shell\n  shell = \"cp -RL in/* out\"\n  a.ok = a:.knit/ok\n  data = a:data\n\n"
+        "step c: shell\n  shell = \"tac in/lines > out/data\n\"\n  b.ok = b:.knit/ok\n  lines = b:data";
+
+    struct lex_input in = { .curr = buf };
+    struct section plan = { 0 };
+    if (parse_plan(&in, &plan) < 0 ||
+            build_session(&plan) < 0)
         exit(1);
 
     puts(get_session_name());

@@ -5,17 +5,17 @@
 [[ $# -le 1 ]]
 plan="${1-plan.knit}"
 
-session="$(knit-compile-plan "$plan")"
+session="$(knit-parse-plan "$plan")"
 echo "Session $session" >&2
 
-# Keep available steps in positional args.
+# Keep resolvable steps in positional args.
 set --
 while true; do
     if [[ $# -eq 0 ]]; then
         if knit-close-session "$session"; then
             break
         fi
-        set -- $(knit-list-steps --available "$session")
+        set -- $(knit-list-steps --resolvable "$session")
         if [[ $# -eq 0 ]]; then
             wait -n  # wait for dispatch-job
             continue
@@ -38,6 +38,6 @@ while true; do
         knit-dispatch-job "$job_id" &
     else
         echo "Cache hit $job_id -> $production_id" >&2
-        knit-record-step-production "$session" "$step" "$production_id"
+        knit-fulfill-step "$session" "$step" "$production_id"
     fi
 done

@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
     if (!ss_hasflag(ss, SS_JOB) || ss->num_pending)
         die("step not resolved");
     if (ss_hasflag(ss, SS_FINAL))
-        die("step already recorded");
+        die("step already fulfilled");
     satisfy_dependencies(step_pos, prd.outputs);
     ss_setflag(ss, SS_FINAL);
 

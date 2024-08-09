@@ -3,10 +3,10 @@
 
 static int debug;
 static int positional;
-static int wants_available;
 static int wants_blocked;
+static int wants_fulfilled;
 static int wants_prepared;
-static int wants_recorded;
+static int wants_resolvable;
 static int wants_unresolvable;
 
 static const char* to_hex(const uint8_t* rawhash) {
@@ -45,7 +45,7 @@ static void emit(size_t step_pos, struct session_step* ss) {
 }
 
 static void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s [--available] [--positional|--debug]\n", arg0);
+    fprintf(stderr, "usage: %s [--resolvable] [--positional|--debug]\n", arg0);
     exit(1);
 }
 
@@ -58,14 +58,14 @@ int main(int argc, char** argv) {
             debug = 1;
         } else if (!strcmp(flag, "--positional")) {
             positional = 1;
-        } else if (!strcmp(flag, "--available")) {
-            wants_available = 1;
-            wants_all = 0;
-        } else if (!strcmp(flag, "--recorded")) {
-            wants_recorded = 1;
+        } else if (!strcmp(flag, "--resolvable")) {
+            wants_resolvable = 1;
             wants_all = 0;
         } else if (!strcmp(flag, "--unresolvable")) {
             wants_unresolvable = 1;
+            wants_all = 0;
+        } else if (!strcmp(flag, "--fulfilled")) {
+            wants_fulfilled = 1;
             wants_all = 0;
         } else {
             break;
@@ -77,10 +77,10 @@ int main(int argc, char** argv) {
         exit(1);
 
     if (wants_all) {
-        wants_available = 1;
         wants_blocked = 1;
+        wants_fulfilled = 1;
         wants_prepared = 1;
-        wants_recorded = 1;
+        wants_resolvable = 1;
         wants_unresolvable = 1;
     }
 
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
         struct session_step* ss = active_steps[i];
         if (ss_hasflag(ss, SS_JOB)) {
             if (ss_hasflag(ss, SS_FINAL)) {
-                if (wants_recorded)
+                if (wants_fulfilled)
                     emit(i, ss);
             } else {
                 if (wants_prepared)
@@ -105,7 +105,7 @@ int main(int argc, char** argv) {
                 if (wants_blocked)
                     emit(i, ss);
             } else {
-                if (wants_available)
+                if (wants_resolvable)
                     emit(i, ss);
             }
         }
