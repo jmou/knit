@@ -1,29 +1,14 @@
-#include "hash.h"
+#include "production.h"
+
+static void pretty_production(const struct production* prd) {
+    printf("job %s\n\n", oid_to_hex(&prd->job_oid));
+    for (struct resource_list* out = prd->outputs; out; out = out->next)
+        printf("%s\t%s\n", oid_to_hex(&out->oid), out->path);
+}
 
 static void die_usage(char* arg0) {
     fprintf(stderr, "usage: %s <type> <object>\n", arg0);
     exit(1);
-}
-
-static int pretty_production(char* data, size_t size) {
-    struct object_id oid;
-    char* p = data;
-    if (size < KNIT_HASH_RAWSZ)
-        return -1;
-    memcpy(oid.hash, p, KNIT_HASH_RAWSZ);
-    p += KNIT_HASH_RAWSZ;
-    printf("job %s\n\n", oid_to_hex(&oid));
-    while (p != data + size) {
-        char* name = p;
-        int namelen = strnlen(name, size - (p - data));
-        p += namelen + 1;
-        if (p + KNIT_HASH_RAWSZ > data + size)
-            return -1;
-        memcpy(oid.hash, p, KNIT_HASH_RAWSZ);
-        p += KNIT_HASH_RAWSZ;
-        printf("%s\t%.*s\n", oid_to_hex(&oid), namelen, name);
-    }
-    return 0;
 }
 
 int main(int argc, char** argv) {
@@ -56,8 +41,10 @@ int main(int argc, char** argv) {
             data += nwritten;
         }
     } else if (typesig == TYPE_PRODUCTION) {
-        if (pretty_production(data, size) < 0)
-            die("bad production");
+        struct production prd;
+        if (parse_production_bytes(data, size, &prd) < 0)
+            exit(1);
+        pretty_production(&prd);
     } else {
         die("don't know how to pretty print %s", type);
     }
