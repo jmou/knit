@@ -53,7 +53,8 @@ int mmap_file(const char* filename, struct bytebuf* out) {
     if (st.st_size == 0)
         return 0;
 
-    out->data = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    out->data = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE, fd, 0);
     close(fd);
     if (out->data == MAP_FAILED)
         return error("mmap failed: %s", strerror(errno));

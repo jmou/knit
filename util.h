@@ -1,5 +1,7 @@
 #pragma once
 
+#include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -40,5 +42,6 @@ struct bytebuf {
 
 void cleanup_bytebuf(struct bytebuf* bbuf);
 
+// mmap will be private and writable (COW).
 int mmap_file(const char* filename, struct bytebuf* out);
 int slurp_fd(int fd, struct bytebuf* out);

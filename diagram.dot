@@ -52,11 +52,15 @@ digraph {
     prepared -> "recorded\nconcluded\nclosed" [label="record\nproduce\nconclude"];
     { blocked available } -> "unresolvable\nunsatisfied\nincomplete";
 
+    // step flags
+    NONE -> SS_JOB -> "SS_JOB|SS_FINAL";
+    NONE -> SS_FINAL;
+
     // job states
     processing [label="processing\nactive"];
     idle -> processing -> complete;
     processing -> canceled [label=terminate];
     processing -> idle [label=lost];
 
-    { rank=same; blocked; idle; cas; }
+    { rank=same; idle; NONE; job; }
 }

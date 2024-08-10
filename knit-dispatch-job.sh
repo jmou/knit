@@ -46,8 +46,7 @@ cd "$OLDPWD"
 production_id=$(knit-assemble-production "$job_id" "$workdir/out")
 # TODO when to keep workdirs?
 rm -rf "$workdir"
+echo "Complete $job_id -> $production_id" >&2
 knit-complete-job "$job_id" "$production_id"
 
 rm "$workdir.lock"
-
-echo "Complete $job_id -> $production_id" >&2

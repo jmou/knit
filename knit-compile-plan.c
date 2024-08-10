@@ -1,16 +1,7 @@
 // Unapologetically leaks memory since we assume the process is short lived.
 
-#include <errno.h>
-#include <fcntl.h>
-#include <linux/limits.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <unistd.h>
-
 #include "lexer.h"
+#include "session.h"
 
 enum value_tag {
     VALUE_CONSTANT,
@@ -251,71 +242,6 @@ static int parse_plan(struct lex_input* in, struct section* plan) {
 }
 
 
-static void mksubdir(const char* format, ...) {
-    va_list params;
-    va_start(params, format);
-    char pathname[PATH_MAX];
-    if (vsnprintf(pathname, PATH_MAX, format, params) >= PATH_MAX) {
-        die("path overflow");
-    }
-    va_end(params);
-    if (mkdir(pathname, 0777) < 0) {
-        die("cannot initialize step: %s", strerror(errno));
-    }
-}
-
-static void writefile(const char* pathname, const char* buf, size_t size) {
-    int fd = creat(pathname, 0666);
-    if (fd < 0) {
-        die("open error %s: %s", pathname, strerror(errno));
-    }
-    if (write(fd, buf, size) != (ssize_t)size) {
-        die("write error %s: %s", pathname, strerror(errno));
-    }
-    if (close(fd) < 0) {
-        die("close error %s: %s", pathname, strerror(errno));
-    }
-}
-
-static void step_init(const char* dir, const char* step) {
-    mksubdir("%s/inputs/%s", dir, step);
-    mksubdir("%s/awaiting/%s", dir, step);
-}
-
-// TODO this should be a resource, but we don't yet have a way to define the sentinel resource
-static void step_constant(const char* dir, const char* step,
-                          const char* key, const char* value, size_t value_size) {
-    char pathname[PATH_MAX];
-    if (snprintf(pathname, PATH_MAX,
-                 "%s/inputs/%s/%s", dir, step, key) >= PATH_MAX) {
-        die("path overflow");
-    }
-    writefile(pathname, value, value_size);
-}
-
-static void step_dependency(const char* dir, const char* step,
-                            const char* key, const char* dep, const char* path) {
-    char target[PATH_MAX];
-    char linkpath[PATH_MAX];
-
-    if (snprintf(target, PATH_MAX, "../../productions/%s", dep) >= PATH_MAX ||
-        snprintf(linkpath, PATH_MAX, "%s/awaiting/%s/%s", dir, step, dep) >= PATH_MAX) {
-        die("path overflow");
-    }
-    if (symlink(target, linkpath) < 0 && errno != EEXIST) {
-        die("cannot declare dependency: %s", strerror(errno));
-    }
-
-    if (snprintf(target, PATH_MAX, "../../productions/%s/%s", dep, path) >= PATH_MAX ||
-        snprintf(linkpath, PATH_MAX, "%s/inputs/%s/%s", dir, step, key) >= PATH_MAX) {
-        die("path overflow");
-    }
-    if (symlink(target, linkpath) < 0) {
-        die("cannot declare dependency: %s", strerror(errno));
-    }
-}
-
-
 void puts_value(const struct value* val) {
     switch (val->tag) {
     case VALUE_CONSTANT:
@@ -339,19 +265,9 @@ static void die_usage(const char* arg0) {
     exit(1);
 }
 
-static void compile_plan(const char* /*plan*/, FILE* fd) {
+static int compile_plan(const char* /*plan*/) {
     // TODO convert to flag or remove
     const int debug = 0;
-
-    // TODO session directory
-    char dir[] = "/tmp/knit-session.XXXXXX";
-    if (!mkdtemp(dir)) {
-        die("cannot make session directory: %s", strerror(errno));
-    }
-    mksubdir("%s/inputs", dir);
-    mksubdir("%s/awaiting", dir);
-    mksubdir("%s/resolved", dir);
-    mksubdir("%s/productions", dir);
 
     // TODO hardcoded plan
     char buf[] = "step a: shell\n  shell = \"seq 1 3 > out/data\n\"\n\n"
@@ -361,13 +277,15 @@ static void compile_plan(const char* /*plan*/, FILE* fd) {
     struct lex_input in = { .curr = buf };
     static struct section plan = { 0 };
     if (parse_plan(&in, &plan) < 0)
-        exit(1);
+        return -1;
 
     for (int i = 0; i < plan.num_steps; i++) {
         const struct step* step = plan.steps[i];
         if (debug)
             fprintf(stderr, "step %s: ", step->name);
-        step_init(dir, step->name);
+        ssize_t step_pos = create_session_step(step->name);
+
+        // TODO process is ignored (all treated as shell)
         switch (step->process) {
         case PROCESS_PARAM:
             if (debug)
@@ -391,25 +309,31 @@ static void compile_plan(const char* /*plan*/, FILE* fd) {
                 fprintf(stderr, "  %s = ", input->key);
                 puts_value(&input->val);
             }
+            ssize_t input_pos = create_session_input(step_pos, input->key);
             if (input->val.tag == VALUE_CONSTANT) {
-                step_constant(dir, step->name, input->key,
-                              input->val.con_bb.data, input->val.con_bb.size);
+                struct object_id res_oid;
+                if (write_object(TYPE_RESOURCE, input->val.con_bb.data,
+                                 input->val.con_bb.size, &res_oid) < 0)
+                    return -1;
+                struct session_input* si = active_inputs[input_pos];
+                memcpy(si->res_hash, &res_oid.hash, KNIT_HASH_RAWSZ);
+                si_setflag(si, SI_RESOURCE | SI_FINAL);
             } else if (input->val.tag == VALUE_DEPENDENCY) {
-                step_dependency(dir, step->name, input->key,
-                                input->val.dep_name, input->val.dep_path);
+                create_session_dependency(input_pos, input->val.dep_pos, input->val.dep_path);
             }
         }
     }
 
-    fprintf(fd, "%s\n", dir);
+    return save_session();
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
+    if (argc != 2)
         die_usage(argv[0]);
-    }
 
-    compile_plan(argv[1], stdout);
+    if (compile_plan(argv[1]) < 0)
+        exit(1);
 
+    puts(get_session_name());
     return 0;
 }

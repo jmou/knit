@@ -18,7 +18,7 @@ SCRIPTS = \
 	$(patsubst %.sh,%,$(wildcard *.sh)) \
 	$(patsubst %.pl,%,$(wildcard *.pl))
 
-OBJS = hash.o lexer.o production.o util.o
+OBJS = hash.o lexer.o production.o session.o util.o
 
 all: $(BIN) $(SCRIPTS)
 
@@ -40,6 +40,5 @@ clean:
 	rm -f *.o
 	rm -f $(BIN) $(SCRIPTS)
 	rm -f lexer.c
-	./clean
 
 .PHONY: all clean

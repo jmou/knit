@@ -5,14 +5,7 @@
 [[ $# -le 1 ]]
 plan="${1-plan.knit}"
 
-session="$KNIT_DIR/sessions/$$"
-(
-    flock -n 3
-    knit-compile-plan "$plan" > "$session.tmp"
-    mv "$session.tmp" "$session"
-    rm "$session.lock"
-) 3> "$session.lock"
-
+session="$(knit-compile-plan "$plan")"
 echo "Session $session" >&2
 
 # Keep available steps in positional args.
