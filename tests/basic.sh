@@ -3,16 +3,20 @@
 . test-setup.sh
 
 cat <<'EOF' > plan.knit
-step a: shell
-    shell = "seq 1 3 > out/data"
+partial bash: shell
+    shell = "bash in/script"
+    script = !
 
-step b: shell
-    shell = "cp -RL in/* out"
+step a: partial bash
+    script = "seq 1 3 > out/data"
+
+step b: partial bash
+    script = "cp -RL in/* out"
     a.ok = a:.knit/ok
     data = a:data
 
-step c: shell
-    shell = "tac in/lines > out/data"
+step c: partial bash
+    script = "tac in/lines > out/data"
     b.ok = b:.knit/ok
     lines = b:data
 EOF

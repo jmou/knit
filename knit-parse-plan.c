@@ -1,5 +1,3 @@
-// Unapologetically leaks memory since we assume the process is short lived.
-
 #include "hash.h"
 #include "lexer.h"
 
@@ -14,6 +12,7 @@ struct value {
     union {
         struct {
             char* con_filename;
+            // TODO memory ownership is unclear with partials
             struct bytebuf con_bb;
         };
         struct {
@@ -24,42 +23,55 @@ struct value {
     };
 };
 
-struct input {
-    char* key;
+struct input_list {
+    char* name;
     struct value val;
+    struct input_list* next;
 };
 
-enum process_tag {
+enum process_type {
     PROCESS_PARAM,
     PROCESS_FLOW,
     PROCESS_SHELL,
 };
 
-struct step {
+struct step_list {
     char* name;
-    enum process_tag process;
+    ssize_t pos;
+    enum process_type process;
     // TODO should subflow plan be a normal (or special?) input?
     struct value flow; // iff process == PROCESS_FLOW
-    struct input** inputs;
-    int num_inputs;
-    int alloc_inputs;
+    struct input_list* inputs;
+    struct step_list* next;
 };
 
-struct section {
-    struct step** steps;
-    int num_steps;
-    int alloc_steps;
-};
+static struct step_list* active_plan = NULL;
+static struct step_list* active_partials = NULL;
 
-static struct section* active_plan = NULL;
-static struct section* active_partials = NULL;
-
-static ssize_t find_step(struct section* sect, const char* name) {
-    for (int i = 0; i < sect->num_steps; i++) {
-        if (!strcmp(sect->steps[i]->name, name))
-            return i;
+static void destroy_step_list(struct step_list** list_p) {
+    if (*list_p) {
+        struct step_list* curr = *list_p;
+        while (curr) {
+            struct input_list* inputs = curr->inputs;
+            while (inputs) {
+                struct input_list* next = inputs->next;
+                free(inputs);
+                inputs = next;
+            }
+            struct step_list* next = curr->next;
+            free(curr);
+            curr = next;
+        }
+        *list_p = NULL;
     }
-    return -1;
+}
+
+static struct step_list* find_step(struct step_list* step, const char* name) {
+    for (; step; step = step->next) {
+        if (!strcmp(step->name, name))
+            return step;
+    }
+    return NULL;
 }
 
 static enum token read_trim(struct lex_input* in) {
@@ -115,32 +127,44 @@ static int parse_value(struct lex_input* in, struct value* out) {
 
 static int populate_value(struct value* val) {
     if (val->tag == VALUE_DEPENDENCY) {
-        val->dep_pos = find_step(active_plan, val->dep_name);
-        if (val->dep_pos < 0)
+        struct step_list* dep = find_step(active_plan, val->dep_name);
+        if (!dep)
             return error("unknown dependency %s", val->dep_name);
+        val->dep_pos = dep->pos;
     } else if (val->tag == VALUE_CONSTANT && val->con_filename) {
         mmap_file(val->con_filename, &val->con_bb);
     }
     return 0;
 }
 
-static int parse_process_partial(struct lex_input* in, struct step* step) {
+static int parse_process_partial(struct lex_input* in, struct step_list* step) {
     if (lex(in) != TOKEN_SPACE)
         return error("expected space");
     if (lex(in) != TOKEN_IDENT)
         return error("expected identifier");
+
     char* ident = lex_stuff_null(in);
-    ssize_t pos = find_step(active_partials, ident);
-    if (pos < 0)
+    struct step_list* partial = find_step(active_partials, ident);
+    if (!partial)
         return error("unknown partial %s", ident);
-    step->process = active_partials->steps[pos]->process;
-    step->flow = active_partials->steps[pos]->flow;
-    // TODO copy inputs from partial (merge sort?)
-    fprintf(stderr, "partial %s\n", ident);
+
+    step->process = partial->process;
+    step->flow = partial->flow;
+
+    assert(!step->inputs);
+    struct input_list** inputs_p = &step->inputs;
+    for (const struct input_list* orig = partial->inputs; orig; orig = orig->next) {
+        struct input_list* copy = xmalloc(sizeof(struct input_list));
+        memcpy(copy, orig, sizeof(*copy));
+        copy->next = NULL;
+        *inputs_p = copy;
+        inputs_p = &copy->next;
+    }
+
     return 0;
 }
 
-static int parse_process(struct lex_input* in, struct step* step) {
+static int parse_process(struct lex_input* in, struct step_list* step) {
     switch (lex_keyword(in)) {
     case TOKEN_PARAM:
         step->process = PROCESS_PARAM;
@@ -160,10 +184,9 @@ static int parse_process(struct lex_input* in, struct step* step) {
     }
 }
 
-static int parse_input(struct lex_input* in, struct input* input) {
-    memset(input, 0, sizeof(*input));
-    input->key = read_path(in);
-    if (!input->key)
+static int parse_input(struct lex_input* in, struct input_list* input) {
+    input->name = read_path(in);
+    if (!input->name)
         return -1;
     if (read_trim(in) != TOKEN_EQUALS)
         return error("expected =");
@@ -183,18 +206,18 @@ static int parse_input(struct lex_input* in, struct input* input) {
     }
 }
 
-static int parse_plan(struct lex_input* in, struct section* plan) {
-    active_plan = plan;
-    static struct section partials = { 0 };
-    active_partials = &partials;
-
+static int parse_plan_internal(struct lex_input* in) {
+    active_plan = active_partials = NULL;
+    struct step_list** plan_p = &active_plan;
+    struct step_list** partials_p = &active_partials;
+    ssize_t step_pos = 0;
     while (1) {
         int is_partial;
         switch (lex_keyword(in)) {
         case TOKEN_STEP:    is_partial = 0; break;
         case TOKEN_PARTIAL: is_partial = 1; break;
         case TOKEN_NEWLINE: continue;
-        case TOKEN_EOF:     active_partials = NULL; return 0;
+        case TOKEN_EOF:     return 0;
         default:            return error("expected step or partial");
         }
 
@@ -202,8 +225,18 @@ static int parse_plan(struct lex_input* in, struct section* plan) {
             return error("expected space");
         if (lex(in) != TOKEN_IDENT)
             return error("expected identifier");
-        struct step* step = xmalloc(sizeof(struct step));
+
+        struct step_list* step = xmalloc(sizeof(struct step_list));
+        memset(step, 0, sizeof(*step));
         step->name = lex_stuff_null(in);
+        step->pos = is_partial ? -1 : step_pos++;
+
+        // Append to the appropriate partials or plan list. This precedes
+        // possible errors to avoid leaking memory.
+        struct step_list*** steps_pp = is_partial ? &partials_p : &plan_p;
+        **steps_pp = step;
+        *steps_pp = &step->next;
+
         if (read_trim(in) != TOKEN_COLON)
             return error("expected :");
         if (parse_process(in, step) < 0)
@@ -213,34 +246,52 @@ static int parse_plan(struct lex_input* in, struct section* plan) {
             return error("expected newline");
         while (is_read_keyword(in, TOKEN_NEWLINE));
 
+        // Build inputs in sorted order.
+        struct input_list* inputs = NULL;
         while (is_read_keyword(in, TOKEN_SPACE)) {
-            struct input* input = xmalloc(sizeof(struct input));
-            if (parse_input(in, input) < 0)
+            struct input_list* new_input = xmalloc(sizeof(struct input_list));
+            memset(new_input, 0, sizeof(*new_input));
+            if (parse_input(in, new_input) < 0)
                 return -1;
-            if (!is_partial && input->val.tag == VALUE_HOLE)
+            if (!is_partial && new_input->val.tag == VALUE_HOLE)
                 return error("unfilled hole");
 
-            if (step->num_inputs == step->alloc_inputs) {
-                step->alloc_inputs =
-                    step->alloc_inputs == 0 ? 4 : step->alloc_inputs * 2;
-                step->inputs = xrealloc(step->inputs,
-                                        step->alloc_inputs * sizeof(*step->inputs));
-            }
-            step->inputs[step->num_inputs++] = input;
+            struct input_list** prev_p = &inputs;
+            int cmp = -1;
+            while (*prev_p && (cmp = strcmp((*prev_p)->name, new_input->name)) < 0)
+                prev_p = &(*prev_p)->next;
+            if (cmp == 0)
+                return error("duplicate input %s", new_input->name);
+            new_input->next = *prev_p;
+            *prev_p = new_input;
+            prev_p = &new_input->next;
         }
 
+        // Merge inputs into any (partial) step inputs.
+        struct input_list** inputs_p = &step->inputs;
+        while (inputs) {
+            int cmp = -1;
+            while (*inputs_p && (cmp = strcmp((*inputs_p)->name, inputs->name)) < 0)
+                inputs_p = &(*inputs_p)->next;
+            struct input_list* rest = inputs->next;
+            // Replace any input with the same name.
+            inputs->next = !cmp ? (*inputs_p)->next : *inputs_p;
+            *inputs_p = inputs;
+            inputs_p = &inputs->next;
+            inputs = rest;
+        }
         // TODO fail if no inputs?
-
-        struct section* sect = is_partial ? active_partials : active_plan;
-        if (sect->num_steps == sect->alloc_steps) {
-            sect->alloc_steps = sect->alloc_steps == 0 ? 4 : sect->alloc_steps * 2;
-            sect->steps = xrealloc(sect->steps,
-                                   sect->alloc_steps * sizeof(*sect->steps));
-        }
-        sect->steps[sect->num_steps++] = step;
     }
 }
 
+static struct step_list* parse_plan(struct lex_input* in) {
+    if (parse_plan_internal(in) < 0)
+        destroy_step_list(&active_plan);
+    destroy_step_list(&active_partials);
+    struct step_list* ret = active_plan;
+    active_plan = NULL;
+    return ret;
+}
 
 // TODO probably need to synthesize a flow input
 void print_value(FILE* fh, const struct value* val) {
@@ -261,9 +312,8 @@ void print_value(FILE* fh, const struct value* val) {
     }
 }
 
-static int print_plan(FILE* fh, const struct section* plan) {
-    for (int i = 0; i < plan->num_steps; i++) {
-        const struct step* step = plan->steps[i];
+static int print_plan(FILE* fh, const struct step_list* step) {
+    for (; step; step = step->next) {
         fprintf(fh, "step %s\n", step->name);
 
         switch (step->process) {
@@ -279,9 +329,9 @@ static int print_plan(FILE* fh, const struct section* plan) {
             break;
         }
 
-        for (int j = 0; j < step->num_inputs; j++) {
-            const struct input* input = step->inputs[j];
-            fprintf(fh, "input %s\n", input->key);
+        for (const struct input_list* input = step->inputs;
+             input; input = input->next) {
+            fprintf(fh, "input %s\n", input->name);
             if (input->val.tag == VALUE_CONSTANT) {
                 struct object_id res_oid;
                 if (write_object(TYPE_RESOURCE, input->val.con_bb.data,
@@ -322,9 +372,8 @@ int main(int argc, char** argv) {
     cleanup_bytebuf(&bb);
 
     struct lex_input in = { .curr = buf };
-    struct section plan = { 0 };
-    if (parse_plan(&in, &plan) < 0 ||
-            print_plan(stdout, &plan) < 0)
+    struct step_list* plan = parse_plan(&in);
+    if (!plan || print_plan(stdout, plan) < 0)
         exit(1);
 
     return 0;

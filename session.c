@@ -56,10 +56,8 @@ size_t create_session_input(size_t step_pos, const char* path) {
     if (num_inputs > 0) {
         struct session_input* prev_si = active_inputs[num_inputs - 1];
         size_t prev_step_pos = ntohl(prev_si->step_pos);
-        // TODO strictly order input paths for determinism and to defend against duplicate inputs
-        // if (step_pos < prev_step_pos ||
-        //     (step_pos == prev_step_pos && strcmp(path, prev_si->path) <= 0))
-        if (step_pos < prev_step_pos)
+        if (step_pos < prev_step_pos ||
+                (step_pos == prev_step_pos && strcmp(path, prev_si->path) <= 0))
             die("step %zu input %s <= previous step %zu input %s",
                 step_pos, path, prev_step_pos, prev_si->path);
     }
