@@ -1,7 +1,7 @@
 // Unapologetically leaks memory since we assume the process is short lived.
 
+#include "hash.h"
 #include "lexer.h"
-#include "session.h"
 
 enum value_tag {
     VALUE_CONSTANT,
@@ -18,7 +18,7 @@ struct value {
         };
         struct {
             char* dep_name;
-            int dep_pos;
+            ssize_t dep_pos;
             char* dep_path;
         };
     };
@@ -54,7 +54,7 @@ struct section {
 static struct section* active_plan = NULL;
 static struct section* active_partials = NULL;
 
-static int find_step(struct section* sect, const char* name) {
+static ssize_t find_step(struct section* sect, const char* name) {
     for (int i = 0; i < sect->num_steps; i++) {
         if (!strcmp(sect->steps[i]->name, name))
             return i;
@@ -130,7 +130,7 @@ static int parse_process_partial(struct lex_input* in, struct step* step) {
     if (lex(in) != TOKEN_IDENT)
         return error("expected identifier");
     char* ident = lex_stuff_null(in);
-    int pos = find_step(active_partials, ident);
+    ssize_t pos = find_step(active_partials, ident);
     if (pos < 0)
         return error("unknown partial %s", ident);
     step->process = active_partials->steps[pos]->process;
@@ -242,74 +242,61 @@ static int parse_plan(struct lex_input* in, struct section* plan) {
 }
 
 
-void puts_value(const struct value* val) {
+// TODO probably need to synthesize a flow input
+void print_value(FILE* fh, const struct value* val) {
     switch (val->tag) {
     case VALUE_CONSTANT:
         if (val->con_filename)
-            fprintf(stderr, "%s->", val->con_filename);
-        putc('"', stderr);
-        fwrite(val->con_bb.data, 1, val->con_bb.size, stderr);
-        fprintf(stderr, "\"\n");
+            fprintf(fh, "%s->", val->con_filename);
+        putc('"', fh);
+        fwrite(val->con_bb.data, 1, val->con_bb.size, fh);
+        fprintf(fh, "\"\n");
         break;
     case VALUE_DEPENDENCY:
-        fprintf(stderr, "%s[%d]:%s\n", val->dep_name, val->dep_pos, val->dep_path);
+        fprintf(fh, "%s[%zd]:%s\n", val->dep_name, val->dep_pos, val->dep_path);
         break;
     case VALUE_HOLE:
-        fprintf(stderr, "!\n");
+        fprintf(fh, "!\n");
         break;
     }
 }
 
-static int build_session(const struct section* plan) {
-    // TODO convert to flag or remove
-    const int debug = 0;
-
+static int print_plan(FILE* fh, const struct section* plan) {
     for (int i = 0; i < plan->num_steps; i++) {
         const struct step* step = plan->steps[i];
-        if (debug)
-            fprintf(stderr, "step %s: ", step->name);
-        ssize_t step_pos = create_session_step(step->name);
+        fprintf(fh, "step %s\n", step->name);
 
-        // TODO process is ignored (all treated as shell)
         switch (step->process) {
         case PROCESS_PARAM:
-            if (debug)
-                fprintf(stderr, "param\n");
+            fprintf(fh, "param\n");
             break;
         case PROCESS_FLOW:
-            if (debug) {
-                fprintf(stderr, "flow ");
-                puts_value(&step->flow);
-            }
+            fprintf(fh, "flow ");
+            print_value(fh, &step->flow);
             break;
         case PROCESS_SHELL:
-            if (debug)
-                fprintf(stderr, "shell\n");
+            fprintf(fh, "shell\n");
             break;
         }
 
         for (int j = 0; j < step->num_inputs; j++) {
             const struct input* input = step->inputs[j];
-            if (debug) {
-                fprintf(stderr, "  %s = ", input->key);
-                puts_value(&input->val);
-            }
-            ssize_t input_pos = create_session_input(step_pos, input->key);
+            fprintf(fh, "input %s\n", input->key);
             if (input->val.tag == VALUE_CONSTANT) {
                 struct object_id res_oid;
                 if (write_object(TYPE_RESOURCE, input->val.con_bb.data,
                                  input->val.con_bb.size, &res_oid) < 0)
                     return -1;
-                struct session_input* si = active_inputs[input_pos];
-                memcpy(si->res_hash, &res_oid.hash, KNIT_HASH_RAWSZ);
-                si_setflag(si, SI_RESOURCE | SI_FINAL);
+                fprintf(fh, "resource %s\n", oid_to_hex(&res_oid));
             } else if (input->val.tag == VALUE_DEPENDENCY) {
-                create_session_dependency(input_pos, input->val.dep_pos, input->val.dep_path);
+                assert(input->val.dep_pos >= 0);
+                fprintf(fh, "dependency %zu %s\n", input->val.dep_pos, input->val.dep_path);
             }
         }
     }
 
-    return save_session();
+    fprintf(fh, "save\n");
+    return 0;
 }
 
 static void die_usage(const char* arg0) {
@@ -329,9 +316,8 @@ int main(int argc, char** argv) {
     struct lex_input in = { .curr = buf };
     struct section plan = { 0 };
     if (parse_plan(&in, &plan) < 0 ||
-            build_session(&plan) < 0)
+            print_plan(stdout, &plan) < 0)
         exit(1);
 
-    puts(get_session_name());
     return 0;
 }

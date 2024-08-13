@@ -5,7 +5,9 @@
 [[ $# -le 1 ]]
 plan="${1-plan.knit}"
 
-session="$(knit-parse-plan "$plan")"
+set -o pipefail
+
+session="$(knit-parse-plan "$plan" | knit-build-session)"
 echo "Session $session" >&2
 
 # Keep resolvable steps in positional args.

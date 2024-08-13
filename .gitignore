@@ -1,6 +1,7 @@
 *.o
 knit
 knit-bash-setup
+knit-build-session
 knit-cat-file
 knit-check-jobcache
 knit-close-session
