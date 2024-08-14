@@ -9,6 +9,7 @@ knit-complete-job
 knit-dispatch-job
 knit-fulfill-step
 knit-hash-object
+knit-init
 knit-list-steps
 knit-pack-production
 knit-parse-plan

@@ -1,6 +1,7 @@
-#include <sys/mman.h>
-
 #include "util.h"
+
+#include <dirent.h>
+#include <sys/mman.h>
 
 void die(const char* format, ...) {
     va_list params;
@@ -22,12 +23,35 @@ int error(const char* format, ...) {
     return -1;
 }
 
+static int valid_knit_dir(const char* dirname) {
+    DIR* dir = opendir(dirname);
+    if (!dir) {
+        if (errno != ENOENT)
+            die("cannot open knit directory %s", dirname);
+        return 0;
+    }
+    int needs_entries = 2;
+    struct dirent* dent;
+    while (errno = 0, needs_entries > 0 && (dent = readdir(dir))) {
+        if (dent->d_type == DT_DIR || dent->d_type == DT_UNKNOWN) {
+            if (!strcmp(dent->d_name, "objects") || !strcmp(dent->d_name, "sessions"))
+                needs_entries--;
+        }
+    }
+    if (errno != 0)
+        die("readdir: %s", strerror(errno));
+    closedir(dir);
+    return needs_entries == 0;
+}
+
 const char* get_knit_dir() {
     static const char* knit_dir;
     if (!knit_dir) {
         knit_dir = getenv("KNIT_DIR");
         if (!knit_dir)
             knit_dir = ".knit";
+        if (!valid_knit_dir(knit_dir))
+            die("not a valid knit repository: %s", knit_dir);
     }
     return knit_dir;
 }
