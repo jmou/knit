@@ -36,9 +36,13 @@ knit-%: knit-%.sh
 knit-%: knit-%.pl
 	ln -sf $< $@
 
+test: all
+	$(MAKE) -C tests
+
 clean:
 	rm -f *.o
 	rm -f $(BIN) $(SCRIPTS)
 	rm -f lexer.c
+	$(MAKE) -C tests clean
 
-.PHONY: all clean
+.PHONY: all clean test

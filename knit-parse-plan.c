@@ -308,10 +308,18 @@ int main(int argc, char** argv) {
     if (argc != 2)
         die_usage(argv[0]);
 
-    // TODO hardcoded plan
-    char buf[] = "step a: shell\n  shell = \"seq 1 3 > out/data\n\"\n\n"
-        "step b: shell\n  shell = \"cp -RL in/* out\"\n  a.ok = a:.knit/ok\n  data = a:data\n\n"
-        "step c: shell\n  shell = \"tac in/lines > out/data\n\"\n  b.ok = b:.knit/ok\n  lines = b:data";
+    int fd = open(argv[1], O_RDONLY);
+    if (fd < 0)
+        die("cannot open %s: %s", argv[1], strerror(errno));
+    struct bytebuf bb;
+    if (slurp_fd(fd, &bb) < 0)
+        exit(1);
+    // Copy the buffer to NUL-terminate it; our use of re2c treats NUL as EOF.
+    char* buf = xmalloc(bb.size + 1);
+    if (memccpy(buf, bb.data, '\0', bb.size))
+        die("NUL bytes in plan %s", argv[1]);
+    buf[bb.size] = '\0';
+    cleanup_bytebuf(&bb);
 
     struct lex_input in = { .curr = buf };
     struct section plan = { 0 };
