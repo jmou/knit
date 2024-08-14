@@ -1,20 +1,20 @@
 #include "hash.h"
 #include "lexer.h"
 
+#include <stdalign.h>
+
 enum value_tag {
-    VALUE_CONSTANT,
     VALUE_DEPENDENCY,
+    VALUE_FILENAME,
     VALUE_HOLE,
+    VALUE_LITERAL,
 };
 
 struct value {
     enum value_tag tag;
     union {
-        struct {
-            char* con_filename;
-            // TODO memory ownership is unclear with partials
-            struct bytebuf con_bb;
-        };
+        char* filename;
+        char* literal;
         struct {
             char* dep_name;
             ssize_t dep_pos;
@@ -45,30 +45,6 @@ struct step_list {
     struct step_list* next;
 };
 
-struct parse_context {
-    struct lex_input in;
-    struct step_list* plan;
-    struct step_list* partials;
-};
-
-static void destroy_step_list(struct step_list** list_p) {
-    if (*list_p) {
-        struct step_list* curr = *list_p;
-        while (curr) {
-            struct input_list* inputs = curr->inputs;
-            while (inputs) {
-                struct input_list* next = inputs->next;
-                free(inputs);
-                inputs = next;
-            }
-            struct step_list* next = curr->next;
-            free(curr);
-            curr = next;
-        }
-        *list_p = NULL;
-    }
-}
-
 static struct step_list* find_step(struct step_list* step, const char* name) {
     for (; step; step = step->next) {
         if (!strcmp(step->name, name))
@@ -76,6 +52,36 @@ static struct step_list* find_step(struct step_list* step, const char* name) {
     }
     return NULL;
 }
+
+#define BUMP_PAGE_SIZE (1 << 20)
+
+struct bump_list {
+    char* base;
+    size_t nused;
+    struct bump_list* next;
+};
+
+void* bump_alloc(struct bump_list** bump_p, size_t size) {
+    struct bump_list* bump = *bump_p;
+    if (!*bump_p || (*bump_p)->nused + size < BUMP_PAGE_SIZE) {
+        bump = xmalloc(sizeof(*bump));
+        bump->base = xmalloc(BUMP_PAGE_SIZE > size ? BUMP_PAGE_SIZE : size);
+        bump->nused = 0;
+        bump->next = *bump_p;
+        *bump_p = bump;
+    }
+    void* ret = bump->base + bump->nused;
+    size_t align = alignof(max_align_t);
+    bump->nused += (size + align - 1) / align * align;
+    return ret;
+}
+
+struct parse_context {
+    struct lex_input in;
+    struct step_list* plan;
+    struct step_list* partials;
+    struct bump_list** bump_p;
+};
 
 static enum token read_trim(struct lex_input* in) {
     enum token token;
@@ -104,14 +110,21 @@ static char* read_path(struct lex_input* in) {
 
 static int parse_value(struct parse_context* ctx, struct value* out) {
     struct lex_input* in = &ctx->in;
+    struct bytebuf bb;
     memset(out, 0, sizeof(*out));
     switch (lex(in)) {
     case TOKEN_EXCLAMATION:
         out->tag = VALUE_HOLE;
         return 0;
     case TOKEN_QUOTE:
-        out->tag = VALUE_CONSTANT;
-        return lex_string(in, &out->con_bb);
+        out->tag = VALUE_LITERAL;
+        // TODO lex directly into allocated buffer
+        if (lex_string(in, &bb) < 0)
+            return -1;
+        out->literal = bump_alloc(ctx->bump_p, bb.size);
+        memcpy(out->literal, bb.data, bb.size);
+        cleanup_bytebuf(&bb);
+        return 0;
     case TOKEN_IDENT:
         out->tag = VALUE_DEPENDENCY;
         out->dep_name = lex_stuff_null(in);
@@ -121,9 +134,9 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         out->dep_path = read_path(in);
         return out->dep_path ? 0 : -1;
     case TOKEN_DOTSLASH:
-        out->tag = VALUE_CONSTANT;
-        out->con_filename = read_path(in);
-        return out->con_filename ? 0 : -1;
+        out->tag = VALUE_FILENAME;
+        out->filename = read_path(in);
+        return out->filename ? 0 : -1;
     default:
         return error("expected value");
     }
@@ -135,8 +148,6 @@ static int populate_value(struct parse_context* ctx, struct value* val) {
         if (!dep)
             return error("unknown dependency %s", val->dep_name);
         val->dep_pos = dep->pos;
-    } else if (val->tag == VALUE_CONSTANT && val->con_filename) {
-        mmap_file(val->con_filename, &val->con_bb);
     }
     return 0;
 }
@@ -155,17 +166,7 @@ static int parse_process_partial(struct parse_context* ctx, struct step_list* st
 
     step->process = partial->process;
     step->flow = partial->flow;
-
-    assert(!step->inputs);
-    struct input_list** inputs_p = &step->inputs;
-    for (const struct input_list* orig = partial->inputs; orig; orig = orig->next) {
-        struct input_list* copy = xmalloc(sizeof(struct input_list));
-        memcpy(copy, orig, sizeof(*copy));
-        copy->next = NULL;
-        *inputs_p = copy;
-        inputs_p = &copy->next;
-    }
-
+    step->inputs = partial->inputs;
     return 0;
 }
 
@@ -212,6 +213,34 @@ static int parse_input(struct parse_context* ctx, struct input_list* input) {
     }
 }
 
+static struct input_list* merge_with_partial_inputs(struct parse_context* ctx,
+                                                    struct input_list* partial_inputs,
+                                                    struct input_list* inputs) {
+    struct input_list* ret = NULL;
+    struct input_list** merged_p = &ret;
+    while (inputs && partial_inputs) {
+        int cmp = strcmp(inputs->name, partial_inputs->name);
+        if (cmp == 0) {
+            // Skip (override) any partial input with the same name.
+            partial_inputs = partial_inputs->next;
+        } else if (cmp < 0) {
+            *merged_p = inputs;
+            merged_p = &inputs->next;
+            inputs = inputs->next;
+        } else {
+            // While we can share a common tail with any partials, any
+            // preceding nodes in the merged list must be copies.
+            struct input_list* copy = bump_alloc(ctx->bump_p, sizeof(*copy));
+            memcpy(copy, partial_inputs, sizeof(*copy));
+            *merged_p = copy;
+            merged_p = &copy->next;
+            partial_inputs = partial_inputs->next;
+        }
+    }
+    *merged_p = inputs ? inputs : partial_inputs;
+    return ret;
+}
+
 static int parse_plan_internal(struct parse_context* ctx) {
     struct step_list** plan_p = &ctx->plan;
     struct step_list** partials_p = &ctx->partials;
@@ -232,13 +261,12 @@ static int parse_plan_internal(struct parse_context* ctx) {
         if (lex(in) != TOKEN_IDENT)
             return error("expected identifier");
 
-        struct step_list* step = xmalloc(sizeof(struct step_list));
+        struct step_list* step = bump_alloc(ctx->bump_p, sizeof(*step));
         memset(step, 0, sizeof(*step));
         step->name = lex_stuff_null(in);
         step->pos = is_partial ? -1 : step_pos++;
 
-        // Append to the appropriate partials or plan list. This precedes
-        // possible errors to avoid leaking memory.
+        // Append to the appropriate partials or plan list.
         struct step_list*** steps_pp = is_partial ? &partials_p : &plan_p;
         **steps_pp = step;
         *steps_pp = &step->next;
@@ -255,12 +283,12 @@ static int parse_plan_internal(struct parse_context* ctx) {
         // Build inputs in sorted order.
         struct input_list* inputs = NULL;
         while (is_read_keyword(in, TOKEN_SPACE)) {
-            struct input_list* new_input = xmalloc(sizeof(struct input_list));
+            struct input_list* new_input = bump_alloc(ctx->bump_p, sizeof(*new_input));
             memset(new_input, 0, sizeof(*new_input));
             if (parse_input(ctx, new_input) < 0)
                 return -1;
             if (!is_partial && new_input->val.tag == VALUE_HOLE)
-                return error("unfilled hole");
+                return error("step input cannot be a hole");
 
             struct input_list** prev_p = &inputs;
             int cmp = -1;
@@ -273,48 +301,52 @@ static int parse_plan_internal(struct parse_context* ctx) {
             prev_p = &new_input->next;
         }
 
-        // Merge inputs into any (partial) step inputs.
-        struct input_list** inputs_p = &step->inputs;
-        while (inputs) {
-            int cmp = -1;
-            while (*inputs_p && (cmp = strcmp((*inputs_p)->name, inputs->name)) < 0)
-                inputs_p = &(*inputs_p)->next;
-            struct input_list* rest = inputs->next;
-            // Replace any input with the same name.
-            inputs->next = !cmp ? (*inputs_p)->next : *inputs_p;
-            *inputs_p = inputs;
-            inputs_p = &inputs->next;
-            inputs = rest;
-        }
+        step->inputs = merge_with_partial_inputs(ctx, step->inputs, inputs);
         // TODO fail if no inputs?
+        if (!is_partial) {
+            for (inputs = step->inputs; inputs; inputs = inputs->next)
+                if (inputs->val.tag == VALUE_HOLE)
+                    return error("unfilled hole");
+        }
     }
 }
 
-static struct step_list* parse_plan(char* buf) {
-    struct parse_context ctx = { .in.curr = buf };
+// The resulting parse tree will be allocated in *bump_p. It may contain
+// pointers into buf as well.
+static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
+    struct parse_context ctx = {
+        .in.curr = buf,
+        .bump_p = bump_p,
+    };
     if (parse_plan_internal(&ctx) < 0)
-        destroy_step_list(&ctx.plan);
-    destroy_step_list(&ctx.partials);
+        return NULL;
     return ctx.plan;
 }
 
 // TODO probably need to synthesize a flow input
 void print_value(FILE* fh, const struct value* val) {
     switch (val->tag) {
-    case VALUE_CONSTANT:
-        if (val->con_filename)
-            fprintf(fh, "%s->", val->con_filename);
-        putc('"', fh);
-        fwrite(val->con_bb.data, 1, val->con_bb.size, fh);
-        fprintf(fh, "\"\n");
-        break;
     case VALUE_DEPENDENCY:
         fprintf(fh, "%s[%zd]:%s\n", val->dep_name, val->dep_pos, val->dep_path);
+        break;
+    case VALUE_FILENAME:
+        fprintf(fh, "./%s\n", val->filename);
         break;
     case VALUE_HOLE:
         fprintf(fh, "!\n");
         break;
+    case VALUE_LITERAL:
+        fprintf(fh, "\"%s\"\n", val->literal);
+        break;
     }
+}
+
+static int print_resource(FILE* fh, void* data, size_t size) {
+    struct object_id res_oid;
+    if (write_object(TYPE_RESOURCE, data, size, &res_oid) < 0)
+        return -1;
+    fprintf(fh, "resource %s\n", oid_to_hex(&res_oid));
+    return 0;
 }
 
 static int print_plan(FILE* fh, const struct step_list* step) {
@@ -337,15 +369,25 @@ static int print_plan(FILE* fh, const struct step_list* step) {
         for (const struct input_list* input = step->inputs;
              input; input = input->next) {
             fprintf(fh, "input %s\n", input->name);
-            if (input->val.tag == VALUE_CONSTANT) {
-                struct object_id res_oid;
-                if (write_object(TYPE_RESOURCE, input->val.con_bb.data,
-                                 input->val.con_bb.size, &res_oid) < 0)
-                    return -1;
-                fprintf(fh, "resource %s\n", oid_to_hex(&res_oid));
-            } else if (input->val.tag == VALUE_DEPENDENCY) {
+
+            struct bytebuf bb;
+            switch (input->val.tag) {
+            case VALUE_DEPENDENCY:
                 assert(input->val.dep_pos >= 0);
                 fprintf(fh, "dependency %zu %s\n", input->val.dep_pos, input->val.dep_path);
+                break;
+            case VALUE_FILENAME:
+                // TODO resource cache by (absolute?) filename
+                if (mmap_file(input->val.filename, &bb) < 0)
+                    return -1;
+                print_resource(fh, bb.data, bb.size);
+                cleanup_bytebuf(&bb);
+                break;
+            case VALUE_LITERAL:
+                print_resource(fh, input->val.literal, strlen(input->val.literal));
+                break;
+            default:
+                die("bad value tag");
             }
         }
     }
@@ -376,9 +418,11 @@ int main(int argc, char** argv) {
     buf[bb.size] = '\0';
     cleanup_bytebuf(&bb);
 
-    struct step_list* plan = parse_plan(buf);
+    struct bump_list* bump = NULL;
+    struct step_list* plan = parse_plan(&bump, buf);
     if (!plan || print_plan(stdout, plan) < 0)
         exit(1);
+    // leak bump and buf
 
     return 0;
 }
