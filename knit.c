@@ -1,31 +1,39 @@
-#include <errno.h>
-#include <libgen.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-
-#define COMMAND_MAX 32
+#include "util.h"
 
 void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s <command> [<args>]\n", arg0);
+    fprintf(stderr, "usage: %s [-C <dir>] <command> [<args>]\n", arg0);
     exit(1);
 }
 
 int main(int argc, char** argv) {
-    if (argc < 2 || strlen(argv[1]) > COMMAND_MAX)
+    // We are about to exec() so it's fine (even preferable) to leak memory.
+
+    char* bin_dir = realpath(dirname(argv[0]), NULL);
+    if (!bin_dir) {
+        perror("realpath");
+        exit(1);
+    }
+
+    int argi = 1;
+    while (argv[argi] && *argv[argi] == '-') {
+        const char* option = argv[argi++];
+        if (!strcmp(option, "-C")) {
+            const char* dir = argv[argi++];
+            if (!dir)
+                die("missing directory argument to -C");
+            if (chdir(dir) < 0)
+                die("cannot change to %s: %s", dir, strerror(errno));
+        } else {
+            die("unrecognized option %s", option);
+        }
+    }
+    if (argc < argi + 1)
         die_usage(argv[0]);
 
-    char* bin_dir = dirname(argv[0]);
     char* env_path = getenv("PATH");
     if (env_path) {
-        char* newpath = malloc(strlen(bin_dir) + strlen(env_path) + 2);
-        if (!newpath) {
-            perror("malloc");
-            exit(1);
-        }
+        char* newpath = xmalloc(strlen(bin_dir) + strlen(env_path) + 2);
         sprintf(newpath, "%s:%s", bin_dir, env_path);
-        // We are about to exec() so it's fine to leak newpath.
         env_path = newpath;
     } else {
         env_path = bin_dir;
@@ -35,13 +43,12 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    char subcmd[COMMAND_MAX + 6];
-    sprintf(subcmd, "knit-%s", argv[1]);
-    argv[1] = subcmd;
-    execvp(subcmd, &argv[1]);  // should not return
-
+    char* subcmd = xmalloc(strlen(argv[argi]) + 6);
+    sprintf(subcmd, "knit-%s", argv[argi]);
+    argv[argi] = subcmd;
+    execvp(subcmd, &argv[argi]); // should not return
     if (errno == ENOENT) {
-        fprintf(stderr, "knit: '%s' is not a knit command\n", argv[1] + 5);
+        fprintf(stderr, "knit: '%s' is not a knit command\n", subcmd + 5);
     } else {
         perror("exec");
     }

@@ -36,6 +36,9 @@ knit-%: knit-%.sh
 knit-%: knit-%.pl
 	ln -sf $< $@
 
+knit: knit.o util.o
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+
 test: all
 	$(MAKE) -C tests
 
