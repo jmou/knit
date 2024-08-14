@@ -45,8 +45,11 @@ struct step_list {
     struct step_list* next;
 };
 
-static struct step_list* active_plan = NULL;
-static struct step_list* active_partials = NULL;
+struct parse_context {
+    struct lex_input in;
+    struct step_list* plan;
+    struct step_list* partials;
+};
 
 static void destroy_step_list(struct step_list** list_p) {
     if (*list_p) {
@@ -99,7 +102,8 @@ static char* read_path(struct lex_input* in) {
     return in->prev;
 }
 
-static int parse_value(struct lex_input* in, struct value* out) {
+static int parse_value(struct parse_context* ctx, struct value* out) {
+    struct lex_input* in = &ctx->in;
     memset(out, 0, sizeof(*out));
     switch (lex(in)) {
     case TOKEN_EXCLAMATION:
@@ -125,9 +129,9 @@ static int parse_value(struct lex_input* in, struct value* out) {
     }
 }
 
-static int populate_value(struct value* val) {
+static int populate_value(struct parse_context* ctx, struct value* val) {
     if (val->tag == VALUE_DEPENDENCY) {
-        struct step_list* dep = find_step(active_plan, val->dep_name);
+        struct step_list* dep = find_step(ctx->plan, val->dep_name);
         if (!dep)
             return error("unknown dependency %s", val->dep_name);
         val->dep_pos = dep->pos;
@@ -137,14 +141,15 @@ static int populate_value(struct value* val) {
     return 0;
 }
 
-static int parse_process_partial(struct lex_input* in, struct step_list* step) {
+static int parse_process_partial(struct parse_context* ctx, struct step_list* step) {
+    struct lex_input* in = &ctx->in;
     if (lex(in) != TOKEN_SPACE)
         return error("expected space");
     if (lex(in) != TOKEN_IDENT)
         return error("expected identifier");
 
     char* ident = lex_stuff_null(in);
-    struct step_list* partial = find_step(active_partials, ident);
+    struct step_list* partial = find_step(ctx->partials, ident);
     if (!partial)
         return error("unknown partial %s", ident);
 
@@ -164,8 +169,8 @@ static int parse_process_partial(struct lex_input* in, struct step_list* step) {
     return 0;
 }
 
-static int parse_process(struct lex_input* in, struct step_list* step) {
-    switch (lex_keyword(in)) {
+static int parse_process(struct parse_context* ctx, struct step_list* step) {
+    switch (lex_keyword(&ctx->in)) {
     case TOKEN_PARAM:
         step->process = PROCESS_PARAM;
         return 0;
@@ -173,26 +178,27 @@ static int parse_process(struct lex_input* in, struct step_list* step) {
         step->process = PROCESS_SHELL;
         return 0;
     case TOKEN_PARTIAL:
-        return parse_process_partial(in, step);
+        return parse_process_partial(ctx, step);
     case TOKEN_FLOW:
         step->process = PROCESS_FLOW;
-        if (parse_value(in, &step->flow) < 0)
+        if (parse_value(ctx, &step->flow) < 0)
             return -1;
-        return populate_value(&step->flow);
+        return populate_value(ctx, &step->flow);
     default:
         return error("expected param, shell, partial, or flow");
     }
 }
 
-static int parse_input(struct lex_input* in, struct input_list* input) {
+static int parse_input(struct parse_context* ctx, struct input_list* input) {
+    struct lex_input* in = &ctx->in;
     input->name = read_path(in);
     if (!input->name)
         return -1;
     if (read_trim(in) != TOKEN_EQUALS)
         return error("expected =");
-    if (parse_value(in, &input->val) < 0)
+    if (parse_value(ctx, &input->val) < 0)
         return -1;
-    if (populate_value(&input->val) < 0)
+    if (populate_value(ctx, &input->val) < 0)
         return -1;
 
     switch (lex(in)) {
@@ -206,10 +212,10 @@ static int parse_input(struct lex_input* in, struct input_list* input) {
     }
 }
 
-static int parse_plan_internal(struct lex_input* in) {
-    active_plan = active_partials = NULL;
-    struct step_list** plan_p = &active_plan;
-    struct step_list** partials_p = &active_partials;
+static int parse_plan_internal(struct parse_context* ctx) {
+    struct step_list** plan_p = &ctx->plan;
+    struct step_list** partials_p = &ctx->partials;
+    struct lex_input* in = &ctx->in;
     ssize_t step_pos = 0;
     while (1) {
         int is_partial;
@@ -239,7 +245,7 @@ static int parse_plan_internal(struct lex_input* in) {
 
         if (read_trim(in) != TOKEN_COLON)
             return error("expected :");
-        if (parse_process(in, step) < 0)
+        if (parse_process(ctx, step) < 0)
             return -1;
 
         if (lex(in) != TOKEN_NEWLINE)
@@ -251,7 +257,7 @@ static int parse_plan_internal(struct lex_input* in) {
         while (is_read_keyword(in, TOKEN_SPACE)) {
             struct input_list* new_input = xmalloc(sizeof(struct input_list));
             memset(new_input, 0, sizeof(*new_input));
-            if (parse_input(in, new_input) < 0)
+            if (parse_input(ctx, new_input) < 0)
                 return -1;
             if (!is_partial && new_input->val.tag == VALUE_HOLE)
                 return error("unfilled hole");
@@ -284,13 +290,12 @@ static int parse_plan_internal(struct lex_input* in) {
     }
 }
 
-static struct step_list* parse_plan(struct lex_input* in) {
-    if (parse_plan_internal(in) < 0)
-        destroy_step_list(&active_plan);
-    destroy_step_list(&active_partials);
-    struct step_list* ret = active_plan;
-    active_plan = NULL;
-    return ret;
+static struct step_list* parse_plan(char* buf) {
+    struct parse_context ctx = { .in.curr = buf };
+    if (parse_plan_internal(&ctx) < 0)
+        destroy_step_list(&ctx.plan);
+    destroy_step_list(&ctx.partials);
+    return ctx.plan;
 }
 
 // TODO probably need to synthesize a flow input
@@ -371,8 +376,7 @@ int main(int argc, char** argv) {
     buf[bb.size] = '\0';
     cleanup_bytebuf(&bb);
 
-    struct lex_input in = { .curr = buf };
-    struct step_list* plan = parse_plan(&in);
+    struct step_list* plan = parse_plan(buf);
     if (!plan || print_plan(stdout, plan) < 0)
         exit(1);
 
