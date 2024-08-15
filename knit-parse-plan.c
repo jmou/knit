@@ -83,29 +83,31 @@ struct parse_context {
     struct bump_list** bump_p;
 };
 
+static struct lex_input saved_lex_input;
+static void save_lex_input(const struct lex_input* in) {
+    memcpy(&saved_lex_input, in, sizeof(*in));
+}
+static void load_lex_input(struct lex_input* in) {
+    memcpy(in, &saved_lex_input, sizeof(*in));
+}
+
 static enum token read_trim(struct lex_input* in) {
     enum token token;
     do {
         token = lex(in);
     } while (token == TOKEN_SPACE);
+    save_lex_input(in);
     if (lex(in) != TOKEN_SPACE)
-        in->curr = in->prev;
+        load_lex_input(in);
     return token;
 }
 
-static int is_read_keyword(struct lex_input* in, enum token expected) {
-    enum token actual = lex_keyword(in);
-    if (actual == expected)
-        return 1;
-    in->curr = in->prev;
-    return 0;
-}
-
-static char* read_path(struct lex_input* in) {
-    if (lex_path(in) < 0)
-        return NULL;
-    lex_stuff_null(in);
-    return in->prev;
+static int try_read_token(struct lex_input* in, enum token expected) {
+    save_lex_input(in);
+    enum token actual = lex(in);
+    if (actual != expected)
+        load_lex_input(in);
+    return actual == expected;
 }
 
 static int parse_value(struct parse_context* ctx, struct value* out) {
@@ -137,12 +139,16 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         out->dep_pos = -1;
         if (lex(in) != TOKEN_COLON)
             return error("expected :");
-        out->dep_path = read_path(in);
-        return out->dep_path ? 0 : -1;
+        if (lex_path(in) < 0)
+            return -1;
+        out->dep_path = lex_stuff_null(in);
+        return 0;
     case TOKEN_DOTSLASH:
         out->tag = VALUE_FILENAME;
-        out->filename = read_path(in);
-        return out->filename ? 0 : -1;
+        if (lex_path(in) < 0)
+            return -1;
+        out->filename = lex_stuff_null(in);
+        return 0;
     default:
         return error("expected value");
     }
@@ -198,9 +204,9 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
 
 static int parse_input(struct parse_context* ctx, struct input_list* input) {
     struct lex_input* in = &ctx->in;
-    input->name = read_path(in);
-    if (!input->name)
+    if (lex_path(in) < 0)
         return -1;
+    input->name = lex_stuff_null(in);
     if (read_trim(in) != TOKEN_EQUALS)
         return error("expected =");
     if (parse_value(ctx, &input->val) < 0)
@@ -208,9 +214,10 @@ static int parse_input(struct parse_context* ctx, struct input_list* input) {
     if (populate_value(ctx, &input->val) < 0)
         return -1;
 
+    save_lex_input(in);
     switch (lex(in)) {
     case TOKEN_EOF:
-        in->curr = in->prev;
+        load_lex_input(in);
         // fall through
     case TOKEN_NEWLINE:
         return 0;
@@ -282,13 +289,18 @@ static int parse_plan_internal(struct parse_context* ctx) {
         if (parse_process(ctx, step) < 0)
             return -1;
 
-        if (lex(in) != TOKEN_NEWLINE)
+        switch (lex(in)) {
+        case TOKEN_NEWLINE:
+        case TOKEN_EOF:
+            break;
+        default:
             return error("expected newline");
-        while (is_read_keyword(in, TOKEN_NEWLINE));
+        }
+        while (try_read_token(in, TOKEN_NEWLINE));
 
         // Build inputs in sorted order.
         struct input_list* inputs = NULL;
-        while (is_read_keyword(in, TOKEN_SPACE)) {
+        while (try_read_token(in, TOKEN_SPACE)) {
             struct input_list* new_input = bump_alloc(ctx->bump_p, sizeof(*new_input));
             memset(new_input, 0, sizeof(*new_input));
             if (parse_input(ctx, new_input) < 0)

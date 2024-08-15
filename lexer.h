@@ -30,8 +30,8 @@ struct lex_input {
     char actual_curr;
 };
 
-// Store '\0' at the current position. Subsequent lexing will return the token
-// that the unmodified input would have. Returns in->prev.
+// Store '\0' at the current position. Subsequent lexing will return what the
+// unmodified input would have. Returns the (now NUL-terminated) previous token.
 char* lex_stuff_null(struct lex_input* in);
 
 enum token lex(struct lex_input* in);
