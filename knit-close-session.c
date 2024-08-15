@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
         exit(1);
 
     int num_unresolvable = 0;
-    for (size_t i = 0; i < num_steps; i++) {
+    for (size_t i = 0; i < num_active_steps; i++) {
         struct session_step* ss = active_steps[i];
         if (!ss_hasflag(ss, SS_FINAL))
             exit(1);
@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
     if (num_unresolvable > 0) {
         fprintf(stderr, "%d step%s unresolvable:\n",
                 num_unresolvable, num_unresolvable == 1 ? "" : "s");
-        for (size_t i = 0; i < num_steps; i++) {
+        for (size_t i = 0; i < num_active_steps; i++) {
             struct session_step* ss = active_steps[i];
             if (!ss_hasflag(ss, SS_JOB))
                 fprintf(stderr, "%s\n", ss->name);

@@ -1,39 +1,39 @@
 #include "session.h"
 
 struct session_step** active_steps;
-size_t num_steps;
-size_t alloc_steps;
+size_t num_active_steps;
+size_t alloc_active_steps;
 
 struct session_input** active_inputs;
-size_t num_inputs;
-size_t alloc_inputs;
+size_t num_active_inputs;
+size_t alloc_active_inputs;
 
 struct session_dependency** active_deps;
-size_t num_deps;
-size_t alloc_deps;
+size_t num_active_deps;
+size_t alloc_active_deps;
 int deps_dirty; // may not be ordered
 
 static size_t realloc_size(size_t alloc) { return (alloc + 16) * 2; }
 
 static void ensure_alloc_steps() {
-    if (num_steps < alloc_steps)
+    if (num_active_steps < alloc_active_steps)
         return;
-    alloc_steps = realloc_size(alloc_steps);
-    active_steps = xrealloc(active_steps, alloc_steps * sizeof(*active_steps));
+    alloc_active_steps = realloc_size(alloc_active_steps);
+    active_steps = xrealloc(active_steps, alloc_active_steps * sizeof(*active_steps));
 }
 
 static void ensure_alloc_inputs() {
-    if (num_inputs < alloc_inputs)
+    if (num_active_inputs < alloc_active_inputs)
         return;
-    alloc_inputs = realloc_size(alloc_inputs);
-    active_inputs = xrealloc(active_inputs, alloc_inputs * sizeof(*active_inputs));
+    alloc_active_inputs = realloc_size(alloc_active_inputs);
+    active_inputs = xrealloc(active_inputs, alloc_active_inputs * sizeof(*active_inputs));
 }
 
 static void ensure_alloc_deps() {
-    if (num_deps < alloc_deps)
+    if (num_active_deps < alloc_active_deps)
         return;
-    alloc_deps = realloc_size(alloc_deps);
-    active_deps = xrealloc(active_deps, alloc_deps * sizeof(*active_deps));
+    alloc_active_deps = realloc_size(alloc_active_deps);
+    active_deps = xrealloc(active_deps, alloc_active_deps * sizeof(*active_deps));
 }
 
 size_t create_session_step(const char* name) {
@@ -46,15 +46,15 @@ size_t create_session_step(const char* name) {
     strcpy(ss->name, name);
 
     ensure_alloc_steps();
-    active_steps[num_steps] = ss;
-    return num_steps++;
+    active_steps[num_active_steps] = ss;
+    return num_active_steps++;
 }
 
 size_t create_session_input(size_t step_pos, const char* path) {
-    assert(step_pos < num_steps);
+    assert(step_pos < num_active_steps);
     // Maintain session inputs in strictly monotonic order.
-    if (num_inputs > 0) {
-        struct session_input* prev_si = active_inputs[num_inputs - 1];
+    if (num_active_inputs > 0) {
+        struct session_input* prev_si = active_inputs[num_active_inputs - 1];
         size_t prev_step_pos = ntohl(prev_si->step_pos);
         if (step_pos < prev_step_pos ||
                 (step_pos == prev_step_pos && strcmp(path, prev_si->path) <= 0))
@@ -72,16 +72,16 @@ size_t create_session_input(size_t step_pos, const char* path) {
     strcpy(si->path, path);
 
     ensure_alloc_inputs();
-    active_inputs[num_inputs] = si;
-    return num_inputs++;
+    active_inputs[num_active_inputs] = si;
+    return num_active_inputs++;
 }
 
 size_t create_session_dependency(size_t input_pos,
                                  size_t step_pos, const char* output) {
-    assert(input_pos < num_inputs);
+    assert(input_pos < num_active_inputs);
     struct session_input* si = active_inputs[input_pos];
     size_t dependent_pos = ntohl(si->step_pos);
-    if (dependent_pos >= num_steps)
+    if (dependent_pos >= num_active_steps)
         die("dependent out of bounds");
     ss_inc_pending(active_steps[dependent_pos]);
 
@@ -96,8 +96,8 @@ size_t create_session_dependency(size_t input_pos,
 
     deps_dirty = 1;
     ensure_alloc_deps();
-    active_deps[num_deps] = sd;
-    return num_deps++;
+    active_deps[num_active_deps] = sd;
+    return num_active_deps++;
 }
 
 char session_filepath[PATH_MAX];
@@ -132,16 +132,16 @@ int load_session(const char* sessname) {
         return error("truncated session header");
     struct session_header* hdr = bb.data;
 
-    alloc_steps = num_steps = ntohl(hdr->num_steps);
-    active_steps = xmalloc(alloc_steps * sizeof(struct session_step*));
-    alloc_inputs = num_inputs = ntohl(hdr->num_inputs);
-    active_inputs = xmalloc(alloc_inputs * sizeof(struct session_input*));
-    alloc_deps = num_deps = ntohl(hdr->num_deps);
-    active_deps = xmalloc(alloc_deps * sizeof(struct session_dependency*));
+    alloc_active_steps = num_active_steps = ntohl(hdr->num_steps);
+    active_steps = xmalloc(alloc_active_steps * sizeof(struct session_step*));
+    alloc_active_inputs = num_active_inputs = ntohl(hdr->num_inputs);
+    active_inputs = xmalloc(alloc_active_inputs * sizeof(struct session_input*));
+    alloc_active_deps = num_active_deps = ntohl(hdr->num_deps);
+    active_deps = xmalloc(alloc_active_deps * sizeof(struct session_dependency*));
 
     char* end = (char*)bb.data + bb.size;
     char* p = (char*)hdr + sizeof(*hdr);
-    for (size_t i = 0; i < num_steps; i++) {
+    for (size_t i = 0; i < num_active_steps; i++) {
         struct session_step* ss = (struct session_step*)p;
         active_steps[i] = ss;
         p += ss_size(ss);
@@ -150,7 +150,7 @@ int load_session(const char* sessname) {
         if (ss->name[ss_name_len(ss)] != '\0')
             return error("step name not NUL-terminated");
     }
-    for (size_t i = 0; i < num_inputs; i++) {
+    for (size_t i = 0; i < num_active_inputs; i++) {
         struct session_input* si = (struct session_input*)p;
         active_inputs[i] = si;
         p += si_size(si);
@@ -159,7 +159,7 @@ int load_session(const char* sessname) {
         if (si->path[si_path_len(si)] != '\0')
             return error("input path not NUL-terminated");
     }
-    for (size_t i = 0; i < num_deps; i++) {
+    for (size_t i = 0; i < num_active_deps; i++) {
         struct session_dependency* sd = (struct session_dependency*)p;
         active_deps[i] = sd;
         p += sd_size(sd);
@@ -199,7 +199,7 @@ int save_session() {
         set_session_name("default");
 
     if (deps_dirty)
-        qsort(active_deps, num_deps, sizeof(*active_deps), cmp_dep);
+        qsort(active_deps, num_active_deps, sizeof(*active_deps), cmp_dep);
 
     char lockfile[PATH_MAX];
     if (snprintf(lockfile, PATH_MAX, "%s.lock", session_filepath) >= PATH_MAX)
@@ -213,25 +213,25 @@ int save_session() {
     }
 
     struct session_header hdr = {
-        .num_steps = htonl(num_steps),
-        .num_inputs = htonl(num_inputs),
-        .num_deps = htonl(num_deps),
+        .num_steps = htonl(num_active_steps),
+        .num_inputs = htonl(num_active_inputs),
+        .num_deps = htonl(num_active_deps),
     };
 
     if (write(fd, &hdr, sizeof(hdr)) != sizeof(hdr))
         goto write_fail;
 
-    for (size_t i = 0; i < num_steps; i++) {
+    for (size_t i = 0; i < num_active_steps; i++) {
         struct session_step* ss = active_steps[i];
         if (write(fd, ss, ss_size(ss)) != (ssize_t)ss_size(ss))
             goto write_fail;
     }
-    for (size_t i = 0; i < num_inputs; i++) {
+    for (size_t i = 0; i < num_active_inputs; i++) {
         struct session_input* si = active_inputs[i];
         if (write(fd, si, si_size(si)) != (ssize_t)si_size(si))
             goto write_fail;
     }
-    for (size_t i = 0; i < num_deps; i++) {
+    for (size_t i = 0; i < num_active_deps; i++) {
         struct session_dependency* sd = active_deps[i];
         if (write(fd, sd, sd_size(sd)) != (ssize_t)sd_size(sd))
             goto write_fail;
@@ -262,10 +262,10 @@ ssize_t find_stepish(const char* stepish) {
     if (stepish[0] == '@' && isdigit(stepish[1])) {
         char* end;
         size_t pos = strtoul(&stepish[1], &end, 10);
-        if (end != &stepish[1] && *end == '\0' && pos < num_steps)
+        if (end != &stepish[1] && *end == '\0' && pos < num_active_steps)
             return pos;
     }
-    for (size_t i = 0; i < num_steps; i++) {
+    for (size_t i = 0; i < num_active_steps; i++) {
         if (!strcmp(active_steps[i]->name, stepish))
             return i;
     }

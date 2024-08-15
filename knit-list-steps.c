@@ -22,7 +22,7 @@ static void emit(size_t step_pos, struct session_step* ss) {
         printf("     job\t%s\n", to_hex(ss->job_hash));
         printf("     production\t%s\n", to_hex(ss->prd_hash));
 
-        for (size_t i = 0; i < num_inputs; i++) {
+        for (size_t i = 0; i < num_active_inputs; i++) {
             struct session_input* si = active_inputs[i];
             if (ntohl(si->step_pos) != step_pos)
                 continue;
@@ -30,7 +30,7 @@ static void emit(size_t step_pos, struct session_step* ss) {
             printf("     resource\t%s\n", to_hex(si->res_hash));
         }
 
-        for (size_t i = 0; i < num_deps; i++) {
+        for (size_t i = 0; i < num_active_deps; i++) {
             struct session_dependency* sd = active_deps[i];
             if (ntohl(sd->step_pos) != step_pos)
                 continue;
@@ -85,9 +85,9 @@ int main(int argc, char** argv) {
     }
 
     if (debug)
-        printf("counts \t\t%-3zu %-3zu %-3zu\n", num_steps, num_inputs, num_deps);
+        printf("counts \t\t%-3zu %-3zu %-3zu\n", num_active_steps, num_active_inputs, num_active_deps);
 
-    for (size_t i = 0; i < num_steps; i++) {
+    for (size_t i = 0; i < num_active_steps; i++) {
         struct session_step* ss = active_steps[i];
         if (ss_hasflag(ss, SS_JOB)) {
             if (ss_hasflag(ss, SS_FINAL)) {

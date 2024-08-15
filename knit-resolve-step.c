@@ -7,10 +7,10 @@ static void die_usage(char* arg0) {
 
 static int resolve_step_to_job(size_t step_pos, struct object_id* job_oid) {
     size_t i = 0;
-    while (i < num_inputs && ntohl(active_inputs[i]->step_pos) < step_pos)
+    while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) < step_pos)
         i++;
     size_t start = i;
-    while (i < num_inputs && ntohl(active_inputs[i]->step_pos) == step_pos)
+    while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) == step_pos)
         i++;
     size_t limit = i;
 

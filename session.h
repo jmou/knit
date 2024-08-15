@@ -69,11 +69,11 @@ size_t create_session_dependency(size_t input_pos,
                                  size_t step_pos, const char* output);
 
 extern struct session_step** active_steps;
-extern size_t num_steps;
+extern size_t num_active_steps;
 extern struct session_input** active_inputs;
-extern size_t num_inputs;
+extern size_t num_active_inputs;
 extern struct session_dependency** active_deps;
-extern size_t num_deps;
+extern size_t num_active_deps;
 
 const char* get_session_name();
 int load_session(const char* sessname);

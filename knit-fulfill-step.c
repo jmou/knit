@@ -4,10 +4,10 @@
 static void satisfy_dependencies(size_t step_pos,
                                  const struct resource_list* outputs) {
     size_t dep_pos = 0;
-    while (dep_pos < num_deps && ntohl(active_deps[dep_pos]->step_pos) < step_pos)
+    while (dep_pos < num_active_deps && ntohl(active_deps[dep_pos]->step_pos) < step_pos)
         dep_pos++;
 
-    while (dep_pos < num_deps) {
+    while (dep_pos < num_active_deps) {
         struct session_dependency* dep = active_deps[dep_pos];
         if (dep->step_pos != htonl(step_pos))
             break;
@@ -23,12 +23,12 @@ static void satisfy_dependencies(size_t step_pos,
         }
 
         size_t input_pos = ntohl(dep->input_pos);
-        if (input_pos >= num_inputs)
+        if (input_pos >= num_active_inputs)
             die("input out of bounds");
         struct session_input* input = active_inputs[input_pos];
 
         size_t dependent_pos = ntohl(input->step_pos);
-        if (dependent_pos >= num_steps)
+        if (dependent_pos >= num_active_steps)
             die("dependent out of bounds");
         if (dependent_pos <= step_pos)
             die("step later than its dependent");
