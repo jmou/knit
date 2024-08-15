@@ -40,5 +40,13 @@ enum token lex_keyword(struct lex_input* in);
 
 int lex_path(struct lex_input* in);
 
-// *curr should be just after the opening quote.
-int lex_string(struct lex_input* in, struct bytebuf* out);
+// in->curr should be just after the opening quote. lex_string*() lexes up to
+// but not past the closing quote.
+//
+// Does not advance in. Returns the size of the allocation needed to store the
+// unescaped string (including NUL terminator) or 0 on error; if the value is
+// negative, then the string need not be escaped (can use lex_stuff_null()).
+ssize_t lex_string_alloc(struct lex_input* in);
+// If buf is not NULL, the unescaped string will be stored in it; buf must have
+// at least lex_string_alloc(in) bytes allocated.
+void lex_string(struct lex_input* in, char* buf);

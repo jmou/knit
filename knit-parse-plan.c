@@ -110,7 +110,7 @@ static char* read_path(struct lex_input* in) {
 
 static int parse_value(struct parse_context* ctx, struct value* out) {
     struct lex_input* in = &ctx->in;
-    struct bytebuf bb;
+    ssize_t size;
     memset(out, 0, sizeof(*out));
     switch (lex(in)) {
     case TOKEN_EXCLAMATION:
@@ -118,12 +118,18 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         return 0;
     case TOKEN_QUOTE:
         out->tag = VALUE_LITERAL;
-        // TODO lex directly into allocated buffer
-        if (lex_string(in, &bb) < 0)
+        size = lex_string_alloc(in);
+        if (size == 0) {
             return -1;
-        out->literal = bump_alloc(ctx->bump_p, bb.size);
-        memcpy(out->literal, bb.data, bb.size);
-        cleanup_bytebuf(&bb);
+        } else if (size < 0) {
+            lex_string(in, NULL);
+            out->literal = lex_stuff_null(in);
+        } else {
+            out->literal = bump_alloc(ctx->bump_p, size);
+            lex_string(in, out->literal);
+        }
+        if (lex(in) != TOKEN_QUOTE)
+            die("quote should follow lex_string()");
         return 0;
     case TOKEN_IDENT:
         out->tag = VALUE_DEPENDENCY;

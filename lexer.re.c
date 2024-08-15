@@ -92,44 +92,47 @@ int lex_path(struct lex_input* in) {
     return 0;
 }
 
-int lex_string(struct lex_input* in, struct bytebuf* out) {
+static int lex_string_internal(struct lex_input* in, char* buf, ssize_t* size) {
     pre_lex(in);
-    memset(out, 0, sizeof(*out));
-    out->data = in->prev;
 
     int rc;
     int needs_copy = 0;
-    size_t alloc = 0;
-    char c;
-    for (;; out->size++) {
+    size_t i = 0;
+    for (char c;; i++) {
         c = *in->curr;
-        if (needs_copy) {
-            if (alloc == 0) {
-                alloc = 16;
-                char* copy = xmalloc(alloc);
-                memcpy(copy, out->data, out->size);
-                out->data = copy;
-                out->should_free = 1;
-            } else if (alloc == out->size) {
-                alloc *= 2;
-                out->data =(char*)realloc(out->data, alloc);
-            }
-            ((char*)out->data)[out->size] = c;
-        }
-        // TODO disallow newline in string? See http://re2c.org/examples/c/real_world/example_cxx98.html
+        // TODO support escaped NUL bytes
         /*!re2c
-            ["] { rc = 0; break; }
-            [^\\"\x00] { continue; }
-            "\\n" { c = '\n'; needs_copy = 1; continue; }
+            ["] { rc = 0; in->curr--; break; }
+            [^"\\\n\x00] { goto append; }
+            "\\\"" { c = '"';  needs_copy = 1; goto append; }
+            "\\\\" { c = '\\'; needs_copy = 1; goto append; }
+            "\\n"  { c = '\n'; needs_copy = 1; goto append; }
             [\\][^\x00] { rc = error("invalid string escape"); break; }
             * { rc = error("unterminated string"); break; }
         */
+append:
+        if (buf)
+            buf[i] = c;
     }
+    if (buf)
+        buf[i] = '\0';
+    if (size)
+        *size = needs_copy ? i + 1 : -i - 1;
 
     post_lex(in);
-    if (rc < 0 && out->should_free) {
-        free(out->data);
-        memset(out, 0, sizeof(*out));
-    }
     return rc;
+}
+
+ssize_t lex_string_alloc(struct lex_input* in) {
+    ssize_t size;
+    struct lex_input tmp_in;
+    memcpy(&tmp_in, in, sizeof(tmp_in));
+    if (lex_string_internal(&tmp_in, NULL, &size) < 0)
+        return 0;
+    return size;
+}
+
+void lex_string(struct lex_input* in, char* buf) {
+    int rc = lex_string_internal(in, buf, NULL);
+    assert(rc == 0); // should succeed if lex_string_alloc() succeeds
 }
