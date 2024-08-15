@@ -1,5 +1,9 @@
 #include "production.h"
 
+struct production* get_production(const struct object_id* oid) {
+    return intern_object(oid, TYPE_PRODUCTION, sizeof(struct production));
+}
+
 struct production_header {
     uint8_t job_hash[KNIT_HASH_RAWSZ];
     uint32_t num_outputs;
@@ -10,12 +14,14 @@ struct output {
     char path[];
 };
 
-int parse_production_bytes(void* data, size_t size, struct production* prd) {
-    struct production_header* hdr = data;
+int parse_production_bytes(struct production* prd, void* data, size_t size) {
+    if (prd->object.is_parsed)
+        return 0;
+    struct production_header* hdr = (struct production_header*)data;
     size_t off = sizeof(*hdr);
     if (size < off)
         return error("truncated production header");
-    memcpy(prd->job_oid.hash, hdr->job_hash, KNIT_HASH_RAWSZ);
+    prd->job = get_job(oid_of_hash(hdr->job_hash));
     size_t num_outputs = ntohl(hdr->num_outputs);
 
     struct resource_list** list_p = &prd->outputs;
@@ -23,13 +29,13 @@ int parse_production_bytes(void* data, size_t size, struct production* prd) {
         struct output* out = (struct output*)((char*)data + off);
         ssize_t nrem = size - off - sizeof(*out);
         if (nrem <= 0)
-            return error("truncated production output hash");
+            return error("truncated production output");
         int pathlen = strnlen(out->path, nrem);
         if (pathlen == nrem)
             return error("production output not NUL-terminated");
 
-        struct resource_list* list = xmalloc(sizeof(struct resource_list));
-        memcpy(list->oid.hash, out->res_hash, KNIT_HASH_RAWSZ);
+        struct resource_list* list = xmalloc(sizeof(*list));
+        list->res = get_resource(oid_of_hash(out->res_hash));
         list->path = strdup(out->path);
         list->next = NULL;
 
@@ -39,24 +45,37 @@ int parse_production_bytes(void* data, size_t size, struct production* prd) {
     }
     if (off != size)
         return error("trailing production data");
+
+    prd->object.is_parsed = 1;
     return 0;
 }
 
-int write_production(const struct production* prd, struct object_id* oid) {
-    size_t size = sizeof(struct production_header);
-    for (const struct resource_list* curr = prd->outputs; curr; curr = curr->next)
-        size += sizeof(struct output) + strlen(curr->path) + 1;
-    char* buf = xmalloc(size);
-    char* p = buf;
+int parse_production(struct production* prd) {
+    if (prd->object.is_parsed)
+        return 0;
+    size_t size;
+    void* buf = read_object_of_type(&prd->object.oid, TYPE_PRODUCTION, &size);
+    if (!buf)
+        return -1;
+    int ret = parse_production_bytes(prd, buf, size);
+    free(buf);
+    return ret;
+}
 
-    struct production_header* hdr = (struct production_header*)p;
-    memcpy(hdr->job_hash, prd->job_oid.hash, KNIT_HASH_RAWSZ);
-    p += sizeof(*hdr);
+struct production* store_production(struct job* job, struct resource_list* outputs) {
+    size_t size = sizeof(struct production_header);
+    for (const struct resource_list* curr = outputs; curr; curr = curr->next)
+        size += sizeof(struct output) + strlen(curr->path) + 1;
+
+    char* buf = xmalloc(size);
+    struct production_header* hdr = (struct production_header*)buf;
+    memcpy(hdr->job_hash, job->object.oid.hash, KNIT_HASH_RAWSZ);
+    char* p = buf + sizeof(*hdr);
 
     uint32_t count = 0;
-    for (const struct resource_list* curr = prd->outputs; curr; curr = curr->next) {
+    for (const struct resource_list* curr = outputs; curr; curr = curr->next) {
         struct output* out = (struct output*)p;
-        memcpy(out->res_hash, curr->oid.hash, KNIT_HASH_RAWSZ);
+        memcpy(out->res_hash, curr->res->object.oid.hash, KNIT_HASH_RAWSZ);
         size_t pathsize = strlen(curr->path) + 1;
         memcpy(out->path, curr->path, pathsize);
         p += sizeof(*out) + pathsize;
@@ -64,23 +83,8 @@ int write_production(const struct production* prd, struct object_id* oid) {
     }
     hdr->num_outputs = htonl(count);
 
-    int rc = write_object(TYPE_PRODUCTION, buf, size, oid);
+    struct object_id oid;
+    int rc = write_object(TYPE_PRODUCTION, buf, size, &oid);
     free(buf);
-    return rc;
-}
-
-struct resource_list* resource_list_insert(struct resource_list** list_p,
-                                           const char* path,
-                                           const struct object_id* oid) {
-    struct resource_list* list = *list_p;
-    while (list && strcmp(list->path, path) < 0) {
-        list_p = &list->next;
-        list = list->next;
-    }
-    struct resource_list* node = xmalloc(sizeof(struct resource_list));
-    node->path = strdup(path);
-    oidcpy(&node->oid, oid);
-    node->next = list;
-    *list_p = node;
-    return node;
+    return rc < 0 ? NULL : get_production(&oid);
 }

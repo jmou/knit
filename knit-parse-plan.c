@@ -1,5 +1,6 @@
 #include "hash.h"
 #include "lexer.h"
+#include "resource.h"
 
 #include <stdalign.h>
 
@@ -360,10 +361,10 @@ void print_value(FILE* fh, const struct value* val) {
 }
 
 static int print_resource(FILE* fh, void* data, size_t size) {
-    struct object_id res_oid;
-    if (write_object(TYPE_RESOURCE, data, size, &res_oid) < 0)
+    struct resource* res = store_resource(data, size);
+    if (!res)
         return -1;
-    fprintf(fh, "resource %s\n", oid_to_hex(&res_oid));
+    fprintf(fh, "resource %s\n", oid_to_hex(&res->object.oid));
     return 0;
 }
 

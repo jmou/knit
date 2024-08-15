@@ -2,10 +2,27 @@
 #include <ftw.h>
 
 #include "production.h"
+#include "resource.h"
 
 // Global state used by nftw callback each_file().
 static struct resource_list* resources;
 static size_t filename_offset;
+
+static struct resource_list* resource_list_insert(struct resource_list** list_p,
+                                                  const char* path,
+                                                  struct resource* res) {
+    struct resource_list* list = *list_p;
+    while (list && strcmp(list->path, path) < 0) {
+        list_p = &list->next;
+        list = list->next;
+    }
+    struct resource_list* node = xmalloc(sizeof(*node));
+    node->path = strdup(path);
+    node->res = res;
+    node->next = list;
+    *list_p = node;
+    return node;
+}
 
 static int each_file(const char* filename, const struct stat* /*st*/,
                      int type, struct FTW* /*ftwbuf*/) {
@@ -27,14 +44,16 @@ static int each_file(const char* filename, const struct stat* /*st*/,
     }
 
     struct bytebuf bbuf;
-    struct object_id oid;
+    struct resource* res;
     if (mmap_file(filename, &bbuf) < 0 ||
-            write_object(TYPE_RESOURCE, bbuf.data, bbuf.size, &oid) < 0) {
+            !(res = store_resource(bbuf.data, bbuf.size))) {
+        cleanup_bytebuf(&bbuf);
         errno = EIO;
         return 1;
     }
+    cleanup_bytebuf(&bbuf);
     // We expect resource lists to be short, but building them may be quadratic.
-    resource_list_insert(&resources, filename + filename_offset, &oid);
+    resource_list_insert(&resources, filename + filename_offset, res);
     return 0;
 }
 
@@ -65,19 +84,18 @@ int main(int argc, char** argv) {
     // Chomp any trailing newline.
     if (bb.size == KNIT_HASH_HEXSZ + 1 && ((char*)bb.data)[KNIT_HASH_HEXSZ] == '\n')
         ((char*)bb.data)[KNIT_HASH_HEXSZ] = '\0';
-    struct production prd;
-    if (hex_to_oid(bb.data, &prd.job_oid) < 0)
+    struct object_id job_oid;
+    if (hex_to_oid(bb.data, &job_oid) < 0)
         die("invalid job hash");
 
     filename_offset = strlen(outputs) + 1;
     if (nftw(outputs, each_file, 16, 0) != 0)
         die("directory traversal failed on %s: %s", outputs, strerror(errno));
-    prd.outputs = resources;
 
-    struct object_id oid;
-    if (write_production(&prd, &oid) < 0)
+    struct production* prd = store_production(get_job(&job_oid), resources);
+    if (!prd)
         exit(1);
 
-    puts(oid_to_hex(&oid));
+    puts(oid_to_hex(&prd->object.oid));
     return 0;
 }

@@ -1,12 +1,14 @@
+#include "hash.h"
+
 // The "modern" EVP API is clunky. We probably won't use it but could vendor an
 // implementation of SHA-256 to avoid this API deprecation.
 #define OPENSSL_SUPPRESS_DEPRECATED
 #include <openssl/sha.h>
 
-#include "hash.h"
-
-void oidcpy(struct object_id* dst, const struct object_id* src) {
-    memcpy(dst, src, sizeof(*dst));
+struct object_id* oid_of_hash(uint8_t* hash) {
+    static struct object_id oid;
+    memcpy(oid.hash, hash, KNIT_HASH_RAWSZ);
+    return &oid;
 }
 
 int hex_to_oid(const char* hex, struct object_id* oid) {
@@ -35,11 +37,6 @@ int hex_to_oid(const char* hex, struct object_id* oid) {
     return 0;
 }
 
-int is_valid_hex_oid(const char* hex) {
-    struct object_id dummy;
-    return hex_to_oid(hex, &dummy) == 0;
-}
-
 const char* oid_to_hex(const struct object_id* oid) {
     const char HEX_DIGITS[] = "0123456789abcdef";
     static char hex[KNIT_HASH_HEXSZ + 1];
@@ -54,12 +51,15 @@ const char* oid_to_hex(const struct object_id* oid) {
 
 uint32_t make_typesig(const char* type) {
     uint32_t u32;
-    memcpy(&u32, type, 4);
+    strncpy((char*)&u32, type, 4); // pad NUL to 4 bytes
     return ntohl(u32);
 }
 
 char* strtypesig(uint32_t typesig) {
-    static char buf[5];
+    static char bufs[4][5];
+    static int i;
+    i = (i + 1) % 4;
+    char* buf = bufs[i];
     uint32_t be = htonl(typesig);
     memcpy(buf, &be, 4);
     buf[4] = '\0';
@@ -131,21 +131,43 @@ int write_object(uint32_t typesig, void* data, size_t size,
     return 0;
 }
 
-int read_object(const struct object_id* oid,
-                struct bytebuf* bbuf,
-                uint32_t* typesig) {
-    if (mmap_file(object_path(oid), bbuf) < 0)
-        return -1;
+void* read_object(const struct object_id* oid, uint32_t* typesig, size_t* size) {
+    void* ret = NULL;
+    struct bytebuf bb;
+    if (mmap_file(object_path(oid), &bb) < 0)
+        return NULL;
 
-    struct object_header* hdr = bbuf->data;
-    if (bbuf->size < sizeof(*hdr))
-        return error("truncated header");
+    struct object_header* hdr = bb.data;
+    if (bb.size < sizeof(*hdr)) {
+        error("truncated header");
+        goto cleanup;
+    }
 
     *typesig = ntohl(hdr->typesig);
     size_t nrem = ntohl(hdr->size);
+    if (bb.size != sizeof(*hdr) + nrem) {
+        error("size mismatch");
+        goto cleanup;
+    }
 
-    if (bbuf->size != sizeof(*hdr) + nrem)
-        return error("size mismatch");
+    // TODO decompress
+    *size = bb.size - sizeof(*hdr);
+    ret = xmalloc(*size);
+    memcpy(ret, bb.data + sizeof(*hdr), *size);
 
-    return 0;
+cleanup:
+    cleanup_bytebuf(&bb);
+    return ret;
+}
+
+void* read_object_of_type(const struct object_id* oid, uint32_t typesig, size_t* size) {
+    uint32_t actual_typesig;
+    void* buf = read_object(oid, &actual_typesig, size);
+    if (buf && actual_typesig != typesig) {
+        free(buf);
+        error("object %s is type %s, expected %s", oid_to_hex(oid),
+            strtypesig(actual_typesig), strtypesig(typesig));
+        return NULL;
+    }
+    return buf;
 }

@@ -64,6 +64,8 @@ void cleanup_bytebuf(struct bytebuf* bbuf) {
 }
 
 int mmap_file(const char* filename, struct bytebuf* out) {
+    memset(out, 0, sizeof(*out));
+
     int fd = open(filename, O_RDONLY);
     if (fd < 0)
         return error("cannot open %s: %s", filename, strerror(errno));
@@ -73,7 +75,6 @@ int mmap_file(const char* filename, struct bytebuf* out) {
         return error("cannot stat %s: %s", filename, strerror(errno));
     }
 
-    memset(out, 0, sizeof(*out));
     if (st.st_size == 0)
         return 0;
 
@@ -89,12 +90,13 @@ int mmap_file(const char* filename, struct bytebuf* out) {
 }
 
 int slurp_fd(int fd, struct bytebuf* out) {
+    memset(out, 0, sizeof(*out));
+
     size_t alloc = 4096;
     struct stat st;
     if (fstat(fd, &st) == 0 && st.st_size > 0)
         alloc = st.st_size;
 
-    memset(out, 0, sizeof(*out));
     out->data = xmalloc(alloc);
     out->size = 0;
 

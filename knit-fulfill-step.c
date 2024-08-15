@@ -49,7 +49,7 @@ static void satisfy_dependencies(size_t step_pos,
         // Note: cmp == 0
         // The production and dependency outputs match so write through to the
         // dependent step.
-        memcpy(input->res_hash, outputs->oid.hash, KNIT_HASH_RAWSZ);
+        memcpy(input->res_hash, outputs->res->object.oid.hash, KNIT_HASH_RAWSZ);
         si_setflag(input, SI_RESOURCE | SI_FINAL);
         if (!dependent->num_pending)
             die("num_pending underflow on step %s", dependent->name);
@@ -78,16 +78,8 @@ int main(int argc, char** argv) {
     if (hex_to_oid(argv[3], &prd_oid) < 0)
         die("invalid production hash");
 
-    // TODO make reading a production less cumbersome and error prone
-    uint32_t typesig;
-    struct bytebuf bb;
-    if (read_object(&prd_oid, &bb, &typesig) < 0)
-        exit(1);
-    if (typesig != TYPE_PRODUCTION)
-        die("object is not a production");
-    struct production prd;
-    if (parse_production_bytes(bb.data + OBJECT_HEADER_SIZE,
-                               bb.size - OBJECT_HEADER_SIZE, &prd) < 0)
+    struct production* prd = get_production(&prd_oid);
+    if (parse_production(prd) < 0)
         exit(1);
 
     struct session_step* ss = active_steps[step_pos];
@@ -97,7 +89,7 @@ int main(int argc, char** argv) {
         die("step not resolved");
     if (ss_hasflag(ss, SS_FINAL))
         die("step already fulfilled");
-    satisfy_dependencies(step_pos, prd.outputs);
+    satisfy_dependencies(step_pos, prd->outputs);
     ss_setflag(ss, SS_FINAL);
 
     if (save_session() < 0)
