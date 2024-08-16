@@ -15,10 +15,24 @@ static const char* to_hex(const uint8_t* rawhash) {
     return oid_to_hex(&oid);
 }
 
+static const char* pflags(uint16_t flags) {
+    const char binbyte[16][5] = {
+        "0000", "0001", "0010", "0011", "0100", "0101", "0110", "0111",
+        "1000", "1001", "1010", "1011", "1100", "1101", "1110", "1111",
+    };
+    flags = ntohs(flags);
+    static_assert(0xfff == SS_NAMEMASK);
+    static_assert(0xfff == SI_PATHMASK);
+    static_assert(0xfff == SD_OUTPUTMASK);
+    static char buf[10];
+    sprintf(buf, "%.4s %4u", binbyte[flags >> 12], flags & 0xfff);
+    return buf;
+}
+
 static void emit(size_t step_pos, struct session_step* ss) {
     if (debug) {
-        printf("step @%zu \t%-2u %04x\t%s\n",
-               step_pos, ntohs(ss->num_pending), ntohs(ss->ss_flags), ss->name);
+        printf("step @%zu \t%-2u %s %s\n",
+               step_pos, ntohs(ss->num_pending), pflags(ss->ss_flags), ss->name);
         printf("     job\t%s\n", to_hex(ss->job_hash));
         printf("     production\t%s\n", to_hex(ss->prd_hash));
 
@@ -26,7 +40,7 @@ static void emit(size_t step_pos, struct session_step* ss) {
             struct session_input* si = active_inputs[i];
             if (ntohl(si->step_pos) != step_pos)
                 continue;
-            printf("     input\t%-2zu %04x\t%s\n", i, ntohs(si->si_flags), si->path);
+            printf("     input\t%-2zu %s %s\n", i, pflags(si->si_flags), si->path);
             printf("     resource\t%s\n", to_hex(si->res_hash));
         }
 
@@ -34,8 +48,8 @@ static void emit(size_t step_pos, struct session_step* ss) {
             struct session_dependency* sd = active_deps[i];
             if (ntohl(sd->step_pos) != step_pos)
                 continue;
-            printf("     dependency\t%-2u %04x\t%s\n",
-                   ntohl(sd->input_pos), ntohs(sd->sd_flags), sd->output);
+            printf("     dependency\t%-2u %s %s\n",
+                   ntohl(sd->input_pos), pflags(sd->sd_flags), sd->output);
         }
     } else if (positional) {
         printf("@%zu\n", step_pos);
