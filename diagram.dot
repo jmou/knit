@@ -48,7 +48,7 @@ digraph {
     available;
     blocked -> available;
     available -> fulfilled;
-    blocked -> "missing dependencies";
+    blocked -> "unmet\n(requirements)";
 
     // step flags
     NONE -> SS_JOB -> "SS_JOB|SS_FINAL";

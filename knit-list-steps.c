@@ -6,7 +6,7 @@ static int positional;
 static int wants_available;
 static int wants_blocked;
 static int wants_fulfilled;
-static int wants_missing_deps;
+static int wants_unmet;
 
 static const char* to_hex(const uint8_t* rawhash) {
     struct object_id oid;
@@ -75,8 +75,8 @@ int main(int argc, char** argv) {
         } else if (!strcmp(flag, "--available")) {
             wants_available = 1;
             wants_all = 0;
-        } else if (!strcmp(flag, "--missing-deps")) {
-            wants_missing_deps = 1;
+        } else if (!strcmp(flag, "--unmet")) {
+            wants_unmet = 1;
             wants_all = 0;
         } else if (!strcmp(flag, "--fulfilled")) {
             wants_fulfilled = 1;
@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
         wants_available = 1;
         wants_blocked = 1;
         wants_fulfilled = 1;
-        wants_missing_deps = 1;
+        wants_unmet = 1;
     }
 
     if (debug)
@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
             }
         } else {
             if (ss_hasflag(ss, SS_FINAL)) {
-                if (wants_missing_deps)
+                if (wants_unmet)
                     emit(i, ss);
             } else {
                 if (!ss->num_unresolved)

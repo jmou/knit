@@ -42,6 +42,7 @@ enum token lex(struct lex_input* in) {
             ["] { token = TOKEN_QUOTE; break; }
             [:] { token = TOKEN_COLON; break; }
             [=] { token = TOKEN_EQUALS; break; }
+            [?] { token = TOKEN_QUESTION; break; }
             "./" { token = TOKEN_DOTSLASH; break; }
             [\x00] { token = TOKEN_EOF; break; }
             * { token = TOKEN_ERROR; break; }

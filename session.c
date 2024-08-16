@@ -44,7 +44,7 @@ size_t create_session_step(const char* name) {
     memset(ss, 0, sizeof(*ss));
     if (namelen > SS_NAMEMASK)
         die("step name too long %s", name);
-    ss_init_flags(ss, namelen);
+    ss_init_flags(ss, namelen, 0);
     strcpy(ss->name, name);
 
     ensure_alloc_steps();
@@ -70,7 +70,7 @@ size_t create_session_input(size_t step_pos, const char* path) {
     si->step_pos = htonl(step_pos);
     if (pathlen > SI_PATHMASK)
         die("input path too long %s", path);
-    si_init_flags(si, pathlen);
+    si_init_flags(si, pathlen, 0);
     strcpy(si->path, path);
 
     ensure_alloc_inputs();
@@ -79,7 +79,8 @@ size_t create_session_input(size_t step_pos, const char* path) {
 }
 
 size_t create_session_dependency(size_t input_pos,
-                                 size_t step_pos, const char* output) {
+                                 size_t step_pos, const char* output,
+                                 uint16_t flags) {
     assert(input_pos < num_active_inputs);
     struct session_input* si = active_inputs[input_pos];
     size_t dependent_pos = ntohl(si->step_pos);
@@ -93,7 +94,7 @@ size_t create_session_dependency(size_t input_pos,
     sd->step_pos = htonl(step_pos);
     if (outlen > SD_OUTPUTMASK)
         die("output path too long %s", output);
-    sd_init_flags(sd, outlen);
+    sd_init_flags(sd, outlen, flags);
     strcpy(sd->output, output);
 
     deps_dirty = 1;
@@ -277,17 +278,24 @@ ssize_t find_stepish(const char* stepish) {
 // This translates between session_input and job, so it could reasonably reside
 // in either job.c or session.c. In any case, store_job() is primarily concerned
 // with serialization, while compile_job_for_step() does the rest.
-static struct job* store_job(struct session_input** inputs, size_t num_inputs) {
+static struct job* store_job(struct session_input** inputs, size_t inputs_size) {
     size_t size = sizeof(struct job_header);
-    for (size_t i = 0; i < num_inputs; i++)
+    size_t num_inputs = 0;
+    for (size_t i = 0; i < inputs_size; i++) {
+        if (!si_hasflag(inputs[i], SI_RESOURCE))
+            continue;
         size += sizeof(struct job_input) + strlen(inputs[i]->path) + 1;
+        num_inputs++;
+    }
 
     char* buf = xmalloc(size);
     struct job_header* hdr = (struct job_header*)buf;
     hdr->num_inputs = htonl(num_inputs);
     char* p = buf + sizeof(*hdr);
 
-    for (size_t i = 0; i < num_inputs; i++) {
+    for (size_t i = 0; i < inputs_size; i++) {
+        if (!si_hasflag(inputs[i], SI_RESOURCE))
+            continue;
         struct job_input* in = (struct job_input*)p;
         memcpy(in->res_hash, inputs[i]->res_hash, KNIT_HASH_RAWSZ);
         size_t pathsize = strlen(inputs[i]->path) + 1;
@@ -306,7 +314,7 @@ int compile_job_for_step(size_t step_pos) {
     if (ss_hasflag(ss, SS_JOB))
         return error("step already has job");
     if (ss_hasflag(ss, SS_FINAL))
-        return error("step missing dependencies");
+        return error("step has unmet requirements");
     if (ss->num_unresolved)
         return error("step blocked on %u dependencies", ntohs(ss->num_unresolved));
 
@@ -314,8 +322,11 @@ int compile_job_for_step(size_t step_pos) {
     while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) < step_pos)
         i++;
     size_t start = i;
-    while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) == step_pos)
+    while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) == step_pos) {
+        if (!si_hasflag(active_inputs[i], SI_FINAL))
+            return error("expected final input");
         i++;
+    }
     size_t limit = i;
 
     struct job* job = store_job(&active_inputs[start], limit - start);

@@ -13,7 +13,8 @@ step a: partial bash
 step b: partial bash
     script = "cp -RL in/* out"
     a.ok = a:.knit/ok
-    data = a:data
+    data ?= a:data
+    optional ?= a:nonexistent
 
 step asomewhatlongstepname: partial bash
     script = "tac in/lines > out/data"

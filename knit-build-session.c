@@ -57,11 +57,17 @@ int main(int argc, char** argv) {
         } else if (removeprefix(&s, "dependency ")) {
             if (input_pos < 0)
                 die("input must precede dependency");
+            uint16_t flags = 0;
+            if (removeprefix(&s, "required ")) {
+                flags |= SD_REQUIRED;
+            } else if (!removeprefix(&s, "optional ")) {
+                die("dependency must be required or optional");
+            }
             size_t dep_pos;
             int off;
             if (sscanf(s, "%zu %n", &dep_pos, &off) != 1)
                 die("couldn't parse dependency %s", s);
-            create_session_dependency(input_pos, dep_pos, s + off);
+            create_session_dependency(input_pos, dep_pos, s + off, flags);
             should_compile_job = 0;
         } else if (!strcmp(s, "done")) {
             if (fgetc(stdin) != EOF)

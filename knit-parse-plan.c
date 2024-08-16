@@ -27,6 +27,7 @@ struct value {
 struct input_list {
     char* name;
     struct value val;
+    int optional;
     struct input_list* next;
 };
 
@@ -92,17 +93,6 @@ static void load_lex_input(struct lex_input* in) {
     memcpy(in, &saved_lex_input, sizeof(*in));
 }
 
-static enum token read_trim(struct lex_input* in) {
-    enum token token;
-    do {
-        token = lex(in);
-    } while (token == TOKEN_SPACE);
-    save_lex_input(in);
-    if (lex(in) != TOKEN_SPACE)
-        load_lex_input(in);
-    return token;
-}
-
 static int try_read_token(struct lex_input* in, enum token expected) {
     save_lex_input(in);
     enum token actual = lex(in);
@@ -159,7 +149,7 @@ static int populate_value(struct parse_context* ctx, struct value* val) {
     if (val->tag == VALUE_DEPENDENCY) {
         struct step_list* dep = find_step(ctx->plan, val->dep_name);
         if (!dep)
-            return error("unknown dependency %s", val->dep_name);
+            return error("dependency on not yet defined step %s", val->dep_name);
         val->dep_pos = dep->pos;
     }
     return 0;
@@ -208,8 +198,14 @@ static int parse_input(struct parse_context* ctx, struct input_list* input) {
     if (lex_path(in) < 0)
         return -1;
     input->name = lex_stuff_null(in);
-    if (read_trim(in) != TOKEN_EQUALS)
+
+    while (try_read_token(in, TOKEN_SPACE));
+    if (try_read_token(in, TOKEN_QUESTION))
+        input->optional = 1;
+    if (lex(in) != TOKEN_EQUALS)
         return error("expected =");
+    while (try_read_token(in, TOKEN_SPACE));
+
     if (parse_value(ctx, &input->val) < 0)
         return -1;
     if (populate_value(ctx, &input->val) < 0)
@@ -285,8 +281,10 @@ static int parse_plan_internal(struct parse_context* ctx) {
         **steps_pp = step;
         *steps_pp = &step->next;
 
-        if (read_trim(in) != TOKEN_COLON)
+        while (try_read_token(in, TOKEN_SPACE));
+        if (lex(in) != TOKEN_COLON)
             return error("expected :");
+        while (try_read_token(in, TOKEN_SPACE));
         if (parse_process(ctx, step) < 0)
             return -1;
 
@@ -389,11 +387,17 @@ static int print_plan(FILE* fh, const struct step_list* step) {
              input; input = input->next) {
             fprintf(fh, "input %s\n", input->name);
 
+            if (input->optional && input->val.tag != VALUE_DEPENDENCY)
+                return error("optional input '%s' on step %s must be a dependency",
+                             input->name, step->name);
+
             struct bytebuf bb;
             switch (input->val.tag) {
             case VALUE_DEPENDENCY:
                 assert(input->val.dep_pos >= 0);
-                fprintf(fh, "dependency %zu %s\n", input->val.dep_pos, input->val.dep_path);
+                fprintf(fh, "dependency %s %zu %s\n",
+                        input->optional ? "optional" : "required",
+                        input->val.dep_pos, input->val.dep_path);
                 break;
             case VALUE_FILENAME:
                 // TODO resource cache by (absolute?) filename

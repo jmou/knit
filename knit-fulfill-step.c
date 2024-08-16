@@ -35,11 +35,17 @@ static void resolve_dependencies(size_t step_pos,
         struct session_step* dependent = active_steps[dependent_pos];
 
         // Otherwise, we have a dependency to resolve. If we have no matching
-        // production output, then the dependency is missing and its step will
-        // finish without a job (nor production).
+        // production output, then the dependency is missing.
         if (cmp > 0) {
             si_setflag(input, SI_FINAL);
-            if (!ss_hasflag(dependent, SS_FINAL)) {
+            if (!sd_hasflag(dep, SD_REQUIRED)) {
+                goto mark_resolved;
+            } else if (!ss_hasflag(dependent, SS_FINAL)) {
+                // If the missing dependency is required, its dependent step
+                // must finish (with unmet requirements). Since there are no
+                // production outputs, we trivially resolve dependencies that
+                // are provided by the dependent step. This in turn may finish
+                // several additional steps with unmet requirements.
                 resolve_dependencies(dependent_pos, NULL);
                 ss_setflag(dependent, SS_FINAL);
             }
@@ -52,6 +58,8 @@ static void resolve_dependencies(size_t step_pos,
         // dependent step.
         memcpy(input->res_hash, outputs->res->object.oid.hash, KNIT_HASH_RAWSZ);
         si_setflag(input, SI_RESOURCE | SI_FINAL);
+
+mark_resolved:
         if (!dependent->num_unresolved)
             die("num_unresolved underflow on step %s", dependent->name);
         ss_dec_unresolved(dependent);
@@ -89,7 +97,7 @@ int main(int argc, char** argv) {
     struct session_step* ss = active_steps[step_pos];
     memcpy(ss->prd_hash, prd_oid.hash, KNIT_HASH_RAWSZ);
     if (!ss_hasflag(ss, SS_JOB))
-        die("step still blocked or missing dependencies");
+        die("step blocked or has unmet requirements");
     if (ss_hasflag(ss, SS_FINAL))
         die("step already fulfilled");
     resolve_dependencies(step_pos, prd->outputs);
