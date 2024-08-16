@@ -15,7 +15,7 @@ step b: partial bash
     a.ok = a:.knit/ok
     data = a:data
 
-step c: partial bash
+step asomewhatlongstepname: partial bash
     script = "tac in/lines > out/data"
     b.ok = b:.knit/ok
     lines = b:data
