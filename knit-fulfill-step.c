@@ -1,7 +1,7 @@
 #include "production.h"
 #include "session.h"
 
-static void satisfy_dependencies(size_t step_pos,
+static void resolve_dependencies(size_t step_pos,
                                  const struct resource_list* outputs) {
     size_t dep_pos = 0;
     while (dep_pos < num_active_deps && ntohl(active_deps[dep_pos]->step_pos) < step_pos)
@@ -34,12 +34,13 @@ static void satisfy_dependencies(size_t step_pos,
             die("step later than its dependent");
         struct session_step* dependent = active_steps[dependent_pos];
 
-        // Otherwise, we have a dependency to satisfy. If we have no matching
-        // production output, then any step depending on it is unresolvable.
+        // Otherwise, we have a dependency to resolve. If we have no matching
+        // production output, then the dependency is missing and its step will
+        // finish without a job (nor production).
         if (cmp > 0) {
             si_setflag(input, SI_FINAL);
             if (!ss_hasflag(dependent, SS_FINAL)) {
-                satisfy_dependencies(dependent_pos, NULL);
+                resolve_dependencies(dependent_pos, NULL);
                 ss_setflag(dependent, SS_FINAL);
             }
             dep_pos++;
@@ -51,11 +52,14 @@ static void satisfy_dependencies(size_t step_pos,
         // dependent step.
         memcpy(input->res_hash, outputs->res->object.oid.hash, KNIT_HASH_RAWSZ);
         si_setflag(input, SI_RESOURCE | SI_FINAL);
-        if (!dependent->num_pending)
-            die("num_pending underflow on step %s", dependent->name);
-        ss_dec_pending(dependent);
+        if (!dependent->num_unresolved)
+            die("num_unresolved underflow on step %s", dependent->name);
+        ss_dec_unresolved(dependent);
+        if (!dependent->num_unresolved)
+            if (compile_job_for_step(dependent_pos) < 0)
+                exit(1);
         dep_pos++;
-        // The same production output may satisfy multiple dependencies, so
+        // The same production output may resolve additional dependencies, so
         // leave it for the next iteration.
     }
 }
@@ -84,12 +88,11 @@ int main(int argc, char** argv) {
 
     struct session_step* ss = active_steps[step_pos];
     memcpy(ss->prd_hash, prd_oid.hash, KNIT_HASH_RAWSZ);
-    // When SS_JOB is set, num_pending is also 0; check both anyway.
-    if (!ss_hasflag(ss, SS_JOB) || ss->num_pending)
-        die("step not resolved");
+    if (!ss_hasflag(ss, SS_JOB))
+        die("step still blocked or missing dependencies");
     if (ss_hasflag(ss, SS_FINAL))
         die("step already fulfilled");
-    satisfy_dependencies(step_pos, prd->outputs);
+    resolve_dependencies(step_pos, prd->outputs);
     ss_setflag(ss, SS_FINAL);
 
     if (save_session() < 0)

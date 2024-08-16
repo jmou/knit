@@ -3,11 +3,10 @@
 
 static int debug;
 static int positional;
+static int wants_available;
 static int wants_blocked;
 static int wants_fulfilled;
-static int wants_prepared;
-static int wants_resolvable;
-static int wants_unresolvable;
+static int wants_missing_deps;
 
 static const char* to_hex(const uint8_t* rawhash) {
     struct object_id oid;
@@ -32,7 +31,7 @@ static const char* pflags(uint16_t flags) {
 static void emit(size_t step_pos, struct session_step* ss) {
     if (debug) {
         printf("step @%zu \t%-2u %s %s\n",
-               step_pos, ntohs(ss->num_pending), pflags(ss->ss_flags), ss->name);
+               step_pos, ntohs(ss->num_unresolved), pflags(ss->ss_flags), ss->name);
         printf("     job\t%s\n", to_hex(ss->job_hash));
         printf("     production\t%s\n", to_hex(ss->prd_hash));
 
@@ -59,11 +58,12 @@ static void emit(size_t step_pos, struct session_step* ss) {
 }
 
 static void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s [--resolvable] [--positional|--debug]\n", arg0);
+    fprintf(stderr, "usage: %s [--available] [--positional|--debug]\n", arg0);
     exit(1);
 }
 
 int main(int argc, char** argv) {
+    int rc = 0;
     int wants_all = 1;
     int i;
     for (i = 1; i < argc; i++) {
@@ -72,11 +72,11 @@ int main(int argc, char** argv) {
             debug = 1;
         } else if (!strcmp(flag, "--positional")) {
             positional = 1;
-        } else if (!strcmp(flag, "--resolvable")) {
-            wants_resolvable = 1;
+        } else if (!strcmp(flag, "--available")) {
+            wants_available = 1;
             wants_all = 0;
-        } else if (!strcmp(flag, "--unresolvable")) {
-            wants_unresolvable = 1;
+        } else if (!strcmp(flag, "--missing-deps")) {
+            wants_missing_deps = 1;
             wants_all = 0;
         } else if (!strcmp(flag, "--fulfilled")) {
             wants_fulfilled = 1;
@@ -91,11 +91,10 @@ int main(int argc, char** argv) {
         exit(1);
 
     if (wants_all) {
+        wants_available = 1;
         wants_blocked = 1;
         wants_fulfilled = 1;
-        wants_prepared = 1;
-        wants_resolvable = 1;
-        wants_unresolvable = 1;
+        wants_missing_deps = 1;
     }
 
     if (debug)
@@ -108,22 +107,21 @@ int main(int argc, char** argv) {
                 if (wants_fulfilled)
                     emit(i, ss);
             } else {
-                if (wants_prepared)
+                if (wants_available)
                     emit(i, ss);
             }
         } else {
             if (ss_hasflag(ss, SS_FINAL)) {
-                if (wants_unresolvable)
-                    emit(i, ss);
-            } else if (ss->num_pending) {
-                if (wants_blocked)
+                if (wants_missing_deps)
                     emit(i, ss);
             } else {
-                if (wants_resolvable)
+                if (!ss->num_unresolved)
+                    rc = error("step not blocked but has no job: %s", ss->name);
+                if (wants_blocked)
                     emit(i, ss);
             }
         }
     }
 
-    return 0;
+    return rc < 0 ? 1 : 0;
 }

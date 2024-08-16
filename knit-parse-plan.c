@@ -411,7 +411,7 @@ static int print_plan(FILE* fh, const struct step_list* step) {
         }
     }
 
-    fprintf(fh, "save\n");
+    fprintf(fh, "done\n");
     return 0;
 }
 

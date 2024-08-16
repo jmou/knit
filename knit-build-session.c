@@ -19,6 +19,7 @@ int main(int argc, char** argv) {
 
     ssize_t step_pos = -1;
     ssize_t input_pos = -1;
+    int should_compile_job = 0;
 
     char* line = NULL;
     size_t size = 0;
@@ -30,7 +31,10 @@ int main(int argc, char** argv) {
 
         char* s = line;
         if (removeprefix(&s, "step ")) {
+            if (should_compile_job && compile_job_for_step(step_pos) < 0)
+                exit(1);
             step_pos = create_session_step(s);
+            should_compile_job = 1;
         } else if (!strcmp(s, "param")) {
             // TODO handle param
         } else if (removeprefix(&s, "flow ")) {
@@ -58,17 +62,22 @@ int main(int argc, char** argv) {
             if (sscanf(s, "%zu %n", &dep_pos, &off) != 1)
                 die("couldn't parse dependency %s", s);
             create_session_dependency(input_pos, dep_pos, s + off);
-        } else if (!strcmp(s, "save")) {
+            should_compile_job = 0;
+        } else if (!strcmp(s, "done")) {
+            if (fgetc(stdin) != EOF)
+                die("trailing input after done");
+            if (should_compile_job && compile_job_for_step(step_pos) < 0)
+                exit(1);
             if (save_session() < 0)
                 exit(1);
+            puts(get_session_name());
+            return 0;
         } else {
-            die("invalid input: %s", s);
+            die("invalid line: %s", s);
         }
     }
     free(line);
     if (nread < 0 && errno > 0)
         die("cannot read stdin: %s", strerror(errno));
-
-    puts(get_session_name());
-    return 0;
+    die("missing done line");
 }

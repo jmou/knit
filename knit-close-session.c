@@ -12,19 +12,19 @@ int main(int argc, char** argv) {
     if (load_session(argv[1]) < 0)
         exit(1);
 
-    int num_unresolvable = 0;
+    int num_missing_deps = 0;
     for (size_t i = 0; i < num_active_steps; i++) {
         struct session_step* ss = active_steps[i];
         if (!ss_hasflag(ss, SS_FINAL))
             exit(1);
         if (!ss_hasflag(ss, SS_JOB))
-            num_unresolvable++;
+            num_missing_deps++;
     }
 
     // TODO surface invocation summary at a higher level
-    if (num_unresolvable > 0) {
-        fprintf(stderr, "%d step%s unresolvable:\n",
-                num_unresolvable, num_unresolvable == 1 ? "" : "s");
+    if (num_missing_deps > 0) {
+        fprintf(stderr, "%d step%s have missing dependencies:\n",
+                num_missing_deps, num_missing_deps == 1 ? "" : "s");
         for (size_t i = 0; i < num_active_steps; i++) {
             struct session_step* ss = active_steps[i];
             if (!ss_hasflag(ss, SS_JOB))

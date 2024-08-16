@@ -10,14 +10,15 @@ set -o pipefail
 session="$(knit-parse-plan "$plan" | knit-build-session)"
 echo "Session $session" >&2
 
-# Keep resolvable steps in positional args.
+declare -A started
+# Keep available steps in positional args.
 set --
 while true; do
     if [[ $# -eq 0 ]]; then
         if knit-close-session "$session"; then
             break
         fi
-        set -- $(knit-list-steps --resolvable "$session")
+        set -- $(knit-list-steps --available "$session")
         if [[ $# -eq 0 ]]; then
             wait -n  # wait for dispatch-job
             continue
@@ -25,6 +26,8 @@ while true; do
         step="$1"
         shift
     fi
+    [[ -z ${started[$step]} ]] || continue
+    started[$step]=1
 
     echo "Step $step" >&2
 

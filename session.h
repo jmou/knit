@@ -5,7 +5,7 @@
 struct session_step {
     uint8_t job_hash[KNIT_HASH_RAWSZ];
     uint8_t prd_hash[KNIT_HASH_RAWSZ];
-    uint16_t num_pending;
+    uint16_t num_unresolved;
     uint16_t ss_flags;
     char name[];
 };
@@ -21,11 +21,11 @@ size_t create_session_step(const char* name);
 #define ss_hasflag(ss, flag) (ntohs(ss->ss_flags) & (flag))
 #define ss_name_len(ss) (ntohs(ss->ss_flags) & SS_NAMEMASK)
 #define ss_size(ss) (sizeof(struct session_step) + ss_name_len(ss) + 1)
-static inline void ss_inc_pending(struct session_step* ss) {
-    ss->num_pending = htons(ntohs(ss->num_pending) + 1);
+static inline void ss_inc_unresolved(struct session_step* ss) {
+    ss->num_unresolved = htons(ntohs(ss->num_unresolved) + 1);
 }
-static inline void ss_dec_pending(struct session_step* ss) {
-    ss->num_pending = htons(ntohs(ss->num_pending) - 1);
+static inline void ss_dec_unresolved(struct session_step* ss) {
+    ss->num_unresolved = htons(ntohs(ss->num_unresolved) - 1);
 }
 
 struct session_input {
@@ -82,3 +82,5 @@ int save_session();
 // A "stepish" is either a step name, or '@' followed by a decimal step position
 // to avoid any ambiguity.
 ssize_t find_stepish(const char* stepish);
+
+int compile_job_for_step(size_t step_pos);

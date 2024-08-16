@@ -24,15 +24,15 @@ digraph {
 
     "plan.knit" -> session [label="parse\nbuild"];
     "plan.knit" -> resources;
-    step -> job [label="resolve\ncompile"];
+    step -> job [label="compile\nbuild"];
     job -> jobcache [label=check];
-    job -> step [label="fulfill\nproduce"];
+    production -> step [label=fulfill];
     session -> step [label=list];
     session -> invocation [label=close];
 
     // dispatch
     job -> workdir [label=unpack];
-    workdir -> production [label="pack\nassemble\nbundle"];
+    workdir -> production [label=pack];
     production -> jobcache [label=complete];
 
     {
@@ -45,12 +45,10 @@ digraph {
 
     // step states
     blocked;
-    resolvable [label="resolvable\navailable\napplicant\nprospect\nunblocked\nfree"];
-    prepared [label="prepared\nprovisioned\ncompiled\nassembled"];
-    blocked -> resolvable;
-    resolvable -> prepared [label="resolve\ncompile\nassemble"];
-    prepared -> "fulfilled\nproduced\nconcluded\nclosed";
-    blocked -> "unresolvable\nmissing dependencies";
+    available;
+    blocked -> available;
+    available -> fulfilled;
+    blocked -> "missing dependencies";
 
     // step flags
     NONE -> SS_JOB -> "SS_JOB|SS_FINAL";
@@ -62,5 +60,10 @@ digraph {
     processing -> canceled [label=terminate];
     processing -> idle [label=lost];
 
-    { rank=same; idle; NONE; job; }
+    // dependencies
+    dependency [label="dependency\npredecessor\nupstream\nchild\nproducer\nprovider\nprerequisite\nrequirement"];
+    dependent [label="dependent\nsuccessor\ndownstream\nparent\nconsumer"];
+    dependency -> dependent [label=data];
+
+    { rank=same; idle; blocked; step; }
 }

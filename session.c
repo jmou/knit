@@ -1,5 +1,7 @@
 #include "session.h"
 
+#include "job.h"
+
 struct session_step** active_steps;
 size_t num_active_steps;
 size_t alloc_active_steps;
@@ -83,7 +85,7 @@ size_t create_session_dependency(size_t input_pos,
     size_t dependent_pos = ntohl(si->step_pos);
     if (dependent_pos >= num_active_steps)
         die("dependent out of bounds");
-    ss_inc_pending(active_steps[dependent_pos]);
+    ss_inc_unresolved(active_steps[dependent_pos]);
 
     size_t outlen = strlen(output);
     struct session_dependency* sd = xmalloc(sizeof(struct session_dependency) + outlen + 1);
@@ -270,4 +272,57 @@ ssize_t find_stepish(const char* stepish) {
             return i;
     }
     return -1;
+}
+
+// This translates between session_input and job, so it could reasonably reside
+// in either job.c or session.c. In any case, store_job() is primarily concerned
+// with serialization, while compile_job_for_step() does the rest.
+static struct job* store_job(struct session_input** inputs, size_t num_inputs) {
+    size_t size = sizeof(struct job_header);
+    for (size_t i = 0; i < num_inputs; i++)
+        size += sizeof(struct job_input) + strlen(inputs[i]->path) + 1;
+
+    char* buf = xmalloc(size);
+    struct job_header* hdr = (struct job_header*)buf;
+    hdr->num_inputs = htonl(num_inputs);
+    char* p = buf + sizeof(*hdr);
+
+    for (size_t i = 0; i < num_inputs; i++) {
+        struct job_input* in = (struct job_input*)p;
+        memcpy(in->res_hash, inputs[i]->res_hash, KNIT_HASH_RAWSZ);
+        size_t pathsize = strlen(inputs[i]->path) + 1;
+        memcpy(in->path, inputs[i]->path, pathsize);
+        p += sizeof(*in) + pathsize;
+    }
+
+    struct object_id oid;
+    int rc = write_object(TYPE_JOB, buf, size, &oid);
+    free(buf);
+    return rc < 0 ? NULL : get_job(&oid);
+}
+
+int compile_job_for_step(size_t step_pos) {
+    struct session_step* ss = active_steps[step_pos];
+    if (ss_hasflag(ss, SS_JOB))
+        return error("step already has job");
+    if (ss_hasflag(ss, SS_FINAL))
+        return error("step missing dependencies");
+    if (ss->num_unresolved)
+        return error("step blocked on %u dependencies", ntohs(ss->num_unresolved));
+
+    size_t i = 0;
+    while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) < step_pos)
+        i++;
+    size_t start = i;
+    while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) == step_pos)
+        i++;
+    size_t limit = i;
+
+    struct job* job = store_job(&active_inputs[start], limit - start);
+    if (!job)
+        return -1;
+
+    memcpy(ss->job_hash, job->object.oid.hash, KNIT_HASH_RAWSZ);
+    ss_setflag(ss, SS_JOB);
+    return 0;
 }
