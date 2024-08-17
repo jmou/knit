@@ -298,11 +298,14 @@ static int parse_plan_internal(struct parse_context* ctx) {
         default:
             return error("expected newline");
         }
-        while (try_read_token(in, TOKEN_NEWLINE));
 
         // Build inputs in sorted order.
         struct input_list* inputs = NULL;
-        while (try_read_token(in, TOKEN_SPACE)) {
+        while (1) {
+            while (try_read_token(in, TOKEN_NEWLINE));
+            if (!try_read_token(in, TOKEN_SPACE))
+                break;
+
             struct input_list* new_input = bump_alloc(ctx->bump_p, sizeof(*new_input));
             memset(new_input, 0, sizeof(*new_input));
             if (parse_input(ctx, new_input) < 0)

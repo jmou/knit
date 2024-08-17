@@ -14,6 +14,8 @@ step b: partial bash
     script = "cp -RL in/* out"
     a.ok = a:.knit/ok
     data ?= a:data
+    # This comment will be ignored. Empty lines are ok.
+
     optional ?= a:nonexistent
 
 step asomewhatlongstepname: partial bash
