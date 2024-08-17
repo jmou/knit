@@ -80,6 +80,7 @@ void* bump_alloc(struct bump_list** bump_p, size_t size) {
 
 struct parse_context {
     struct lex_input in;
+    char* block_decl;
     struct step_list* plan;
     struct step_list* partials;
     struct bump_list** bump_p;
@@ -258,6 +259,7 @@ static int parse_plan_internal(struct parse_context* ctx) {
     ssize_t step_pos = 0;
     while (1) {
         int is_partial;
+        char* block_decl = in->curr;
         switch (lex_keyword(in)) {
         case TOKEN_STEP:    is_partial = 0; break;
         case TOKEN_PARTIAL: is_partial = 1; break;
@@ -275,6 +277,7 @@ static int parse_plan_internal(struct parse_context* ctx) {
         memset(step, 0, sizeof(*step));
         step->name = lex_stuff_null(in);
         step->pos = is_partial ? -1 : step_pos++;
+        ctx->block_decl = block_decl;
 
         // Append to the appropriate partials or plan list.
         struct step_list*** steps_pp = is_partial ? &partials_p : &plan_p;
@@ -331,12 +334,16 @@ static int parse_plan_internal(struct parse_context* ctx) {
 // The resulting parse tree will be allocated in *bump_p. It may contain
 // pointers into buf as well.
 static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
-    struct parse_context ctx = {
-        .in.curr = buf,
-        .bump_p = bump_p,
-    };
-    if (parse_plan_internal(&ctx) < 0)
+    struct parse_context ctx = { .bump_p = bump_p };
+    lex_input_init(&ctx.in, buf);
+    if (parse_plan_internal(&ctx) < 0) {
+        int column = ctx.in.prev < ctx.in.line_p ? 0 : ctx.in.prev - ctx.in.line_p;
+        error("at line %d column %zd near %s",
+              ctx.in.lineno, column, ctx.block_decl ? ctx.block_decl : "top");
+        // We could try to print the offending line but it would likely be
+        // corrupted by NUL stuffing.
         return NULL;
+    }
     return ctx.plan;
 }
 
@@ -443,8 +450,11 @@ int main(int argc, char** argv) {
 
     struct bump_list* bump = NULL;
     struct step_list* plan = parse_plan(&bump, buf);
-    if (!plan || print_plan(stdout, plan) < 0)
+    if (!plan || print_plan(stdout, plan) < 0) {
+        char buf[PATH_MAX];
+        error("in file %s", realpath(argv[1], buf));
         exit(1);
+    }
     // leak bump and buf
 
     return 0;

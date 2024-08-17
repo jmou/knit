@@ -3,6 +3,12 @@
 #include "lexer.h"
 #include "util.h"
 
+void lex_input_init(struct lex_input* in, char* buf) {
+    memset(in, 0, sizeof(*in));
+    in->line_p = in->curr = buf;
+    in->lineno = 1;
+}
+
 char* lex_stuff_null(struct lex_input* in) {
     in->actual_curr = *in->curr;
     *in->curr = '\0';
@@ -36,7 +42,10 @@ enum token lex(struct lex_input* in) {
             re2c:yyfill:enable = 0;
         */
         /*!rules:re2c
-            [ ]*([#][^\n\x00]*)?[\r]?[\n] { token = TOKEN_NEWLINE; break; }
+            ident = [a-zA-Z_][a-zA-Z0-9_.@-]*;
+            comment = [ ]*[#][^\n\x00]*;
+
+            comment? [\r]?[\n] { in->lineno++; in->line_p = in->curr; token = TOKEN_NEWLINE; break; }
             [ ]+ { token = TOKEN_SPACE; break; }
             [!] { token = TOKEN_EXCLAMATION; break; }
             ["] { token = TOKEN_QUOTE; break; }
@@ -49,7 +58,6 @@ enum token lex(struct lex_input* in) {
         */
         // TODO loosen ident to accommodate non-ASCII?
         /*!use:re2c
-            ident = [a-zA-Z_][a-zA-Z0-9_.@-]*;
             ident { token = TOKEN_IDENT; break; }
         */
     }

@@ -29,7 +29,11 @@ struct lex_input {
     char* curr;
     char* prev;
     char actual_curr;
+    int lineno;
+    char* line_p;
 };
+
+void lex_input_init(struct lex_input* in, char* buf);
 
 // Store '\0' at the current position. Subsequent lexing will return what the
 // unmodified input would have. Returns the (now NUL-terminated) previous token.
