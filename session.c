@@ -113,6 +113,12 @@ const char* get_session_name() {
 }
 
 static void set_session_name(const char* sessname) {
+    if (strchr(sessname, '/') && strlen(sessname) < PATH_MAX) {
+        strcpy(session_filepath, sessname);
+        session_name = session_filepath;
+        return;
+    }
+
     if (snprintf(session_filepath, PATH_MAX,
                  "%s/sessions/%s", get_knit_dir(), sessname) >= PATH_MAX)
         die("session path too long");
@@ -127,8 +133,12 @@ struct session_header {
 
 int load_session(const char* sessname) {
     set_session_name(sessname);
+
+    int fd = open(session_filepath, O_RDONLY);
+    if (fd < 0)
+        return error("cannot open %s: %s", session_filepath, strerror(errno));
     struct bytebuf bb; // leaked
-    if (mmap_file(session_filepath, &bb) < 0)
+    if (mmap_fd(fd, &bb) < 0 && slurp_fd(fd, &bb) < 0)
         return -1;
 
     if (bb.size < sizeof(struct session_header))
