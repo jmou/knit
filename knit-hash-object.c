@@ -42,27 +42,28 @@ int main(int argc, char** argv) {
             !should_write)
         die_usage(argv[0]);
 
-    int rc = 0;
+    int ret = 0;
     for (int i = optind - (read_stdin ? 1 : 0); i < argc; i++) {
         struct bytebuf bbuf;
         if (read_stdin) {
             read_stdin = 0;
             if (slurp_fd(0, &bbuf) < 0) {
-                rc = 1;
+                error("reading stdin failed: %s", strerror(errno));
+                ret = 1;
                 continue;
             }
         } else if (mmap_file(argv[i], &bbuf) < 0) {
-            rc = 1;
+            ret = 1;
             continue;
         }
 
         struct object_id oid;
         if (write_object(make_typesig(type), bbuf.data, bbuf.size, &oid) < 0) {
-            rc = 1;
+            ret = 1;
         } else {
             puts(oid_to_hex(&oid));
         }
         cleanup_bytebuf(&bbuf);
     }
-    return rc;
+    return ret;
 }

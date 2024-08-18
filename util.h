@@ -46,4 +46,7 @@ void cleanup_bytebuf(struct bytebuf* bbuf);
 
 // mmap will be private and writable (COW).
 int mmap_file(const char* filename, struct bytebuf* out);
+int mmap_fd(int fd, struct bytebuf* out);
+
+int slurp_file(const char* filename, struct bytebuf* out);
 int slurp_fd(int fd, struct bytebuf* out);

@@ -73,16 +73,16 @@ void cleanup_bytebuf(struct bytebuf* bbuf) {
         munmap(bbuf->data, bbuf->size);
 }
 
-int mmap_file(const char* filename, struct bytebuf* out) {
+int mmap_fd(int fd, struct bytebuf* out) {
     memset(out, 0, sizeof(*out));
 
-    int fd = open(filename, O_RDONLY);
-    if (fd < 0)
-        return error("cannot open %s: %s", filename, strerror(errno));
     struct stat st;
-    if (fstat(fd, &st) < 0) {
-        close(fd);
-        return error("cannot stat %s: %s", filename, strerror(errno));
+    if (fstat(fd, &st) < 0)
+        return -1;
+
+    if (!S_ISREG(st.st_mode)) {
+        errno = ENOTSUP;
+        return -1;
     }
 
     if (st.st_size == 0)
@@ -90,12 +90,11 @@ int mmap_file(const char* filename, struct bytebuf* out) {
 
     out->data = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE, fd, 0);
-    close(fd);
     if (out->data == MAP_FAILED)
-        return error("mmap failed: %s", strerror(errno));
+        return -1;
+
     out->should_munmap = 1;
     out->size = st.st_size;
-
     return 0;
 }
 
@@ -114,8 +113,7 @@ int slurp_fd(int fd, struct bytebuf* out) {
     while ((nr = read(fd, out->data + out->size, alloc - out->size)) != 0) {
         if (nr < 0 && errno != EAGAIN && errno != EINTR) {
             free(out->data);
-            close(fd);
-            return error("read error: %s", strerror(errno));
+            return -1;
         }
         out->size += nr;
         if (out->size == alloc) {
@@ -124,7 +122,32 @@ int slurp_fd(int fd, struct bytebuf* out) {
         }
     }
 
-    close(fd);
     out->should_free = 1;
+    return 0;
+}
+
+int mmap_file(const char* filename, struct bytebuf* out) {
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0)
+        return error("cannot open %s: %s", filename, strerror(errno));
+
+    if (mmap_fd(fd, out) < 0) {
+        close(fd);
+        return error("cannot mmap %s: %s", filename, strerror(errno));
+    }
+    close(fd);
+    return 0;
+}
+
+int slurp_file(const char* filename, struct bytebuf* out) {
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0)
+        return error("cannot open %s: %s", filename, strerror(errno));
+
+    if (slurp_fd(fd, out) < 0) {
+        close(fd);
+        return error("cannot read %s: %s", filename, strerror(errno));
+    }
+    close(fd);
     return 0;
 }

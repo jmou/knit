@@ -438,11 +438,8 @@ int main(int argc, char** argv) {
     if (argc != 2)
         die_usage(argv[0]);
 
-    int fd = open(argv[1], O_RDONLY);
-    if (fd < 0)
-        die("cannot open %s: %s", argv[1], strerror(errno));
     struct bytebuf bb;
-    if (slurp_fd(fd, &bb) < 0)
+    if (slurp_file(argv[1], &bb) < 0)
         exit(1);
     // Copy the buffer to NUL-terminate it; our use of re2c treats NUL as EOF.
     char* buf = xmalloc(bb.size + 1);

@@ -73,13 +73,9 @@ int main(int argc, char** argv) {
         snprintf(outputs, PATH_MAX, "%s/out", dir) >= PATH_MAX)
         die("path too long");
 
-    int fd = open(job_file, O_RDONLY);
-    if (fd < 0)
-        die("open %s failed: %s", job_file, strerror(errno));
     struct bytebuf bb;
-    if (slurp_fd(fd, &bb) < 0)
+    if (slurp_file(job_file, &bb) < 0)
         exit(1);
-    close(fd);
 
     // Chomp any trailing newline.
     if (bb.size == KNIT_HASH_HEXSZ + 1 && ((char*)bb.data)[KNIT_HASH_HEXSZ] == '\n')
