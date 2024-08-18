@@ -23,6 +23,16 @@ int error(const char* format, ...) {
     return -1;
 }
 
+int warning(const char* format, ...) {
+    va_list params;
+    va_start(params, format);
+    fprintf(stderr, "warning: ");
+    vfprintf(stderr, format, params);
+    fprintf(stderr, "\n");
+    va_end(params);
+    return -1;
+}
+
 static int valid_knit_dir(const char* dirname) {
     DIR* dir = opendir(dirname);
     if (!dir) {

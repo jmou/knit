@@ -17,6 +17,7 @@
 
 void die(const char* format, ...);
 int error(const char* format, ...);
+int warning(const char* format, ...);
 
 static inline void* xmalloc(size_t size) {
     void* buf = malloc(size);

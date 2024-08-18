@@ -24,5 +24,7 @@ step asomewhatlongstepname: partial bash
     lines = b:data
 EOF
 
-expect_ok knit-run-plan
-expect_ok knit-run-plan  # should hit cache
+inv=$(expect_ok knit-run-plan)
+knit-run-plan -v 2>&1 | grep -q 'Cache hit'
+inv2=$(expect_ok knit-run-plan)
+expect_ok test "$inv" == "$inv2"

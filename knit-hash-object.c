@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
         }
     }
     if ((optind == argc && !read_stdin) ||
-            type == NULL || strlen(type) != 3 ||
+            type == NULL ||
             !should_write)
         die_usage(argv[0]);
 

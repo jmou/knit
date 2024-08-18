@@ -20,9 +20,7 @@ struct object_id* oid_of_hash(uint8_t* hash);
 #define TYPE_JOB        0x6a6f6200 // "job\0"
 #define TYPE_PRODUCTION 0x70726400 // "prd\0"
 
-uint32_t make_typesig(const char* type); // type should be 4 bytes
-// Returns statically allocated, null-terminated buffer; rotates among 4 buffers
-// so recent results are valid when invoked multiple times (like in printf()).
+uint32_t make_typesig(const char* type);
 char* strtypesig(uint32_t typesig);
 
 int write_object(uint32_t typesig, void* data, size_t size,
