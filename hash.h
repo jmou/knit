@@ -10,7 +10,8 @@ struct object_id {
 };
 
 int hex_to_oid(const char* hex, struct object_id* oid);
-// Returns statically allocated buffer (not reentrant).
+// Returns statically allocated buffer; rotates among 4 buffers so recent
+// results are valid when invoked multiple times (like in printf()).
 const char* oid_to_hex(const struct object_id* oid);
 // Returns statically allocated object_id.
 struct object_id* oid_of_hash(uint8_t* hash);

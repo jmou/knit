@@ -39,7 +39,10 @@ int hex_to_oid(const char* hex, struct object_id* oid) {
 
 const char* oid_to_hex(const struct object_id* oid) {
     const char HEX_DIGITS[] = "0123456789abcdef";
-    static char hex[KNIT_HASH_HEXSZ + 1];
+    static char bufs[4][KNIT_HASH_HEXSZ + 1];
+    static int i;
+    i = (i + 1) % 4;
+    char* hex = bufs[i];
     for (int i = 0; i < KNIT_HASH_RAWSZ; i++) {
         unsigned char byte = oid->hash[i];
         hex[2*i] = HEX_DIGITS[byte >> 4];

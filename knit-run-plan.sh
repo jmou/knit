@@ -11,38 +11,32 @@ session="$(knit-parse-plan "$plan" | knit-build-session)"
 echo "Session $session" >&2
 
 declare -A started
-# Keep available steps in positional args.
-set --
-while true; do
-    if [[ $# -eq 0 ]]; then
-        if knit-close-session "$session"; then
-            break
-        fi
-        set -- $(knit-list-steps --available "$session")
-        if [[ $# -eq 0 ]]; then
-            wait -n  # wait for dispatch-job
+while ! knit-close-session "$session"; do
+    unset has_scheduled
+
+    while IFS=$'\t' read -r step _ job _ name; do
+        [[ -z ${started[$step]} ]] || continue
+        started[$step]=1
+        has_scheduled=1
+
+        echo "Step $name" >&2
+
+        prd=$(knit-check-jobcache "$job" "$session" "$step")
+        # TODO crash recovery: restart job
+        if [[ $prd == queued ]]; then
+            echo "Queued $job [$session $step]" >&2
             continue
+        elif [[ $prd == initial ]]; then
+            echo "Dispatch $job" >&2
+            knit-dispatch-job "$job" &
+        else
+            echo "Cache hit $job -> $prd" >&2
+            knit-fulfill-step "$session" "$step" "$prd"
         fi
-        step="$1"
-        shift
-    fi
-    [[ -z ${started[$step]} ]] || continue
-    started[$step]=1
+    done < <(knit-list-steps --available --porcelain "$session")
 
-    echo "Step $step" >&2
-
-    job_id=$(knit-resolve-step "$session" "$step")
-
-    production_id=$(knit-check-jobcache "$job_id" "$session" "$step")
-    # TODO crash recovery: restart job
-    if [[ $production_id == queued ]]; then
-        echo "Queued $job_id [$session $step]" >&2
-        continue
-    elif [[ $production_id == initial ]]; then
-        echo "Dispatch $job_id" >&2
-        knit-dispatch-job "$job_id" &
-    else
-        echo "Cache hit $job_id -> $production_id" >&2
-        knit-fulfill-step "$session" "$step" "$production_id"
+    # When we have scheduled everything we can, wait for knit-dispatch-job.
+    if [[ -z $has_scheduled ]]; then
+        wait -n
     fi
 done

@@ -2,7 +2,7 @@
 #include "session.h"
 
 static int debug;
-static int positional;
+static int porcelain;
 static int wants_available;
 static int wants_blocked;
 static int wants_fulfilled;
@@ -50,15 +50,27 @@ static void emit(size_t step_pos, struct session_step* ss) {
             printf("     dependency\t%-2u %s %s\n",
                    ntohl(sd->input_pos), pflags(sd->sd_flags), sd->output);
         }
-    } else if (positional) {
-        printf("@%zu\n", step_pos);
+    } else if (porcelain) {
+        printf("@%zu\t", step_pos);
+        if (ss_hasflag(ss, SS_FINAL)) {
+            if (ss_hasflag(ss, SS_JOB))
+                printf("f");
+            else
+                printf("u");
+        } else {
+            if (ss_hasflag(ss, SS_JOB))
+                printf("a");
+            else
+                printf("%d", ntohs(ss->num_unresolved));
+        }
+        printf("\t%s\t%s\t%s\n", to_hex(ss->job_hash), to_hex(ss->prd_hash), ss->name);
     } else {
         puts(ss->name);
     }
 }
 
 static void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s [--available] [--positional|--debug]\n", arg0);
+    fprintf(stderr, "usage: %s [--available] [--porcelain|--debug]\n", arg0);
     exit(1);
 }
 
@@ -70,8 +82,8 @@ int main(int argc, char** argv) {
         char* flag = argv[i];
         if (!strcmp(flag, "--debug")) {
             debug = 1;
-        } else if (!strcmp(flag, "--positional")) {
-            positional = 1;
+        } else if (!strcmp(flag, "--porcelain")) {
+            porcelain = 1;
         } else if (!strcmp(flag, "--available")) {
             wants_available = 1;
             wants_all = 0;
