@@ -439,23 +439,21 @@ int main(int argc, char** argv) {
         die_usage(argv[0]);
 
     struct bytebuf bb;
+    // Our use of re2c requires a NUL sentinel byte after the file contents,
+    // which slurp ensures.
     if (slurp_file(argv[1], &bb) < 0)
         exit(1);
-    // Copy the buffer to NUL-terminate it; our use of re2c treats NUL as EOF.
-    char* buf = xmalloc(bb.size + 1);
-    if (memccpy(buf, bb.data, '\0', bb.size))
+    if (memchr(bb.data, '\0', bb.size))
         die("NUL bytes in plan %s", argv[1]);
-    buf[bb.size] = '\0';
-    cleanup_bytebuf(&bb);
 
     struct bump_list* bump = NULL;
-    struct step_list* plan = parse_plan(&bump, buf);
+    struct step_list* plan = parse_plan(&bump, bb.data);
     if (!plan || print_plan(stdout, plan) < 0) {
         char buf[PATH_MAX];
         error("in file %s", realpath(argv[1], buf));
         exit(1);
     }
-    // leak bump and buf
+    // leak bump and bb
 
     return 0;
 }

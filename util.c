@@ -121,6 +121,8 @@ int slurp_fd(int fd, struct bytebuf* out) {
             out->data = xrealloc(out->data, alloc);
         }
     }
+    // NUL termination is free because read() requires free space in the buffer.
+    ((char*)out->data)[out->size] = '\0';
 
     out->should_free = 1;
     return 0;

@@ -48,5 +48,6 @@ void cleanup_bytebuf(struct bytebuf* bbuf);
 int mmap_file(const char* filename, struct bytebuf* out);
 int mmap_fd(int fd, struct bytebuf* out);
 
+// slurp will always ensure a NUL byte exists after the end of the file.
 int slurp_file(const char* filename, struct bytebuf* out);
 int slurp_fd(int fd, struct bytebuf* out);
