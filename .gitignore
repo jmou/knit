@@ -7,6 +7,7 @@ knit-check-jobcache
 knit-close-session
 knit-complete-job
 knit-dispatch-job
+knit-exec-cmd
 knit-fulfill-step
 knit-hash-object
 knit-init

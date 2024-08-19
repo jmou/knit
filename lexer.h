@@ -14,6 +14,7 @@ enum token {
     TOKEN_QUOTE,
     TOKEN_SPACE,
 
+    TOKEN_CMD,
     TOKEN_FLOW,
     TOKEN_IDENT,
     TOKEN_PARAM,

@@ -3,8 +3,7 @@
 . test-setup.sh
 
 cat <<'EOF' > plan.knit
-partial bash: shell
-    shell = "bash in/script"
+partial bash: cmd "bash\0in/script"
     script = !
 
 step a: partial bash

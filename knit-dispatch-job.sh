@@ -34,7 +34,13 @@ knit-unpack-job "$job_id" "$workdir/root"
 mkdir "$workdir/root/out"
 mkdir "$workdir/out.knit"
 
-if [[ -e $workdir/root/in/.knit/shell ]]; then
+if [[ -e $workdir/root/in/.knit/cmd ]]; then
+    set +e
+    # TODO disambiguate errors from knit-exec-cmd and .knit/cmd
+    knit-exec-cmd "$workdir" "$workdir/root/in/.knit/cmd" 3>&- > "$workdir/out.knit/log"
+    rc=$?
+    set -e
+elif [[ -e $workdir/root/in/.knit/shell ]]; then
     cd "$workdir/root"
     set +e
     $SHELL -e in/shell <&- 3>&- 4>&- &> ../out.knit/log

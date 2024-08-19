@@ -15,7 +15,10 @@ struct value {
     enum value_tag tag;
     union {
         char* filename;
-        char* literal;
+        struct {
+            char* literal;
+            size_t literal_len;
+        };
         struct {
             char* dep_name;
             ssize_t dep_pos;
@@ -114,11 +117,13 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         if (size == 0) {
             return -1;
         } else if (size < 0) {
+            out->literal = in->curr;
             lex_string(in, NULL);
-            out->literal = lex_stuff_null(in);
+            out->literal_len = -size - 1;
         } else {
             out->literal = bump_alloc(ctx->bump_p, size);
             lex_string(in, out->literal);
+            out->literal_len = size - 1;
         }
         if (lex(in) != TOKEN_QUOTE)
             die("quote should follow lex_string()");
@@ -175,8 +180,13 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
     char* input_name;
 
     switch (lex_keyword(&ctx->in)) {
+    case TOKEN_CMD:
+        input_name = ".knit/cmd";
+        goto parse_process_value;
     case TOKEN_FLOW:
-        step->inputs = create_input(ctx, ".knit/flow");
+        input_name = ".knit/flow";
+parse_process_value:
+        step->inputs = create_input(ctx, input_name);
         if (lex(in) != TOKEN_SPACE)
             return error("expected space");
         if (parse_value(ctx, &step->inputs->val) < 0)
@@ -191,13 +201,14 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
 empty_process_value:
         step->inputs = create_input(ctx, input_name);
         step->inputs->val.tag = VALUE_LITERAL;
-        step->inputs->val.literal = "";
+        step->inputs->val.literal = NULL;
+        step->inputs->val.literal_len = 0;
         return 0;
 
     case TOKEN_PARTIAL:
         return parse_process_partial(ctx, step);
     default:
-        return error("expected param, shell, partial, or flow");
+        return error("expected cmd, param, shell, partial, or flow");
     }
 }
 
@@ -393,7 +404,7 @@ static int print_value(FILE* fh, const struct value* val) {
         break;
     case VALUE_LITERAL:
         // TODO resource cache by literal (address?)
-        print_resource(fh, val->literal, strlen(val->literal));
+        print_resource(fh, val->literal, val->literal_len);
         break;
     default:
         die("bad value tag");

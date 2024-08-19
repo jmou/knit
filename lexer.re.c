@@ -73,6 +73,7 @@ enum token lex_keyword(struct lex_input* in) {
         /*!use:re2c
             "partial" { token = TOKEN_PARTIAL; break; }
             "step" { token = TOKEN_STEP; break; }
+            "cmd" { token = TOKEN_CMD; break; }
             "param" { token = TOKEN_PARAM; break; }
             "flow" { token = TOKEN_FLOW; break; }
             "shell" { token = TOKEN_SHELL; break; }
@@ -109,13 +110,14 @@ static int lex_string_internal(struct lex_input* in, char* buf, ssize_t* size) {
     size_t i = 0;
     for (char c;; i++) {
         c = *in->curr;
-        // TODO support escaped NUL bytes
         /*!re2c
             ["] { rc = 0; in->curr--; break; }
             [^"\\\n\x00] { goto append; }
             "\\\"" { c = '"';  needs_copy = 1; goto append; }
             "\\\\" { c = '\\'; needs_copy = 1; goto append; }
             "\\n"  { c = '\n'; needs_copy = 1; goto append; }
+            "\\0" [0]?[0]? { c = '\0';  needs_copy = 1; goto append; }
+            [\\][0]?[0]?[1-7] { rc = error("unsupported octal escape"); break; }
             [\\][^\x00] { rc = error("invalid string escape"); break; }
             * { rc = error("unterminated string"); break; }
         */
