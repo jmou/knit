@@ -26,11 +26,12 @@ struct value {
             int dep_optional;
         };
     };
+    struct resource* res;
 };
 
 struct input_list {
     char* name;
-    struct value val;
+    struct value* val;
     struct input_list* next;
 };
 
@@ -39,6 +40,7 @@ struct step_list {
     ssize_t pos;
     struct input_list* inputs;
     struct step_list* next;
+    unsigned is_params : 1;
 };
 
 static struct step_list* find_step(struct step_list* step, const char* name) {
@@ -72,6 +74,60 @@ void* bump_alloc(struct bump_list** bump_p, size_t size) {
     return ret;
 }
 
+static struct input_list* create_input(struct bump_list** bump_p, char* name) {
+    struct input_list* input = bump_alloc(bump_p, sizeof(*input));
+    memset(input, 0, sizeof(*input));
+    input->name = name;
+    input->val = xmalloc(sizeof(*input->val));
+    return input;
+}
+
+static int input_list_insert(struct input_list** list_p, struct input_list* input) {
+    int cmp = -1;
+    while (*list_p && (cmp = strcmp((*list_p)->name, input->name)) < 0)
+        list_p = &(*list_p)->next;
+    if (cmp == 0)
+        return error("duplicate input %s", input->name);
+    input->next = *list_p;
+    *list_p = input;
+    return 0;
+}
+
+static struct input_list* input_list_override(struct bump_list** bump_p,
+                                              struct input_list** inputs_p,
+                                              struct input_list* override) {
+    struct input_list* added = NULL;
+    struct input_list* orig = *inputs_p;
+    while (override && orig) {
+        int cmp = strcmp(override->name, orig->name);
+        if (cmp == 0) {
+            *inputs_p = override;
+            inputs_p = &override->next;
+            orig = orig->next;
+            override = override->next;
+        } else if (cmp < 0) {
+            added = override;
+            *inputs_p = override;
+            inputs_p = &override->next;
+            override = override->next;
+        } else {
+            // Copy from the original inputs_p when we need to rewrite its next.
+            struct input_list* copy = bump_alloc(bump_p, sizeof(*copy));
+            memcpy(copy, orig, sizeof(*copy));
+            *inputs_p = copy;
+            inputs_p = &copy->next;
+            orig = orig->next;
+        }
+    }
+    if (override) {
+        added = override;
+        *inputs_p = override;
+    } else {
+        *inputs_p = orig;
+    }
+    return added;
+}
+
 struct parse_context {
     struct lex_input in;
     char* block_decl;
@@ -94,13 +150,6 @@ static int try_read_token(struct lex_input* in, enum token expected) {
     if (actual != expected)
         load_lex_input(in);
     return actual == expected;
-}
-
-static struct input_list* create_input(struct parse_context* ctx, char* name) {
-    struct input_list* input = bump_alloc(ctx->bump_p, sizeof(*input));
-    memset(input, 0, sizeof(*input));
-    input->name = name;
-    return input;
 }
 
 static int parse_value(struct parse_context* ctx, struct value* out) {
@@ -186,29 +235,28 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
     case TOKEN_FLOW:
         input_name = ".knit/flow";
 parse_process_value:
-        step->inputs = create_input(ctx, input_name);
+        step->inputs = create_input(ctx->bump_p, input_name);
         if (lex(in) != TOKEN_SPACE)
             return error("expected space");
-        if (parse_value(ctx, &step->inputs->val) < 0)
+        if (parse_value(ctx, step->inputs->val) < 0)
             return -1;
-        return populate_value(ctx, &step->inputs->val);
+        return populate_value(ctx, step->inputs->val);
 
-    case TOKEN_PARAM:
-        input_name = ".knit/param";
-        goto empty_process_value;
-    case TOKEN_SHELL:
-        input_name = ".knit/shell";
-empty_process_value:
-        step->inputs = create_input(ctx, input_name);
-        step->inputs->val.tag = VALUE_LITERAL;
-        step->inputs->val.literal = NULL;
-        step->inputs->val.literal_len = 0;
+    case TOKEN_PARAMS:
+        step->is_params = 1;
+        // fall through
+    case TOKEN_IDENTITY:
+        step->inputs = create_input(ctx->bump_p, ".knit/identity");
+        step->inputs->val->tag = VALUE_LITERAL;
+        step->inputs->val->literal = NULL;
+        step->inputs->val->literal_len = 0;
+        populate_value(ctx, step->inputs->val);
         return 0;
 
     case TOKEN_PARTIAL:
         return parse_process_partial(ctx, step);
     default:
-        return error("expected cmd, param, shell, partial, or flow");
+        return error("expected cmd, identity, params, partial, or flow");
     }
 }
 
@@ -216,7 +264,7 @@ static struct input_list* parse_input(struct parse_context* ctx) {
     struct lex_input* in = &ctx->in;
     if (lex_path(in) < 0)
         return NULL;
-    struct input_list* input = create_input(ctx, lex_stuff_null(in));
+    struct input_list* input = create_input(ctx->bump_p, lex_stuff_null(in));
 
     int is_optional = 0;
     while (try_read_token(in, TOKEN_SPACE));
@@ -228,16 +276,16 @@ static struct input_list* parse_input(struct parse_context* ctx) {
     }
     while (try_read_token(in, TOKEN_SPACE));
 
-    if (parse_value(ctx, &input->val) < 0)
+    if (parse_value(ctx, input->val) < 0)
         return NULL;
-    if (populate_value(ctx, &input->val) < 0)
+    if (populate_value(ctx, input->val) < 0)
         return NULL;
     if (is_optional) {
-        if (input->val.tag != VALUE_DEPENDENCY) {
+        if (input->val->tag != VALUE_DEPENDENCY) {
             error("optional input must be a dependency");
             return NULL;
         }
-        input->val.dep_optional = 1;
+        input->val->dep_optional = 1;
     }
 
     save_lex_input(in);
@@ -251,34 +299,6 @@ static struct input_list* parse_input(struct parse_context* ctx) {
         error("expected newline");
         return NULL;
     }
-}
-
-static struct input_list* merge_with_partial_inputs(struct parse_context* ctx,
-                                                    struct input_list* partial_inputs,
-                                                    struct input_list* inputs) {
-    struct input_list* ret = NULL;
-    struct input_list** merged_p = &ret;
-    while (inputs && partial_inputs) {
-        int cmp = strcmp(inputs->name, partial_inputs->name);
-        if (cmp == 0) {
-            // Skip (override) any partial input with the same name.
-            partial_inputs = partial_inputs->next;
-        } else if (cmp < 0) {
-            *merged_p = inputs;
-            merged_p = &inputs->next;
-            inputs = inputs->next;
-        } else {
-            // While we can share a common tail with any partials, any
-            // preceding nodes in the merged list must be copies.
-            struct input_list* copy = bump_alloc(ctx->bump_p, sizeof(*copy));
-            memcpy(copy, partial_inputs, sizeof(*copy));
-            *merged_p = copy;
-            merged_p = &copy->next;
-            partial_inputs = partial_inputs->next;
-        }
-    }
-    *merged_p = inputs ? inputs : partial_inputs;
-    return ret;
 }
 
 static int parse_plan_internal(struct parse_context* ctx) {
@@ -320,6 +340,9 @@ static int parse_plan_internal(struct parse_context* ctx) {
         if (parse_process(ctx, step) < 0)
             return -1;
 
+        if (step->is_params && step->pos != 0)
+            return error("params step must be first");
+
         switch (lex(in)) {
         case TOKEN_NEWLINE:
         case TOKEN_EOF:
@@ -338,27 +361,14 @@ static int parse_plan_internal(struct parse_context* ctx) {
             struct input_list* new_input = parse_input(ctx);
             if (!new_input)
                 return -1;
-            if (!is_partial && new_input->val.tag == VALUE_HOLE)
+            if (!is_partial && new_input->val->tag == VALUE_HOLE)
                 return error("step input cannot be a hole");
 
-            struct input_list** prev_p = &inputs;
-            int cmp = -1;
-            while (*prev_p && (cmp = strcmp((*prev_p)->name, new_input->name)) < 0)
-                prev_p = &(*prev_p)->next;
-            if (cmp == 0)
-                return error("duplicate input %s", new_input->name);
-            new_input->next = *prev_p;
-            *prev_p = new_input;
-            prev_p = &new_input->next;
+            if (input_list_insert(&inputs, new_input))
+                return -1;
         }
 
-        step->inputs = merge_with_partial_inputs(ctx, step->inputs, inputs);
-        // TODO fail if no inputs?
-        if (!is_partial) {
-            for (inputs = step->inputs; inputs; inputs = inputs->next)
-                if (inputs->val.tag == VALUE_HOLE)
-                    return error("unfilled hole");
-        }
+        input_list_override(ctx->bump_p, &step->inputs, inputs);
     }
 }
 
@@ -378,47 +388,45 @@ static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
     return ctx.plan;
 }
 
-static int print_resource(FILE* fh, void* data, size_t size) {
-    struct resource* res = store_resource(data, size);
-    if (!res)
-        return -1;
-    fprintf(fh, "resource %s\n", oid_to_hex(&res->object.oid));
-    return 0;
-}
-
-static int print_value(FILE* fh, const struct value* val) {
-    struct bytebuf bb;
+static int print_value(FILE* fh, struct value* val) {
     switch (val->tag) {
     case VALUE_DEPENDENCY:
         assert(val->dep_pos >= 0);
         fprintf(fh, "dependency %s %zu %s\n",
                 val->dep_optional ? "optional" : "required",
                 val->dep_pos, val->dep_path);
-        break;
+        return 0;
+
     case VALUE_FILENAME:
-        // TODO resource cache by (absolute?) filename
-        if (mmap_file(val->filename, &bb) < 0)
-            return -1;
-        print_resource(fh, bb.data, bb.size);
-        cleanup_bytebuf(&bb);
-        break;
+        if (!val->res) {
+            struct bytebuf bb;
+            if (mmap_file(val->filename, &bb) < 0)
+                return -1;
+            val->res = store_resource(bb.data, bb.size);
+            cleanup_bytebuf(&bb);
+        }
+        goto print_resource;
     case VALUE_LITERAL:
-        // TODO resource cache by literal (address?)
-        print_resource(fh, val->literal, val->literal_len);
-        break;
+        if (!val->res)
+            val->res = store_resource(val->literal, val->literal_len);
+print_resource:
+        if (!val->res)
+            return -1;
+        fprintf(fh, "resource %s\n", oid_to_hex(&val->res->object.oid));
+        return 0;
+
     default:
         die("bad value tag");
     }
-    return 0;
 }
 
-static int print_plan(FILE* fh, const struct step_list* step) {
+static int print_plan(FILE* fh, struct step_list* step) {
     for (; step; step = step->next) {
         fprintf(fh, "step %s\n", step->name);
         for (const struct input_list* input = step->inputs;
              input; input = input->next) {
             fprintf(fh, "input %s\n", input->name);
-            if (print_value(fh, &input->val) < 0)
+            if (print_value(fh, input->val) < 0)
                 return -1;
         }
     }
@@ -427,29 +435,80 @@ static int print_plan(FILE* fh, const struct step_list* step) {
 }
 
 static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s <plan>\n", arg0);
+    fprintf(stderr, "usage: %s [(-p|-f) <param>=<value>]... <plan>\n", arg0);
     exit(1);
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2)
+    struct bump_list* bump = NULL;
+
+    struct input_list* params = NULL;
+    int i = 1;
+    while (argv[i] && *argv[i] == '-' && strlen(argv[i]) == 2) {
+        int is_file;
+        switch (argv[i][1]) {
+        case 'f': is_file = 1; break;
+        case 'p': is_file = 0; break;
+        default: die_usage(argv[0]);
+        }
+
+        struct lex_input in;
+        lex_input_init(&in, argv[i + 1]);
+        if (lex_path(&in) < 0)
+            die("param name not a valid path");
+        char* name = lex_stuff_null(&in);
+        if (lex(&in) != TOKEN_EQUALS)
+            die("option should be of the form -p param=value");
+        char* value = in.curr;
+        i += 2;
+
+        struct input_list* input = create_input(&bump, name);
+        if (is_file) {
+            input->val->tag = VALUE_FILENAME;
+            input->val->filename = value;
+        } else {
+            input->val->tag = VALUE_LITERAL;
+            input->val->literal = value;
+            input->val->literal_len = strlen(value);
+        }
+        if (input_list_insert(&params, input) < 0)
+            exit(1);
+    }
+    if (argc != i + 1)
         die_usage(argv[0]);
+    char* plan_filename = argv[i];
 
     struct bytebuf bb;
     // Our use of re2c requires a NUL sentinel byte after the file contents,
     // which slurp ensures.
-    if (slurp_file(argv[1], &bb) < 0)
+    if (slurp_file(plan_filename, &bb) < 0)
         exit(1);
     if (memchr(bb.data, '\0', bb.size))
-        die("NUL bytes in plan %s", argv[1]);
+        die("NUL bytes in plan %s", plan_filename);
 
-    struct bump_list* bump = NULL;
     struct step_list* plan = parse_plan(&bump, bb.data);
-    if (!plan || print_plan(stdout, plan) < 0) {
+    if (!plan) {
         char buf[PATH_MAX];
-        error("in file %s", realpath(argv[1], buf));
+        error("in file %s", realpath(plan_filename, buf));
         exit(1);
     }
+
+    if (params) {
+        struct input_list* new_param =
+            input_list_override(&bump, &plan->inputs, params);
+        if (new_param)
+            die("params step missing or does not declare %s", new_param->name);
+    }
+
+    for (struct step_list* step = plan; step; step = step->next) {
+        for (struct input_list* input = step->inputs; input; input = input->next)
+            if (input->val->tag == VALUE_HOLE)
+                die("unfilled hole");
+    }
+
+    if (print_plan(stdout, plan) < 0)
+        exit(1);
+
     // leak bump and bb
 
     return 0;

@@ -6,8 +6,12 @@ cat <<'EOF' > plan.knit
 partial bash: cmd "bash\0in/script"
     script = !
 
+step params: params
+    limit = "3"
+
 step a: partial bash
-    script = "seq 1 3 > out/data"
+    script = "seq 1 $(< in/limit) > out/data"
+    limit = params:limit
 
 step b: partial bash
     script = "cp -RL in/* out"
@@ -17,13 +21,18 @@ step b: partial bash
 
     optional ?= a:nonexistent
 
+step c: identity
+    b.ok = b:.knit/ok
+    renamed = b:data
+
 step asomewhatlongstepname: partial bash
     script = "tac in/lines > out/data"
-    b.ok = b:.knit/ok
-    lines = b:data
+    c.ok = c:.knit/ok
+    lines = c:renamed
 EOF
 
 inv=$(expect_ok knit-run-plan)
-expect_ok test $(knit-run-plan -v 2>&1 | grep 'Cache hit' | wc -l) -eq 3
-inv2=$(expect_ok knit-run-plan)
+expect_ok test $(knit-run-plan -v -p limit=3 2>&1 | grep 'Cache hit' | wc -l) -eq 5
+inv2=$(expect_ok knit-run-plan -p limit=3)
 expect_ok test "$inv" == "$inv2"
+expect_ok knit-run-plan -p limit=5

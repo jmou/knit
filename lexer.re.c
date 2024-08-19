@@ -74,9 +74,9 @@ enum token lex_keyword(struct lex_input* in) {
             "partial" { token = TOKEN_PARTIAL; break; }
             "step" { token = TOKEN_STEP; break; }
             "cmd" { token = TOKEN_CMD; break; }
-            "param" { token = TOKEN_PARAM; break; }
+            "identity" { token = TOKEN_IDENTITY; break; }
+            "params" { token = TOKEN_PARAMS; break; }
             "flow" { token = TOKEN_FLOW; break; }
-            "shell" { token = TOKEN_SHELL; break; }
         */
     }
     post_lex(in);

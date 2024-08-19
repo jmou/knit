@@ -2,21 +2,30 @@
 
 . knit-bash-setup
 
+usage() { echo "usage: $0 [-v] [(-p|-f) <param>=<value>]... <plan>" >&2; exit 1; }
+
 unset verbose
-if [[ $1 == -v ]]; then
-    verbose=-v
+parse_flags=()
+while getopts f:p:v flag; do
+    case $flag in
+        v) verbose=-v;;
+        f|p) parse_flags+=(-$flag "$OPTARG");;
+        *) usage;;
+    esac
+done
+if [[ -n $verbose ]]; then
     exec 3>&2
-    shift
 else
     exec 3> /dev/null
 fi
+shift $((OPTIND - 1))
 
-[[ $# -le 1 ]]
+[[ $# -le 1 ]] || usage
 plan="${1-plan.knit}"
 
 set -o pipefail
 
-session="$(knit-parse-plan "$plan" | knit-build-session)"
+session="$(knit-parse-plan "${parse_flags[@]}" "$plan" | knit-build-session)"
 echo "Session $session" >&3
 
 declare -A started

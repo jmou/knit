@@ -17,9 +17,9 @@ enum token {
     TOKEN_CMD,
     TOKEN_FLOW,
     TOKEN_IDENT,
-    TOKEN_PARAM,
+    TOKEN_IDENTITY,
+    TOKEN_PARAMS,
     TOKEN_PARTIAL,
-    TOKEN_SHELL,
     TOKEN_STEP,
 
     TOKEN_EOF,

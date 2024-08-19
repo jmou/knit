@@ -37,28 +37,27 @@ mkdir "$workdir/out.knit"
 if [[ -e $workdir/root/in/.knit/cmd ]]; then
     set +e
     # TODO disambiguate errors from knit-exec-cmd and .knit/cmd
-    knit-exec-cmd "$workdir" "$workdir/root/in/.knit/cmd" 3>&- > "$workdir/out.knit/log"
+    knit-exec-cmd "$workdir" "$workdir/root/in/.knit/cmd" 3>&- 4>&- > "$workdir/out.knit/log"
     rc=$?
     set -e
-elif [[ -e $workdir/root/in/.knit/shell ]]; then
-    cd "$workdir/root"
-    set +e
-    $SHELL -e in/shell <&- 3>&- 4>&- &> ../out.knit/log
-    rc=$?
-    set -e
-    cd "$OLDPWD"
+
+    if [[ ! -s "$workdir/out.knit/log" ]]; then
+        rm "$workdir/out.knit/log"
+    fi
+    echo $rc > "$workdir/out.knit/exitcode"
+    if [[ $rc -eq 0 ]]; then
+        touch "$workdir/out.knit/ok"
+    fi
+elif [[ -e $workdir/root/in/.knit/identity ]]; then
+    # TODO implement without unpacking resources
+    cp -R "$workdir/root/in/." "$workdir/root/out"
+    rm -rf "$workdir/root/out/.knit"
+    touch "$workdir/out.knit/ok"
 else
     echo "Unsupported job $job_id" >&2
     exit 1
 fi
 
-if [[ ! -s "$workdir/out.knit/log" ]]; then
-    rm "$workdir/out.knit/log"
-fi
-echo $rc > "$workdir/out.knit/exitcode"
-if [[ $rc -eq 0 ]]; then
-    touch "$workdir/out.knit/ok"
-fi
 if [[ -e "$workdir/root/out/.knit" ]]; then
     echo "warning: removing $workdir/root/out/.knit" >&2
     rm -rf "$workdir/root/out/.knit"
