@@ -20,6 +20,7 @@ struct value {
             char* dep_name;
             ssize_t dep_pos;
             char* dep_path;
+            int dep_optional;
         };
     };
 };
@@ -27,22 +28,12 @@ struct value {
 struct input_list {
     char* name;
     struct value val;
-    int optional;
     struct input_list* next;
-};
-
-enum process_type {
-    PROCESS_PARAM,
-    PROCESS_FLOW,
-    PROCESS_SHELL,
 };
 
 struct step_list {
     char* name;
     ssize_t pos;
-    enum process_type process;
-    // TODO should subflow plan be a normal (or special?) input?
-    struct value flow; // iff process == PROCESS_FLOW
     struct input_list* inputs;
     struct step_list* next;
 };
@@ -100,6 +91,13 @@ static int try_read_token(struct lex_input* in, enum token expected) {
     if (actual != expected)
         load_lex_input(in);
     return actual == expected;
+}
+
+static struct input_list* create_input(struct parse_context* ctx, char* name) {
+    struct input_list* input = bump_alloc(ctx->bump_p, sizeof(*input));
+    memset(input, 0, sizeof(*input));
+    input->name = name;
+    return input;
 }
 
 static int parse_value(struct parse_context* ctx, struct value* out) {
@@ -168,49 +166,68 @@ static int parse_process_partial(struct parse_context* ctx, struct step_list* st
     if (!partial)
         return error("unknown partial %s", ident);
 
-    step->process = partial->process;
-    step->flow = partial->flow;
     step->inputs = partial->inputs;
     return 0;
 }
 
 static int parse_process(struct parse_context* ctx, struct step_list* step) {
+    struct lex_input* in = &ctx->in;
+    char* input_name;
+
     switch (lex_keyword(&ctx->in)) {
+    case TOKEN_FLOW:
+        step->inputs = create_input(ctx, ".knit/flow");
+        if (lex(in) != TOKEN_SPACE)
+            return error("expected space");
+        if (parse_value(ctx, &step->inputs->val) < 0)
+            return -1;
+        return populate_value(ctx, &step->inputs->val);
+
     case TOKEN_PARAM:
-        step->process = PROCESS_PARAM;
-        return 0;
+        input_name = ".knit/param";
+        goto empty_process_value;
     case TOKEN_SHELL:
-        step->process = PROCESS_SHELL;
+        input_name = ".knit/shell";
+empty_process_value:
+        step->inputs = create_input(ctx, input_name);
+        step->inputs->val.tag = VALUE_LITERAL;
+        step->inputs->val.literal = "";
         return 0;
+
     case TOKEN_PARTIAL:
         return parse_process_partial(ctx, step);
-    case TOKEN_FLOW:
-        step->process = PROCESS_FLOW;
-        if (parse_value(ctx, &step->flow) < 0)
-            return -1;
-        return populate_value(ctx, &step->flow);
     default:
         return error("expected param, shell, partial, or flow");
     }
 }
 
-static int parse_input(struct parse_context* ctx, struct input_list* input) {
+static struct input_list* parse_input(struct parse_context* ctx) {
     struct lex_input* in = &ctx->in;
     if (lex_path(in) < 0)
-        return -1;
-    input->name = lex_stuff_null(in);
+        return NULL;
+    struct input_list* input = create_input(ctx, lex_stuff_null(in));
 
+    int is_optional = 0;
     while (try_read_token(in, TOKEN_SPACE));
     if (try_read_token(in, TOKEN_QUESTION))
-        input->optional = 1;
-    if (lex(in) != TOKEN_EQUALS)
-        return error("expected =");
+        is_optional = 1;
+    if (lex(in) != TOKEN_EQUALS) {
+        error("expected =");
+        return NULL;
+    }
     while (try_read_token(in, TOKEN_SPACE));
 
     if (parse_value(ctx, &input->val) < 0)
-        return -1;
+        return NULL;
     if (populate_value(ctx, &input->val) < 0)
-        return -1;
+        return NULL;
+    if (is_optional) {
+        if (input->val.tag != VALUE_DEPENDENCY) {
+            error("optional input must be a dependency");
+            return NULL;
+        }
+        input->val.dep_optional = 1;
+    }
 
     save_lex_input(in);
     switch (lex(in)) {
@@ -218,9 +235,10 @@ static int parse_input(struct parse_context* ctx, struct input_list* input) {
         load_lex_input(in);
         // fall through
     case TOKEN_NEWLINE:
-        return 0;
+        return input;
     default:
-        return error("expected newline");
+        error("expected newline");
+        return NULL;
     }
 }
 
@@ -306,9 +324,8 @@ static int parse_plan_internal(struct parse_context* ctx) {
             if (!try_read_token(in, TOKEN_SPACE))
                 break;
 
-            struct input_list* new_input = bump_alloc(ctx->bump_p, sizeof(*new_input));
-            memset(new_input, 0, sizeof(*new_input));
-            if (parse_input(ctx, new_input) < 0)
+            struct input_list* new_input = parse_input(ctx);
+            if (!new_input)
                 return -1;
             if (!is_partial && new_input->val.tag == VALUE_HOLE)
                 return error("step input cannot be a hole");
@@ -350,24 +367,6 @@ static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
     return ctx.plan;
 }
 
-// TODO probably need to synthesize a flow input
-void print_value(FILE* fh, const struct value* val) {
-    switch (val->tag) {
-    case VALUE_DEPENDENCY:
-        fprintf(fh, "%s[%zd]:%s\n", val->dep_name, val->dep_pos, val->dep_path);
-        break;
-    case VALUE_FILENAME:
-        fprintf(fh, "./%s\n", val->filename);
-        break;
-    case VALUE_HOLE:
-        fprintf(fh, "!\n");
-        break;
-    case VALUE_LITERAL:
-        fprintf(fh, "\"%s\"\n", val->literal);
-        break;
-    }
-}
-
 static int print_resource(FILE* fh, void* data, size_t size) {
     struct resource* res = store_resource(data, size);
     if (!res)
@@ -376,55 +375,42 @@ static int print_resource(FILE* fh, void* data, size_t size) {
     return 0;
 }
 
+static int print_value(FILE* fh, const struct value* val) {
+    struct bytebuf bb;
+    switch (val->tag) {
+    case VALUE_DEPENDENCY:
+        assert(val->dep_pos >= 0);
+        fprintf(fh, "dependency %s %zu %s\n",
+                val->dep_optional ? "optional" : "required",
+                val->dep_pos, val->dep_path);
+        break;
+    case VALUE_FILENAME:
+        // TODO resource cache by (absolute?) filename
+        if (mmap_file(val->filename, &bb) < 0)
+            return -1;
+        print_resource(fh, bb.data, bb.size);
+        cleanup_bytebuf(&bb);
+        break;
+    case VALUE_LITERAL:
+        // TODO resource cache by literal (address?)
+        print_resource(fh, val->literal, strlen(val->literal));
+        break;
+    default:
+        die("bad value tag");
+    }
+    return 0;
+}
+
 static int print_plan(FILE* fh, const struct step_list* step) {
     for (; step; step = step->next) {
         fprintf(fh, "step %s\n", step->name);
-
-        switch (step->process) {
-        case PROCESS_PARAM:
-            fprintf(fh, "param\n");
-            break;
-        case PROCESS_FLOW:
-            fprintf(fh, "flow ");
-            print_value(fh, &step->flow);
-            break;
-        case PROCESS_SHELL:
-            fprintf(fh, "shell\n");
-            break;
-        }
-
         for (const struct input_list* input = step->inputs;
              input; input = input->next) {
             fprintf(fh, "input %s\n", input->name);
-
-            if (input->optional && input->val.tag != VALUE_DEPENDENCY)
-                return error("optional input '%s' on step %s must be a dependency",
-                             input->name, step->name);
-
-            struct bytebuf bb;
-            switch (input->val.tag) {
-            case VALUE_DEPENDENCY:
-                assert(input->val.dep_pos >= 0);
-                fprintf(fh, "dependency %s %zu %s\n",
-                        input->optional ? "optional" : "required",
-                        input->val.dep_pos, input->val.dep_path);
-                break;
-            case VALUE_FILENAME:
-                // TODO resource cache by (absolute?) filename
-                if (mmap_file(input->val.filename, &bb) < 0)
-                    return -1;
-                print_resource(fh, bb.data, bb.size);
-                cleanup_bytebuf(&bb);
-                break;
-            case VALUE_LITERAL:
-                print_resource(fh, input->val.literal, strlen(input->val.literal));
-                break;
-            default:
-                die("bad value tag");
-            }
+            if (print_value(fh, &input->val) < 0)
+                return -1;
         }
     }
-
     fprintf(fh, "done\n");
     return 0;
 }

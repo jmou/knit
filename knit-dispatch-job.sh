@@ -34,12 +34,17 @@ knit-unpack-job "$job_id" "$workdir/root"
 mkdir "$workdir/root/out"
 mkdir "$workdir/out.knit"
 
-cd "$workdir/root"
-set +e
-$SHELL -e in/shell <&- 3>&- 4>&- &> ../out.knit/log
-rc=$?
-set -e
-cd "$OLDPWD"
+if [[ -e $workdir/root/in/.knit/shell ]]; then
+    cd "$workdir/root"
+    set +e
+    $SHELL -e in/shell <&- 3>&- 4>&- &> ../out.knit/log
+    rc=$?
+    set -e
+    cd "$OLDPWD"
+else
+    echo "Unsupported job $job_id" >&2
+    exit 1
+fi
 
 if [[ ! -s "$workdir/out.knit/log" ]]; then
     rm "$workdir/out.knit/log"

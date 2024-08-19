@@ -15,7 +15,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-void die(const char* format, ...);
+#define NORETURN __attribute__((__noreturn__))
+
+void die(const char* format, ...) NORETURN;
 int error(const char* format, ...);
 int warning(const char* format, ...);
 

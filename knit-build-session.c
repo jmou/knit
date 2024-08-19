@@ -35,12 +35,6 @@ int main(int argc, char** argv) {
                 exit(1);
             step_pos = create_session_step(s);
             should_compile_job = 1;
-        } else if (!strcmp(s, "param")) {
-            // TODO handle param
-        } else if (removeprefix(&s, "flow ")) {
-            // TODO handle flow
-        } else if (!strcmp(s, "shell")) {
-            // TODO every step is currently treated like shell
         } else if (removeprefix(&s, "input ")) {
             if (step_pos < 0)
                 die("step must precede input");
