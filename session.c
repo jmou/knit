@@ -2,6 +2,9 @@
 
 #include "job.h"
 
+#define MAX_SESSION_NUM (~(uint32_t)0)
+static_assert(MAX_SESSION_NUM <= SIZE_MAX);
+
 struct session_step** active_steps;
 size_t num_active_steps;
 size_t alloc_active_steps;
@@ -39,6 +42,9 @@ static void ensure_alloc_deps() {
 }
 
 size_t create_session_step(const char* name) {
+    if (num_active_steps == MAX_SESSION_NUM)
+        die("too many steps");
+
     size_t namelen = strlen(name);
     struct session_step* ss = xmalloc(sizeof(struct session_step) + namelen + 1);
     memset(ss, 0, sizeof(*ss));
@@ -54,6 +60,9 @@ size_t create_session_step(const char* name) {
 
 size_t create_session_input(size_t step_pos, const char* path) {
     assert(step_pos < num_active_steps);
+    if (num_active_inputs == MAX_SESSION_NUM)
+        die("too many inputs");
+
     // Maintain session inputs in strictly monotonic order.
     if (num_active_inputs > 0) {
         struct session_input* prev_si = active_inputs[num_active_inputs - 1];
@@ -82,6 +91,9 @@ size_t create_session_dependency(size_t input_pos,
                                  size_t step_pos, const char* output,
                                  uint16_t flags) {
     assert(input_pos < num_active_inputs);
+    if (num_active_deps == MAX_SESSION_NUM)
+        die("too many dependencies");
+
     struct session_input* si = active_inputs[input_pos];
     size_t dependent_pos = ntohl(si->step_pos);
     if (dependent_pos >= num_active_steps)
@@ -90,6 +102,7 @@ size_t create_session_dependency(size_t input_pos,
 
     size_t outlen = strlen(output);
     struct session_dependency* sd = xmalloc(sizeof(struct session_dependency) + outlen + 1);
+    memset(sd, 0, sizeof(*sd));
     sd->input_pos = htonl(input_pos);
     sd->step_pos = htonl(step_pos);
     if (outlen > SD_OUTPUTMASK)

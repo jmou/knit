@@ -29,8 +29,10 @@ static inline void ss_dec_unresolved(struct session_step* ss) {
 }
 
 struct session_input {
-    uint32_t step_pos;
     uint8_t res_hash[KNIT_HASH_RAWSZ];
+    uint32_t step_pos;
+    // TODO remove padding?
+    uint16_t padding;
     uint16_t si_flags;
     char path[];
 };
@@ -51,6 +53,8 @@ size_t create_session_input(size_t step_pos, const char* path);
 struct session_dependency {
     uint32_t input_pos;
     uint32_t step_pos;
+    // TODO remove padding?
+    uint16_t padding;
     uint16_t sd_flags;
     char output[];
 };
