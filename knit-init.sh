@@ -5,6 +5,6 @@ if [[ $# -ne 1 ]]; then
     exit 1
 fi
 
-mkdir -p "$1"/.knit/{objects,sessions}
+mkdir -p "$1"/.knit/{objects,scratch,sessions}
 
 echo Initialized Knit repository in "$1/.knit" >&2

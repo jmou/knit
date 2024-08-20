@@ -83,8 +83,4 @@ const char* get_session_name();
 int load_session(const char* sessname);
 int save_session();
 
-// A "stepish" is either a step name, or '@' followed by a decimal step position
-// to avoid any ambiguity.
-ssize_t find_stepish(const char* stepish);
-
 int compile_job_for_step(size_t step_pos);

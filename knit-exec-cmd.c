@@ -23,7 +23,7 @@ char** parse_args(char* buf, size_t size) {
 }
 
 void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s <workdir> <cmdfile>\n", arg0);
+    fprintf(stderr, "usage: %s <scratch-dir> <cmdfile>\n", arg0);
     exit(1);
 }
 
@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
         exit(1);
 
     char path[PATH_MAX];
-    if (snprintf(path, PATH_MAX, "%s/root", argv[1]) >= PATH_MAX)
+    if (snprintf(path, PATH_MAX, "%s/work", argv[1]) >= PATH_MAX)
         die("path too long");
     if (chdir(path) < 0) {
         perror("chdir");

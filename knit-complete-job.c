@@ -73,7 +73,7 @@ mark_resolved:
 }
 
 void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s <session> <step> <production>\n", arg0);
+    fprintf(stderr, "usage: %s <session> <job> <production>\n", arg0);
     exit(1);
 }
 
@@ -83,28 +83,49 @@ int main(int argc, char** argv) {
 
     if (load_session(argv[1]) < 0)
         exit(1);
-    ssize_t step_pos = find_stepish(argv[2]);
-    if (step_pos < 0)
-        die("invalid step");
-    struct object_id prd_oid;
-    if (hex_to_oid(argv[3], &prd_oid) < 0)
-        die("invalid production hash");
 
-    struct production* prd = get_production(&prd_oid);
+    struct object_id oid;
+    if (hex_to_oid(argv[2], &oid) < 0)
+        die("invalid job hash");
+    struct job* job = get_job(&oid);
+    if (parse_job(job) < 0)
+        exit(1);
+
+    if (hex_to_oid(argv[3], &oid) < 0)
+        die("invalid production hash");
+    struct production* prd = get_production(&oid);
     if (parse_production(prd) < 0)
         exit(1);
 
-    struct session_step* ss = active_steps[step_pos];
-    memcpy(ss->prd_hash, prd_oid.hash, KNIT_HASH_RAWSZ);
-    if (!ss_hasflag(ss, SS_JOB))
-        die("step blocked or has unmet requirements");
-    if (ss_hasflag(ss, SS_FINAL))
-        die("step already fulfilled");
-    resolve_dependencies(step_pos, prd->outputs);
-    ss_setflag(ss, SS_FINAL);
+    int found_job = 0;
+    for (size_t i = 0; i < num_active_steps; i++) {
+        struct session_step* ss = active_steps[i];
+        if (!ss_hasflag(ss, SS_JOB) ||
+                memcmp(ss->job_hash, job->object.oid.hash, KNIT_HASH_RAWSZ))
+            continue;
 
-    if (save_session() < 0)
-        return -1;
+        if (ss_hasflag(ss, SS_FINAL)) {
+            if (!memcmp(prd->object.oid.hash, ss->prd_hash, KNIT_HASH_RAWSZ)) {
+                if (!found_job)
+                    found_job = -1;
+                continue;
+            }
+            memcpy(oid.hash, ss->prd_hash, KNIT_HASH_RAWSZ);
+            die("step already fulfilled with production %s", oid_to_hex(&oid));
+        }
 
+        found_job = 1;
+        resolve_dependencies(i, prd->outputs);
+        memcpy(ss->prd_hash, prd->object.oid.hash, KNIT_HASH_RAWSZ);
+        ss_setflag(ss, SS_FINAL);
+    }
+
+    if (!found_job) {
+        die("no steps matching job");
+    } else if (found_job < 0) {
+        warning("job redundantly completed");
+    } else if (save_session() < 0) {
+        exit(1);
+    }
     return 0;
 }

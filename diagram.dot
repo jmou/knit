@@ -11,37 +11,35 @@ digraph {
             rank=same;
             // .knit/sessions/xxxx
             session;
-            // .knit/cas/xx/yyyy
-            cas;
-            // .knit/jobcache/xx/yyyy
-            // TODO this seems more appropriate on the workdir
-            // .knit/jobcache/xx/yyyy.pending
-            jobcache;
+            // .knit/objects/xx/yyyy
+            objects;
+            // .knit/cache/xx/yyyy
+            cache;
         }
-        // .knit/workdirs/xx/yyyy
-        workdir;
+        // .knit/scratch/xxxx
+        scratch;
     }
 
     "plan.knit" -> session [label="parse\nbuild"];
     "plan.knit" -> resources;
-    step -> job [label="compile\nbuild"];
-    job -> jobcache [label=check];
-    production -> step [label=fulfill];
+    step -> job [label=compile];
+    job -> cache [label=check];
+    production -> step [label=complete];
     session -> step [label=list];
     session -> invocation [label=close];
 
     // dispatch
-    job -> workdir [label=unpack];
-    workdir -> production [label=pack];
-    production -> jobcache [label=complete];
+    job -> scratch [label=unpack];
+    scratch -> production [label=pack];
+    production -> cache [label=complete];
+    scratch -> resources;
 
     {
         edge [style=dotted,arrowhead=empty];
-        resources -> cas;
-        job -> cas;
-        production -> cas;
-        invocation -> cas;
+        { resources job production invocation } -> objects;
     }
+
+    { rank=same; resources; step; }
 
     // step states
     blocked;
@@ -50,15 +48,10 @@ digraph {
     available -> fulfilled;
     blocked -> "unmet\n(requirements)";
 
-    // step flags
-    NONE -> SS_JOB -> "SS_JOB|SS_FINAL";
-    NONE -> SS_FINAL;
-
     // job states
     processing [label="processing\nactive"];
     idle -> processing -> complete;
-    processing -> canceled [label=terminate];
-    processing -> idle [label=lost];
+    processing -> idle [label="terminate\ncancel\nlost"];
 
     // dependencies
     dependency [label="dependency\npredecessor\nupstream\nchild\nproducer\nprovider\nprerequisite\nrequirement"];

@@ -9,68 +9,75 @@ else
     exec 3> /dev/null
 fi
 
-[[ $# -eq 1 ]]
-job_id="$1"
+[[ $# -eq 2 ]]
+session="$1"
+job="$2"
 
-workdir="$KNIT_DIR/workdirs/${job_id:0:2}/${job_id:2}"
+scratch="$KNIT_DIR/scratch/$job"
 
-# TODO think more carefully about workdir locks; store state in session?
-mkdir -p "$(dirname "$workdir")"
-exec 4> "$workdir.lock"
+exec 4> "$scratch.lock"
 if ! flock -n 4; then
-    echo "Job already running: $(<$workdir.lock)" >&2
-    exit 1
+    echo "Waiting for: $(<$scratch.lock)" >&3
 fi
-if [[ -s "$workdir.lock" ]]; then
-    echo "Found stale lockfile $workdir.lock: $(<$workdir.lock)" >&2
-    truncate -s 0 "$workdir.lock"
+if [[ -s "$scratch.lock" ]]; then
+    echo "warning: stale lockfile $scratch.lock: $(<$scratch.lock)" >&2
+    truncate -s 0 "$scratch.lock"
 fi
 # TODO handle manual processes
-echo PID $$ > "$workdir.lock"
+echo "PID $$ session $session" >&4
 
-rm -rf "$workdir"
-mkdir "$workdir"
-knit-unpack-job "$job_id" "$workdir/root"
-mkdir "$workdir/root/out"
-mkdir "$workdir/out.knit"
+if [[ -e $scratch ]]; then
+    echo "warning: removing $scratch" >&2
+    rm -rf "$scratch"
+fi
 
-if [[ -e $workdir/root/in/.knit/cmd ]]; then
+if prd=$(knit-cache "$job"); then
+    echo "Cache hit (locked) $job -> $prd" >&3
+    knit-complete-job "$session" "$job" "$prd"
+    rm "$scratch.lock"
+    exit
+fi
+
+knit-unpack-job --scratch "$job" "$scratch"
+
+if [[ -e $scratch/work/in/.knit/cmd ]]; then
     set +e
     # TODO disambiguate errors from knit-exec-cmd and .knit/cmd
-    knit-exec-cmd "$workdir" "$workdir/root/in/.knit/cmd" 3>&- 4>&- > "$workdir/out.knit/log"
+    knit-exec-cmd "$scratch" "$scratch/work/in/.knit/cmd" 3>&- 4>&- > "$scratch/out.knit/log"
     rc=$?
     set -e
 
-    if [[ ! -s "$workdir/out.knit/log" ]]; then
-        rm "$workdir/out.knit/log"
+    if [[ ! -s "$scratch/out.knit/log" ]]; then
+        rm "$scratch/out.knit/log"
     fi
-    echo $rc > "$workdir/out.knit/exitcode"
+    echo $rc > "$scratch/out.knit/exitcode"
     if [[ $rc -eq 0 ]]; then
-        touch "$workdir/out.knit/ok"
+        touch "$scratch/out.knit/ok"
     fi
-elif [[ -e $workdir/root/in/.knit/identity ]]; then
+elif [[ -e $scratch/work/in/.knit/identity ]]; then
     # TODO implement without unpacking resources
-    cp -R "$workdir/root/in/." "$workdir/root/out"
-    rm -rf "$workdir/root/out/.knit"
-    touch "$workdir/out.knit/ok"
+    cp -R "$scratch/work/in/." "$scratch/work/out"
+    rm -rf "$scratch/work/out/.knit"
+    touch "$scratch/out.knit/ok"
 else
-    echo "Unsupported job $job_id" >&2
+    echo "Unsupported job $job" >&2
     exit 1
 fi
 
-if [[ -e "$workdir/root/out/.knit" ]]; then
-    echo "warning: removing $workdir/root/out/.knit" >&2
-    rm -rf "$workdir/root/out/.knit"
+if [[ -e "$scratch/work/out/.knit" ]]; then
+    echo "warning: removing $scratch/work/out/.knit" >&2
+    rm -rf "$scratch/work/out/.knit"
 fi
-mv "$workdir/out.knit" "$workdir/root/out/.knit"
+mv "$scratch/out.knit" "$scratch/work/out/.knit"
 
-echo "$job_id" > "$workdir/root/job"
-production_id=$(knit-pack-production "$workdir/root")
+rm -rf "$scratch/work/job"
+echo "$job" > "$scratch/work/job"
+prd=$(knit-pack-production "$scratch/work")
 
-# TODO when to keep workdirs?
-rm -rf "$workdir"
+echo "Complete $job -> $prd" >&3
+knit-cache "$job" "$prd"
+knit-complete-job "$session" "$job" "$prd"
 
-echo "Complete $job_id -> $production_id" >&3
-knit-complete-job "$job_id" "$production_id"
-
-rm "$workdir.lock"
+# TODO when to keep scratch dir?
+rm -rf "$scratch"
+rm "$scratch.lock"

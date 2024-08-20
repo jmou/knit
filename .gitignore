@@ -2,13 +2,12 @@
 knit
 knit-bash-setup
 knit-build-session
+knit-cache
 knit-cat-file
-knit-check-jobcache
 knit-close-session
 knit-complete-job
 knit-dispatch-job
 knit-exec-cmd
-knit-fulfill-step
 knit-hash-object
 knit-init
 knit-list-steps

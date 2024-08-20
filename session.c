@@ -288,20 +288,6 @@ fail_and_unlock:
     return -1;
 }
 
-ssize_t find_stepish(const char* stepish) {
-    if (stepish[0] == '@' && isdigit(stepish[1])) {
-        char* end;
-        size_t pos = strtoul(&stepish[1], &end, 10);
-        if (end != &stepish[1] && *end == '\0' && pos < num_active_steps)
-            return pos;
-    }
-    for (size_t i = 0; i < num_active_steps; i++) {
-        if (!strcmp(active_steps[i]->name, stepish))
-            return i;
-    }
-    return -1;
-}
-
 // This translates between session_input and job, so it could reasonably reside
 // in either job.c or session.c. In any case, store_job() is primarily concerned
 // with serialization, while compile_job_for_step() does the rest.

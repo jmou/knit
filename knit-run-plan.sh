@@ -28,28 +28,27 @@ set -o pipefail
 session="$(knit-parse-plan "${parse_flags[@]}" "$plan" | knit-build-session)"
 echo "Session $session" >&3
 
-declare -A started
+declare -A steps_started
+declare -A jobs_dispatched
 while [[ $(knit-list-steps --available --blocked "$session" | wc -l) -gt 0 ]]; do
     unset has_scheduled
 
     while IFS=$'\t' read -r step _ job _ name; do
-        [[ -z ${started[$step]} ]] || continue
-        started[$step]=1
+        [[ -z ${steps_started[$step]} ]] || continue
+        steps_started[$step]=1
         has_scheduled=1
 
         echo "Step $name" >&3
 
-        prd=$(knit-check-jobcache "$job" "$session" "$step")
-        # TODO crash recovery: restart job
-        if [[ $prd == queued ]]; then
-            echo "Queued $job [$session $step]" >&3
-            continue
-        elif [[ $prd == initial ]]; then
-            echo "Dispatch $job" >&3
-            knit-dispatch-job $verbose "$job" &
-        else
+        if prd=$(knit-cache "$job"); then
             echo "Cache hit $job -> $prd" >&3
-            knit-fulfill-step "$session" "$step" "$prd"
+            knit-complete-job "$session" "$job" "$prd"
+        elif [[ -n ${jobs_dispatched[$job]} ]]; then
+            echo "Redundant $job" >&3
+        else
+            echo "Dispatch $job" >&3
+            jobs_dispatched[$job]=1
+            knit-dispatch-job $verbose "$session" "$job" &
         fi
     done < <(knit-list-steps --available --porcelain "$session")
 
