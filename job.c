@@ -50,3 +50,31 @@ int parse_job(struct job* job) {
     free(buf);
     return ret;
 }
+
+// This implementation is largely the same as session_store_job() in session.c.
+struct job* store_job(struct resource_list* inputs) {
+    size_t size = sizeof(struct job_header);
+    size_t num_inputs = 0;
+    for (struct resource_list* curr = inputs; curr; curr = curr->next) {
+        size += sizeof(struct job_input) + strlen(curr->path) + 1;
+        num_inputs++;
+    }
+
+    char* buf = xmalloc(size);
+    struct job_header* hdr = (struct job_header*)buf;
+    hdr->num_inputs = htonl(num_inputs);
+    char* p = buf + sizeof(*hdr);
+
+    for (struct resource_list* curr = inputs; curr; curr = curr->next) {
+        struct job_input* in = (struct job_input*)p;
+        memcpy(in->res_hash, curr->res->object.oid.hash, KNIT_HASH_RAWSZ);
+        size_t pathsize = strlen(curr->path) + 1;
+        memcpy(in->path, curr->path, pathsize);
+        p += sizeof(*in) + pathsize;
+    }
+
+    struct object_id oid;
+    int rc = write_object(OBJ_JOB, buf, size, &oid);
+    free(buf);
+    return rc < 0 ? NULL : get_job(&oid);
+}

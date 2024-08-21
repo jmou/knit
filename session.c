@@ -327,9 +327,10 @@ fail_and_unlink:
 }
 
 // This translates between session_input and job, so it could reasonably reside
-// in either job.c or session.c. In any case, store_job() is primarily concerned
-// with serialization, while compile_job_for_step() does the rest.
-static struct job* store_job(struct session_input** inputs, size_t inputs_size) {
+// in either job.c or session.c. In any case, session_store_job() is primarily
+// concerned with serialization, while compile_job_for_step() does the rest.
+// This implementation is largely the same as store_job() in job.c.
+static struct job* session_store_job(struct session_input** inputs, size_t inputs_size) {
     size_t size = sizeof(struct job_header);
     size_t num_inputs = 0;
     for (size_t i = 0; i < inputs_size; i++) {
@@ -380,7 +381,7 @@ int compile_job_for_step(size_t step_pos) {
     }
     size_t limit = i;
 
-    struct job* job = store_job(&active_inputs[start], limit - start);
+    struct job* job = session_store_job(&active_inputs[start], limit - start);
     if (!job)
         return -1;
 

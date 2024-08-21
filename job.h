@@ -11,6 +11,7 @@ struct job {
 struct job* get_job(const struct object_id* oid);
 int parse_job(struct job* job);
 int parse_job_bytes(struct job* job, void* data, size_t size);
+struct job* store_job(struct resource_list* inputs);
 
 struct job_header {
     uint32_t num_inputs;

@@ -8,22 +8,6 @@
 static struct resource_list* resources;
 static size_t filename_offset;
 
-static struct resource_list* resource_list_insert(struct resource_list** list_p,
-                                                  const char* path,
-                                                  struct resource* res) {
-    struct resource_list* list = *list_p;
-    while (list && strcmp(list->path, path) < 0) {
-        list_p = &list->next;
-        list = list->next;
-    }
-    struct resource_list* node = xmalloc(sizeof(*node));
-    node->path = strdup(path);
-    node->res = res;
-    node->next = list;
-    *list_p = node;
-    return node;
-}
-
 static int each_file(const char* filename, const struct stat* /*st*/,
                      int type, struct FTW* /*ftwbuf*/) {
     switch (type) {

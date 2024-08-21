@@ -1,4 +1,5 @@
 #include "hash.h"
+#include "job.h"
 #include "lexer.h"
 #include "resource.h"
 
@@ -395,8 +396,9 @@ static int print_value(FILE* fh, const struct value* val) {
     }
 }
 
-static int print_plan(FILE* fh, const struct step_list* step) {
-    fprintf(fh, "session default\n");
+static int print_build_instructions(FILE* fh, const struct job* job,
+                                    const struct step_list* step) {
+    fprintf(fh, "session %s\n", oid_to_hex(&job->object.oid));
     for (; step; step = step->next) {
         fprintf(fh, "step %s\n", step->name);
         for (const struct input_list* input = step->inputs;
@@ -417,7 +419,8 @@ static char* joindir(const char* dir, char* filename) {
     return buf;
 }
 
-static int populate_input(struct input_list* input, const char* files_dir) {
+static int populate_input(struct input_list* input, const char* files_dir,
+                          struct resource_list** job_inputs_p) {
     struct value* val = input->val;
     if (val->res)
         return 0;
@@ -440,7 +443,25 @@ static int populate_input(struct input_list* input, const char* files_dir) {
         cleanup_bytebuf(&bb);
         break;
     }
-    return val->res ? 0 : -1;
+    if (!val->res)
+        return -1;
+
+    // Add params and files referenced by the plan to the flow job.
+    if (input->is_param) {
+        char* path = joindir("params", input->name);
+        resource_list_insert(job_inputs_p, path, val->res);
+    } else if (val->tag == VALUE_FILENAME) {
+        char* path = joindir("files", val->filename);
+        struct resource_list* inserted =
+            resource_list_insert(job_inputs_p, path, val->res);
+        // The flow plan may include distinct references to the same file;
+        // dedupe them here.
+        if (inserted->next && !strcmp(inserted->path, inserted->next->path)) {
+            assert(inserted->res == inserted->next->res);
+            inserted->next = inserted->next->next;
+        }
+    }
+    return 0;
 }
 
 static char* tokenize_param_optarg(char* s) {
@@ -511,6 +532,15 @@ int main(int argc, char** argv) {
     if (memchr(bb.data, '\0', bb.size))
         die("NUL bytes in plan %s", plan_filename);
 
+    // We will create a flow job including the plan, files it references, and
+    // any params. Here we add the plan (before any NUL stuffing in
+    // parse_plan()); the remaining resources will be added in populate_input().
+    struct resource_list* job_inputs = NULL;
+    struct resource* plan_res = store_resource(bb.data, bb.size);
+    if (!plan_res)
+        exit(1);
+    resource_list_insert(&job_inputs, ".knit/flow", plan_res);
+
     struct step_list* plan = parse_plan(&bump, bb.data);
     if (!plan) {
         char buf[PATH_MAX];
@@ -527,10 +557,11 @@ int main(int argc, char** argv) {
 
     for (struct step_list* step = plan; step; step = step->next)
         for (struct input_list* input = step->inputs; input; input = input->next)
-            if (populate_input(input, files_dir) < 0)
+            if (populate_input(input, files_dir, &job_inputs) < 0)
                 exit(1);
 
-    if (print_plan(stdout, plan) < 0)
+    struct job* job = store_job(job_inputs);
+    if (!job || print_build_instructions(stdout, job, plan) < 0)
         exit(1);
     // leak bump and bb
 

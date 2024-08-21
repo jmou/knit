@@ -14,3 +14,7 @@ struct resource_list {
     char* path;
     struct resource_list* next;
 };
+
+struct resource_list* resource_list_insert(struct resource_list** list_p,
+                                           const char* path,
+                                           struct resource* res);
