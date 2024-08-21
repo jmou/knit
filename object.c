@@ -65,8 +65,11 @@ static struct object* trie_find(struct object_trie* trie, const struct object_id
 }
 
 static struct object_trie* interned_objects;
+static struct object_id empty_oid;
 
 static void* intern_new_object(const struct object_id* oid, uint32_t typesig, size_t size) {
+    if (!memcmp(oid->hash, empty_oid.hash, KNIT_HASH_RAWSZ))
+        die("attempted to intern the empty oid");
     struct object* obj = xmalloc(size);
     memset(obj, 0, size);
     memcpy(obj->oid.hash, oid->hash, KNIT_HASH_RAWSZ);
