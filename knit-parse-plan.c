@@ -33,6 +33,7 @@ struct input_list {
     char* name;
     struct value* val;
     struct input_list* next;
+    unsigned is_param : 1;
 };
 
 struct step_list {
@@ -378,39 +379,23 @@ static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
     return ctx.plan;
 }
 
-static int print_value(FILE* fh, struct value* val) {
+static int print_value(FILE* fh, const struct value* val) {
     switch (val->tag) {
     case VALUE_DEPENDENCY:
         fprintf(fh, "dependency %s %zu %s\n",
                 val->dep_optional ? "optional" : "required",
                 val->dep_pos, val->dep_path);
         return 0;
-
     case VALUE_FILENAME:
-        if (!val->res) {
-            struct bytebuf bb;
-            if (mmap_file(val->filename, &bb) < 0)
-                return -1;
-            val->res = store_resource(bb.data, bb.size);
-            cleanup_bytebuf(&bb);
-        }
-        goto print_resource;
     case VALUE_LITERAL:
-        if (!val->res)
-            val->res = store_resource(val->literal, val->literal_len);
-print_resource:
-        if (!val->res)
-            return -1;
         fprintf(fh, "resource %s\n", oid_to_hex(&val->res->object.oid));
         return 0;
-
     default:
         die("bad value tag");
     }
 }
 
-static int print_plan(FILE* fh, struct step_list* step) {
-    // TODO assign a distinct session name
+static int print_plan(FILE* fh, const struct step_list* step) {
     fprintf(fh, "session default\n");
     for (; step; step = step->next) {
         fprintf(fh, "step %s\n", step->name);
@@ -425,49 +410,98 @@ static int print_plan(FILE* fh, struct step_list* step) {
     return 0;
 }
 
+static char* joindir(const char* dir, char* filename) {
+    static char buf[PATH_MAX];
+    if (snprintf(buf, PATH_MAX, "%s/%s", dir, filename) >= PATH_MAX)
+        die("path too long");
+    return buf;
+}
+
+static int populate_input(struct input_list* input, const char* files_dir) {
+    struct value* val = input->val;
+    if (val->res)
+        return 0;
+
+    switch (val->tag) {
+    case VALUE_HOLE:
+        return error("unfilled hole");
+    case VALUE_DEPENDENCY:
+        return 0;
+    case VALUE_LITERAL:
+        val->res = store_resource(val->literal, val->literal_len);
+        break;
+    case VALUE_FILENAME:
+        struct bytebuf bb;
+        char* filename = !input->is_param && files_dir ?
+            joindir(files_dir, val->filename) : val->filename;
+        if (mmap_file(filename, &bb) < 0)
+            return -1;
+        val->res = store_resource(bb.data, bb.size);
+        cleanup_bytebuf(&bb);
+        break;
+    }
+    return val->res ? 0 : -1;
+}
+
+static char* tokenize_param_optarg(char* s) {
+    struct lex_input in;
+    lex_input_init(&in, s);
+    if (lex_path(&in) < 0)
+        die("param name not a valid path");
+    lex_stuff_null(&in);
+    if (lex(&in) != TOKEN_EQUALS)
+        die("missing = after param name");
+    return in.curr;
+}
+
 static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s [(-p|-f) <param>=<value>]... <plan>\n", arg0);
+    fprintf(stderr, "usage: %s [-f <plan>] [-F <files-dir>] [(-p|-P) <param>=<value>]...\n", arg0);
     exit(1);
 }
 
 int main(int argc, char** argv) {
     struct bump_list* bump = NULL;
 
+    const char* plan_filename = "plan.knit";
     struct input_list* params = NULL;
-    int i = 1;
-    while (argv[i] && *argv[i] == '-' && strlen(argv[i]) == 2) {
-        int is_file;
-        switch (argv[i][1]) {
-        case 'f': is_file = 1; break;
-        case 'p': is_file = 0; break;
-        default: die_usage(argv[0]);
-        }
+    const char* files_dir = NULL;
 
-        struct lex_input in;
-        lex_input_init(&in, argv[i + 1]);
-        if (lex_path(&in) < 0)
-            die("param name not a valid path");
-        char* name = lex_stuff_null(&in);
-        if (lex(&in) != TOKEN_EQUALS)
-            die("option should be of the form -p param=value");
-        char* value = in.curr;
-        i += 2;
-
-        struct input_list* input = create_input(&bump, name);
-        if (is_file) {
-            input->val->tag = VALUE_FILENAME;
-            input->val->filename = value;
-        } else {
+    int opt;
+    while ((opt = getopt(argc, argv, "f:F:p:P:")) != -1) {
+        char* value;
+        struct input_list* input;
+        switch (opt) {
+        case 'f':
+            plan_filename = optarg;
+            break;
+        case 'F':
+            files_dir = optarg;
+            break;
+        case 'p':
+            value = tokenize_param_optarg(optarg);
+            input = create_input(&bump, optarg);
+            input->is_param = 1;
             input->val->tag = VALUE_LITERAL;
             input->val->literal = value;
             input->val->literal_len = strlen(value);
+            if (input_list_insert(&params, input) < 0)
+                exit(1);
+            break;
+        case 'P':
+            value = tokenize_param_optarg(optarg);
+            input = create_input(&bump, optarg);
+            input->is_param = 1;
+            input->val->tag = VALUE_FILENAME;
+            input->val->filename = value;
+            if (input_list_insert(&params, input) < 0)
+                exit(1);
+            break;
+        default:
+            die_usage(argv[0]);
         }
-        if (input_list_insert(&params, input) < 0)
-            exit(1);
     }
-    if (argc != i + 1)
+    if (optind < argc)
         die_usage(argv[0]);
-    char* plan_filename = argv[i];
 
     struct bytebuf bb;
     // Our use of re2c requires a NUL sentinel byte after the file contents,
@@ -491,15 +525,13 @@ int main(int argc, char** argv) {
             die("params step missing or does not declare %s", new_param->name);
     }
 
-    for (struct step_list* step = plan; step; step = step->next) {
+    for (struct step_list* step = plan; step; step = step->next)
         for (struct input_list* input = step->inputs; input; input = input->next)
-            if (input->val->tag == VALUE_HOLE)
-                die("unfilled hole");
-    }
+            if (populate_input(input, files_dir) < 0)
+                exit(1);
 
     if (print_plan(stdout, plan) < 0)
         exit(1);
-
     // leak bump and bb
 
     return 0;
