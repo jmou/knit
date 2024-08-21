@@ -410,6 +410,8 @@ print_resource:
 }
 
 static int print_plan(FILE* fh, struct step_list* step) {
+    // TODO assign a distinct session name
+    fprintf(fh, "session default\n");
     for (; step; step = step->next) {
         fprintf(fh, "step %s\n", step->name);
         for (const struct input_list* input = step->inputs;

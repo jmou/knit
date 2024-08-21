@@ -80,7 +80,10 @@ extern struct session_dependency** active_deps;
 extern size_t num_active_deps;
 
 const char* get_session_name();
+int new_session(const char* sessname);
 int load_session(const char* sessname);
 int save_session();
+// Cannot be used to save_session() later.
+int load_session_nolock(const char* sessname);
 
 int compile_job_for_step(size_t step_pos);

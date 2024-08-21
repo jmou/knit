@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
     }
     if (i + 1 != argc)
         die_usage(argv[0]);
-    if (load_session(argv[i]) < 0)
+    if (load_session_nolock(argv[i]) < 0)
         exit(1);
 
     if (wants_all) {

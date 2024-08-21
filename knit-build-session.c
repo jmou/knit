@@ -30,7 +30,10 @@ int main(int argc, char** argv) {
         line[nread - 1] = '\0';
 
         char* s = line;
-        if (removeprefix(&s, "step ")) {
+        if (removeprefix(&s, "session ")) {
+            if (new_session(s) < 0)
+                exit(1);
+        } else if (removeprefix(&s, "step ")) {
             if (should_compile_job && compile_job_for_step(step_pos) < 0)
                 exit(1);
             step_pos = create_session_step(s);

@@ -116,8 +116,9 @@ size_t create_session_dependency(size_t input_pos,
     return num_active_deps++;
 }
 
-char session_filepath[PATH_MAX];
-const char* session_name;
+static char session_filepath[PATH_MAX];
+static char session_lockfile[PATH_MAX];
+static const char* session_name;
 
 const char* get_session_name() {
     if (!session_name)
@@ -125,17 +126,43 @@ const char* get_session_name() {
     return session_name;
 }
 
-static void set_session_name(const char* sessname) {
+static void unlock_session() {
+    unlink(session_lockfile);
+}
+
+static int set_session_name(const char* sessname) {
+    assert(!session_name);
+
     if (strchr(sessname, '/') && strlen(sessname) < PATH_MAX) {
         strcpy(session_filepath, sessname);
         session_name = session_filepath;
-        return;
+    } else {
+        int len = snprintf(session_filepath, PATH_MAX,
+                           "%s/sessions/%s", get_knit_dir(), sessname);
+        if (len >= PATH_MAX)
+            return error("session path too long");
+        session_name = session_filepath + len - strlen(sessname);
     }
 
-    if (snprintf(session_filepath, PATH_MAX,
-                 "%s/sessions/%s", get_knit_dir(), sessname) >= PATH_MAX)
-        die("session path too long");
-    session_name = session_filepath + strlen(session_filepath) - strlen(sessname);
+    if (snprintf(session_lockfile, PATH_MAX,
+                 "%s.lock", session_filepath) >= PATH_MAX)
+        return error("lock path too long");
+    return 0;
+}
+
+static int set_session_name_and_lock(const char* sessname) {
+    if (set_session_name(sessname) < 0)
+        return -1;
+
+    int fd = open(session_lockfile, O_WRONLY | O_CREAT | O_EXCL, 0666);
+    if (fd < 0) {
+        if (errno == EEXIST)
+            return error("lockfile already exists: %s", session_lockfile);
+        return error("open error %s: %s", session_lockfile, strerror(errno));
+    }
+
+    atexit(unlock_session);
+    return 0;
 }
 
 struct session_header {
@@ -144,9 +171,17 @@ struct session_header {
     uint32_t num_deps;
 };
 
-int load_session(const char* sessname) {
-    set_session_name(sessname);
+int new_session(const char* sessname) {
+    if (set_session_name_and_lock(sessname) < 0)
+        return -1;
 
+    struct stat st;
+    if (stat(session_filepath, &st) == 0)
+        return error("existing session %s", session_name);
+    return 0;
+}
+
+int load_current_session() {
     int fd = open(session_filepath, O_RDONLY);
     if (fd < 0)
         return error("cannot open %s: %s", session_filepath, strerror(errno));
@@ -201,6 +236,18 @@ int load_session(const char* sessname) {
     return 0;
 }
 
+int load_session(const char* sessname) {
+    if (set_session_name_and_lock(sessname) < 0)
+        return -1;
+    return load_current_session();
+}
+
+int load_session_nolock(const char* sessname) {
+    if (set_session_name(sessname) < 0)
+        return -1;
+    return load_current_session();
+}
+
 static int cmp_dep(const void* a, const void* b) {
     const struct session_dependency* pa = *(const struct session_dependency**)a;
     const struct session_dependency* pb = *(const struct session_dependency**)b;
@@ -220,27 +267,18 @@ static int cmp_dep(const void* a, const void* b) {
 }
 
 int save_session() {
-    // TODO should allocate a new session name, avoiding collisions
-    if (!session_name) {
-        set_session_name("default");
-        struct stat st;
-        if (stat(session_filepath, &st) == 0)
-            return error("existing session %s", session_name);
-    }
+    assert(session_name);
 
     if (deps_dirty)
         qsort(active_deps, num_active_deps, sizeof(*active_deps), cmp_dep);
 
-    char lockfile[PATH_MAX];
-    if (snprintf(lockfile, PATH_MAX, "%s.lock", session_filepath) >= PATH_MAX)
-        return error("lock path too long");
+    char tempfile[PATH_MAX];
+    if (snprintf(tempfile, PATH_MAX, "%s.tmp", session_filepath) >= PATH_MAX)
+        return error("tempfile path too long");
 
-    int fd = open(lockfile, O_WRONLY | O_CREAT | O_EXCL, 0666);
-    if (fd < 0) {
-        if (errno == EEXIST)
-            return error("lockfile already exists: %s", lockfile);
-        return error("open error %s: %s", lockfile, strerror(errno));
-    }
+    int fd = creat(tempfile, 0666);
+    if (fd < 0)
+        return error("open error %s: %s", tempfile, strerror(errno));
 
     struct session_header hdr = {
         .num_steps = htonl(num_active_steps),
@@ -268,23 +306,23 @@ int save_session() {
     }
 
     if (close(fd) < 0) {
-        error("close error %s: %s", lockfile, strerror(errno));
-        goto fail_and_unlock;
+        error("close error %s: %s", tempfile, strerror(errno));
+        goto fail_and_unlink;
     }
 
-    if (rename(lockfile, session_filepath) < 0) {
+    if (rename(tempfile, session_filepath) < 0) {
         error("rename error to %s: %s", session_filepath, strerror(errno));
-        goto fail_and_unlock;
+        goto fail_and_unlink;
     }
 
     return 0;
 
 write_fail:
-    error("write error %s: %s", lockfile, strerror(errno));
+    error("write error %s: %s", tempfile, strerror(errno));
     close(fd);
 
-fail_and_unlock:
-    unlink(lockfile);
+fail_and_unlink:
+    unlink(tempfile);
     return -1;
 }
 
