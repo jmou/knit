@@ -1,3 +1,4 @@
+#include "invocation.h"
 #include "job.h"
 #include "production.h"
 
@@ -7,7 +8,10 @@ static void pretty_job(const struct job* job) {
 }
 
 static void pretty_production(const struct production* prd) {
-    printf("job %s\n\n", oid_to_hex(&prd->job->object.oid));
+    printf("job %s\n", oid_to_hex(&prd->job->object.oid));
+    if (prd->inv)
+        printf("invocation %s\n", oid_to_hex(&prd->inv->object.oid));
+    printf("\n");
     for (struct resource_list* out = prd->outputs; out; out = out->next)
         printf("%s\t%s\n", oid_to_hex(&out->res->object.oid), out->name);
 }

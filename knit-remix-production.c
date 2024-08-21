@@ -1,4 +1,5 @@
 #include "hash.h"
+#include "invocation.h"
 #include "job.h"
 #include "production.h"
 #include "resource.h"
@@ -21,6 +22,7 @@ enum options {
     OPT_REMOVE_PREFIX,
     OPT_SET_JOB,
     OPT_SET_OUTPUT,
+    OPT_WRAP_INVOCATION,
 };
 
 static struct option longopts[] = {
@@ -28,6 +30,7 @@ static struct option longopts[] = {
     { .name = "remove-prefix", .val = OPT_REMOVE_PREFIX, .has_arg = 1 },
     { .name = "set-job", .val = OPT_SET_JOB, .has_arg = 1 },
     { .name = "set-output", .val = OPT_SET_OUTPUT, .has_arg = 1 },
+    { .name = "wrap-invocation", .val = OPT_WRAP_INVOCATION, .has_arg = 1 },
     { 0 }
 };
 
@@ -35,6 +38,7 @@ static void die_usage(char* arg0) {
     int len = strlen(arg0);
     fprintf(stderr, "usage: %*s [--copy-job-inputs <job>] [--remove-prefix <prefix>]\n", len, arg0);
     fprintf(stderr, "       %*s [--set-job <job>] [--set-output <name>=<resource>]\n", len, "");
+    fprintf(stderr, "       %*s [--wrap-invocation <invocation>]\n", len, "");
     exit(1);
 }
 
@@ -42,6 +46,7 @@ int main(int argc, char** argv) {
     if (argc < 2)
         die_usage(argv[0]);
 
+    struct invocation* final_inv;
     struct job* final_job = NULL;
     struct resource_list* outputs = NULL;
 
@@ -84,6 +89,18 @@ int main(int argc, char** argv) {
             res = get_resource(&oid);
             resource_list_insert(&outputs, optarg, res);
             break;
+        case OPT_WRAP_INVOCATION:
+            if (hex_to_oid(optarg, &oid) < 0)
+                die("invalid invocation hash");
+            final_inv = get_invocation(&oid);
+            if (parse_invocation(final_inv) < 0)
+                exit(1);
+            if (final_inv->terminal->prd) {
+                if (parse_production(final_inv->terminal->prd) < 0)
+                    exit(1);
+                outputs = deep_copy(final_inv->terminal->prd->outputs);
+            }
+            break;
         default:
             die_usage(argv[0]);
         }
@@ -91,10 +108,10 @@ int main(int argc, char** argv) {
 
     if (!final_job)
         die("missing job");
-    if (!outputs)
-        die("no outputs");
+    if (!outputs && !final_inv)
+        die("no outputs nor invocation");
 
-    prd = store_production(final_job, outputs);
+    prd = store_production(final_job, final_inv, outputs);
     if (!prd)
         exit(1);
 

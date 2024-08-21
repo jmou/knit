@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
     if (nftw(outputs, each_file, 16, 0) != 0)
         die("directory traversal failed on %s: %s", outputs, strerror(errno));
 
-    struct production* prd = store_production(get_job(&job_oid), resources);
+    struct production* prd = store_production(get_job(&job_oid), NULL, resources);
     if (!prd)
         exit(1);
 

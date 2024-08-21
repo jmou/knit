@@ -1,12 +1,22 @@
 #include "production.h"
 
+#include "hash.h"
+#include "invocation.h"
+
 struct production* get_production(const struct object_id* oid) {
     return intern_object(oid, OBJ_PRODUCTION, sizeof(struct production));
 }
 
 struct production_header {
     uint8_t job_hash[KNIT_HASH_RAWSZ];
-    uint32_t num_outputs;
+    uint32_t flags;
+};
+
+#define PH_INVOCATION 0x80000000
+#define PH_OUTPUTS_MASK (~PH_INVOCATION)
+
+struct production_invocation {
+    uint8_t inv_hash[KNIT_HASH_RAWSZ];
 };
 
 struct output {
@@ -22,7 +32,14 @@ int parse_production_bytes(struct production* prd, void* data, size_t size) {
     if (size < off)
         return error("truncated production header");
     prd->job = get_job(oid_of_hash(hdr->job_hash));
-    size_t num_outputs = ntohl(hdr->num_outputs);
+    size_t num_outputs = ntohl(hdr->flags) & PH_OUTPUTS_MASK;
+
+    if (ntohl(hdr->flags) & PH_INVOCATION) {
+        struct production_invocation* inv_hdr =
+            (struct production_invocation*)((char*)data + off);
+        prd->inv = get_invocation(oid_of_hash(inv_hdr->inv_hash));
+        off += sizeof(*inv_hdr);
+    }
 
     struct resource_list** list_p = &prd->outputs;
     for (uint32_t i = 0; i < num_outputs; i++) {
@@ -62,10 +79,13 @@ int parse_production(struct production* prd) {
     return ret;
 }
 
-struct production* store_production(struct job* job, struct resource_list* outputs) {
+struct production* store_production(struct job* job, struct invocation* inv,
+                                    struct resource_list* outputs) {
     if (parse_job(job) < 0)
         return NULL;
     size_t size = sizeof(struct production_header);
+    if (inv)
+        size += sizeof(struct production_invocation);
     for (const struct resource_list* curr = outputs; curr; curr = curr->next) {
         if (parse_resource(curr->res) < 0)
             return NULL;
@@ -77,6 +97,12 @@ struct production* store_production(struct job* job, struct resource_list* outpu
     memcpy(hdr->job_hash, job->object.oid.hash, KNIT_HASH_RAWSZ);
     char* p = buf + sizeof(*hdr);
 
+    if (inv) {
+        struct production_invocation* inv_hdr = (struct production_invocation*)p;
+        memcpy(inv_hdr->inv_hash, inv->object.oid.hash, KNIT_HASH_RAWSZ);
+        p += sizeof(*inv_hdr);
+    }
+
     uint32_t count = 0;
     for (const struct resource_list* curr = outputs; curr; curr = curr->next) {
         struct output* out = (struct output*)p;
@@ -86,7 +112,8 @@ struct production* store_production(struct job* job, struct resource_list* outpu
         p += sizeof(*out) + pathsize;
         count++;
     }
-    hdr->num_outputs = htonl(count);
+    assert(count <= PH_OUTPUTS_MASK);
+    hdr->flags = htonl(count | (inv ? PH_INVOCATION : 0));
 
     struct object_id oid;
     int rc = write_object(OBJ_PRODUCTION, buf, size, &oid);
