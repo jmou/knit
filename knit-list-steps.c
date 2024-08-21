@@ -30,24 +30,24 @@ static const char* pflags(uint16_t flags) {
 
 static void emit(size_t step_pos, struct session_step* ss) {
     if (debug) {
-        printf("step @%zu \t%-2u %s %s\n",
+        printf("step @%-9zu %-2u %s %s\n",
                step_pos, ntohs(ss->num_unresolved), pflags(ss->ss_flags), ss->name);
-        printf("     job\t%s\n", to_hex(ss->job_hash));
-        printf("     production\t%s\n", to_hex(ss->prd_hash));
+        printf("     job        %s\n", to_hex(ss->job_hash));
+        printf("     production %s\n", to_hex(ss->prd_hash));
 
         for (size_t i = 0; i < num_active_inputs; i++) {
             struct session_input* si = active_inputs[i];
             if (ntohl(si->step_pos) != step_pos)
                 continue;
-            printf("     input\t%-2zu %s %s\n", i, pflags(si->si_flags), si->path);
-            printf("     resource\t%s\n", to_hex(si->res_hash));
+            printf("     input      %-2zu %s %s\n", i, pflags(si->si_flags), si->path);
+            printf("     resource   %s\n", to_hex(si->res_hash));
         }
 
         for (size_t i = 0; i < num_active_deps; i++) {
             struct session_dependency* sd = active_deps[i];
             if (ntohl(sd->step_pos) != step_pos)
                 continue;
-            printf("     dependency\t%-2u %s %s\n",
+            printf("     dependency %-2u %s %s\n",
                    ntohl(sd->input_pos), pflags(sd->sd_flags), sd->output);
         }
     } else if (porcelain) {
@@ -113,7 +113,8 @@ int main(int argc, char** argv) {
     }
 
     if (debug)
-        printf("counts \t\t%-3zu %-3zu %-3zu\n", num_active_steps, num_active_inputs, num_active_deps);
+        printf("counts%10s%-3zu %-3zu %-3zu\n",
+               "", num_active_steps, num_active_inputs, num_active_deps);
 
     for (size_t i = 0; i < num_active_steps; i++) {
         struct session_step* ss = active_steps[i];
