@@ -21,7 +21,7 @@ struct value {
         };
         struct {
             char* dep_name;
-            ssize_t dep_pos;
+            size_t dep_pos;
             char* dep_path;
             int dep_optional;
         };
@@ -154,8 +154,10 @@ static int try_read_token(struct lex_input* in, enum token expected) {
 
 static int parse_value(struct parse_context* ctx, struct value* out) {
     struct lex_input* in = &ctx->in;
-    ssize_t size;
     memset(out, 0, sizeof(*out));
+
+    ssize_t size;
+    struct step_list* dep;
     switch (lex(in)) {
     case TOKEN_EXCLAMATION:
         out->tag = VALUE_HOLE;
@@ -180,12 +182,15 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
     case TOKEN_IDENT:
         out->tag = VALUE_DEPENDENCY;
         out->dep_name = lex_stuff_null(in);
-        out->dep_pos = -1;
         if (lex(in) != TOKEN_COLON)
             return error("expected :");
         if (lex_path(in) < 0)
             return -1;
         out->dep_path = lex_stuff_null(in);
+        dep = find_step(ctx->plan, out->dep_name);
+        if (!dep)
+            return error("dependency on not yet defined step %s", out->dep_name);
+        out->dep_pos = dep->pos;
         return 0;
     case TOKEN_DOTSLASH:
         out->tag = VALUE_FILENAME;
@@ -196,16 +201,6 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
     default:
         return error("expected value");
     }
-}
-
-static int populate_value(struct parse_context* ctx, struct value* val) {
-    if (val->tag == VALUE_DEPENDENCY) {
-        struct step_list* dep = find_step(ctx->plan, val->dep_name);
-        if (!dep)
-            return error("dependency on not yet defined step %s", val->dep_name);
-        val->dep_pos = dep->pos;
-    }
-    return 0;
 }
 
 static int parse_process_partial(struct parse_context* ctx, struct step_list* step) {
@@ -238,9 +233,7 @@ parse_process_value:
         step->inputs = create_input(ctx->bump_p, input_name);
         if (lex(in) != TOKEN_SPACE)
             return error("expected space");
-        if (parse_value(ctx, step->inputs->val) < 0)
-            return -1;
-        return populate_value(ctx, step->inputs->val);
+        return parse_value(ctx, step->inputs->val);
 
     case TOKEN_PARAMS:
         step->is_params = 1;
@@ -250,7 +243,6 @@ parse_process_value:
         step->inputs->val->tag = VALUE_LITERAL;
         step->inputs->val->literal = NULL;
         step->inputs->val->literal_len = 0;
-        populate_value(ctx, step->inputs->val);
         return 0;
 
     case TOKEN_PARTIAL:
@@ -277,8 +269,6 @@ static struct input_list* parse_input(struct parse_context* ctx) {
     while (try_read_token(in, TOKEN_SPACE));
 
     if (parse_value(ctx, input->val) < 0)
-        return NULL;
-    if (populate_value(ctx, input->val) < 0)
         return NULL;
     if (is_optional) {
         if (input->val->tag != VALUE_DEPENDENCY) {
@@ -391,7 +381,6 @@ static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
 static int print_value(FILE* fh, struct value* val) {
     switch (val->tag) {
     case VALUE_DEPENDENCY:
-        assert(val->dep_pos >= 0);
         fprintf(fh, "dependency %s %zu %s\n",
                 val->dep_optional ? "optional" : "required",
                 val->dep_pos, val->dep_path);
