@@ -434,13 +434,9 @@ static int populate_input(struct input_list* input, const char* files_dir,
         val->res = store_resource(val->literal, val->literal_len);
         break;
     case VALUE_FILENAME:
-        struct bytebuf bb;
-        char* filename = !input->is_param && files_dir ?
-            joindir(files_dir, val->filename) : val->filename;
-        if (mmap_file(filename, &bb) < 0)
-            return -1;
-        val->res = store_resource(bb.data, bb.size);
-        cleanup_bytebuf(&bb);
+        val->res = store_resource_file(!input->is_param && files_dir ?
+                                       joindir(files_dir, val->filename) :
+                                       val->filename);
         break;
     }
     if (!val->res)

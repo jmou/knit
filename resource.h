@@ -8,6 +8,7 @@ struct resource {
 
 struct resource* get_resource(const struct object_id* oid);
 struct resource* store_resource(void* data, size_t size);
+struct resource* store_resource_file(const char* filename);
 
 struct resource_list {
     struct resource* res;

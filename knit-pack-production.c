@@ -27,15 +27,11 @@ static int each_file(const char* filename, const struct stat* /*st*/,
         return 1;
     }
 
-    struct bytebuf bbuf;
-    struct resource* res;
-    if (mmap_file(filename, &bbuf) < 0 ||
-            !(res = store_resource(bbuf.data, bbuf.size))) {
-        cleanup_bytebuf(&bbuf);
+    struct resource* res = store_resource_file(filename);
+    if (!res) {
         errno = EIO;
         return 1;
     }
-    cleanup_bytebuf(&bbuf);
     // We expect resource lists to be short, but building them may be quadratic.
     resource_list_insert(&resources, filename + filename_offset, res);
     return 0;

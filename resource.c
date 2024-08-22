@@ -11,6 +11,15 @@ struct resource* store_resource(void* data, size_t size) {
     return get_resource(&oid);
 }
 
+struct resource* store_resource_file(const char* filename) {
+    struct bytebuf bb;
+    if (mmap_or_slurp_file(filename, &bb) < 0)
+        return NULL;
+    struct resource* res = store_resource(bb.data, bb.size);
+    cleanup_bytebuf(&bb);
+    return res;
+}
+
 struct resource_list* resource_list_insert(struct resource_list** list_p,
                                            const char* path,
                                            struct resource* res) {
