@@ -29,8 +29,8 @@ digraph {
     session -> invocation [label=close];
 
     // dispatch
-    job -> scratch [label=unpack];
-    scratch -> production [label=pack];
+    job -> scratch [label="unpack\nexplode\nextract"];
+    scratch -> production [label="pack\nbundle\nassemble\narchive"];
     production -> cache [label=complete];
     scratch -> resources;
 

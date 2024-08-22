@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
                 ret = 1;
                 continue;
             }
-        } else if (mmap_file(argv[i], &bbuf) < 0) {
+        } else if (mmap_or_slurp_file(argv[i], &bbuf) < 0) {
             ret = 1;
             continue;
         }
