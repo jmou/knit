@@ -2,17 +2,17 @@
 
 . knit-bash-setup
 
-usage() { echo "usage: $0 [-v] [<parse-options>]" >&2; exit 1; }
+usage() { echo "usage: $0 [-v] [-f <plan>] [<plan-job-options>]" >&2; exit 1; }
 
+plan=plan.knit
 unset verbose
-i=1
-while [[ $i -lt $# ]]; do
-    if [[ ${!i} == -v ]]; then
-        verbose=-v
-        set -- "${@:1:i-1}" "${@:i+1:$#}"
-    else
-        ((i++))
-    fi
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -v) verbose=-v;;
+        -f) plan="$2"; shift;;
+        *) break;;
+    esac
+    shift
 done
 if [[ -n $verbose ]]; then
     exec 3>&2
@@ -22,7 +22,8 @@ fi
 
 set -o pipefail
 
-session="$(knit-parse-plan "$@" | knit-build-session)"
+flow_job=$(knit-parse-plan --emit-params-files "$plan" | knit-plan-job "$@" "$plan")
+session="$(knit-parse-plan --job-to-session "$flow_job" | knit-build-session)"
 echo "Session $session" >&3
 
 declare -A steps_started

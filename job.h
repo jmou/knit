@@ -22,6 +22,7 @@ struct job_input {
     char name[];
 };
 
+#define JOB_INPUT_RESERVED_PREFIX ".knit/"
 #define JOB_INPUT_CMD ".knit/cmd"
 #define JOB_INPUT_FLOW ".knit/flow"
 #define JOB_INPUT_IDENTITY ".knit/identity"

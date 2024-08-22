@@ -34,7 +34,6 @@ struct input_list {
     char* name;
     struct value* val;
     struct input_list* next;
-    unsigned is_param : 1;
 };
 
 struct step_list {
@@ -412,6 +411,31 @@ static int print_build_instructions(FILE* fh, const struct job* job,
     return 0;
 }
 
+static struct input_list* job_params_to_inputs(struct bump_list** bump_p,
+                                               struct resource_list* job_inputs) {
+    struct input_list* ret = NULL;
+    struct input_list** inputs_p = &ret;
+    for (; job_inputs; job_inputs = job_inputs->next) {
+        const char prefix[] = "params/";
+        int cmp = strncmp(job_inputs->name, prefix, strlen(prefix));
+        if (cmp < 0)
+            continue;
+        if (cmp > 0)
+            break;
+
+        struct input_list* input = bump_alloc(bump_p, sizeof(*input));
+        input->name = job_inputs->name + strlen(prefix);
+        input->val = bump_alloc(bump_p, sizeof(*input->val));
+        input->val->tag = VALUE_FILENAME;
+        input->val->filename = job_inputs->name;
+        input->val->res = job_inputs->res;
+        input->next = NULL;
+        *inputs_p = input;
+        inputs_p = &input->next;
+    }
+    return ret;
+}
+
 static char* joindir(const char* dir, char* filename) {
     static char buf[PATH_MAX];
     if (snprintf(buf, PATH_MAX, "%s/%s", dir, filename) >= PATH_MAX)
@@ -419,8 +443,18 @@ static char* joindir(const char* dir, char* filename) {
     return buf;
 }
 
-static int populate_input(struct input_list* input, const char* files_dir,
-                          struct resource_list** job_inputs_p) {
+static struct resource* find_resource(struct resource_list* list, const char* name) {
+    for (; list; list = list->next) {
+        int cmp = strcmp(list->name, name);
+        if (!cmp)
+            break;
+        else if (cmp > 0)
+            return NULL;
+    }
+    return list ? list->res : NULL;
+}
+
+static int populate_input(struct input_list* input, struct resource_list* job_inputs) {
     struct value* val = input->val;
     if (val->res)
         return 0;
@@ -434,132 +468,104 @@ static int populate_input(struct input_list* input, const char* files_dir,
         val->res = store_resource(val->literal, val->literal_len);
         break;
     case VALUE_FILENAME:
-        val->res = store_resource_file(!input->is_param && files_dir ?
-                                       joindir(files_dir, val->filename) :
-                                       val->filename);
+        val->res = find_resource(job_inputs, joindir("files", val->filename));
         break;
     }
-    if (!val->res)
-        return -1;
-
-    // Add params and files referenced by the plan to the flow job.
-    if (input->is_param) {
-        char* name = joindir("params", input->name);
-        resource_list_insert(job_inputs_p, name, val->res);
-    } else if (val->tag == VALUE_FILENAME) {
-        char* name = joindir("files", val->filename);
-        struct resource_list* inserted =
-            resource_list_insert(job_inputs_p, name, val->res);
-        // The flow plan may include distinct references to the same file;
-        // dedupe them here.
-        if (inserted->next && !strcmp(inserted->name, inserted->next->name)) {
-            assert(inserted->res == inserted->next->res);
-            inserted->next = inserted->next->next;
-        }
-    }
-    return 0;
+    return val->res ? 0 : -1;
 }
 
-static char* tokenize_param_optarg(char* s) {
-    struct lex_input in;
-    lex_input_init(&in, s);
-    if (lex_path(&in) < 0)
-        die("param name not a valid path");
-    lex_stuff_null(&in);
-    if (lex(&in) != TOKEN_EQUALS)
-        die("missing = after param name");
-    return in.curr;
+static void emit_params(struct step_list* step) {
+    for (struct input_list* input = step->inputs; input; input = input->next) {
+        if (!strncmp(input->name, JOB_INPUT_RESERVED_PREFIX,
+                     strlen(JOB_INPUT_RESERVED_PREFIX)))
+            continue;
+        printf("param %s", input->name);
+        if (input->val->tag == VALUE_FILENAME)
+            printf("=%s\n", input->val->filename);
+        else
+            printf("\n");
+    }
+}
+
+static void emit_files(struct step_list* step) {
+    for (struct input_list* input = step->inputs; input; input = input->next)
+        if (input->val->tag == VALUE_FILENAME)
+            printf("file %s\n", input->val->filename);
 }
 
 static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s [-f <plan>] [-F <files-dir>] [(-p|-P) <param>=<value>]...\n", arg0);
+    fprintf(stderr, "usage: %s --job-to-session <job>\n", arg0);
+    fprintf(stderr, "       %s --emit-params-files <plan>\n", arg0);
     exit(1);
 }
 
 int main(int argc, char** argv) {
-    struct bump_list* bump = NULL;
-
-    const char* plan_filename = "plan.knit";
-    struct input_list* params = NULL;
-    const char* files_dir = NULL;
-
-    int opt;
-    while ((opt = getopt(argc, argv, "f:F:p:P:")) != -1) {
-        char* value;
-        struct input_list* input;
-        switch (opt) {
-        case 'f':
-            plan_filename = optarg;
-            break;
-        case 'F':
-            files_dir = optarg;
-            break;
-        case 'p':
-            value = tokenize_param_optarg(optarg);
-            input = create_input(&bump, optarg);
-            input->is_param = 1;
-            input->val->tag = VALUE_LITERAL;
-            input->val->literal = value;
-            input->val->literal_len = strlen(value);
-            if (input_list_insert(&params, input) < 0)
-                exit(1);
-            break;
-        case 'P':
-            value = tokenize_param_optarg(optarg);
-            input = create_input(&bump, optarg);
-            input->is_param = 1;
-            input->val->tag = VALUE_FILENAME;
-            input->val->filename = value;
-            if (input_list_insert(&params, input) < 0)
-                exit(1);
-            break;
-        default:
-            die_usage(argv[0]);
-        }
-    }
-    if (optind < argc)
-        die_usage(argv[0]);
-
+    struct job* job = NULL;
     struct bytebuf bb;
-    if (slurp_file(plan_filename, &bb) < 0)
-        exit(1);
-    // Our use of re2c requires a NUL sentinel byte after the file contents.
-    ensure_bytebuf_null_terminated(&bb);
+
+    if (argc != 3)
+        die_usage(argv[0]);
+    if (!strcmp(argv[1], "--job-to-session")) {
+        struct object_id job_oid;
+        if (hex_to_oid(argv[2], &job_oid) < 0)
+            die("invalid job hash");
+        job = get_job(&job_oid);
+        if (parse_job(job) < 0)
+            exit(1);
+
+        struct resource* plan_res = find_resource(job->inputs, JOB_INPUT_FLOW);
+        bb.data = read_object_of_type(&plan_res->object.oid, OBJ_RESOURCE, &bb.size);
+        if (!bb.data)
+            exit(1);
+        bb.should_free = 1;
+    } else if (!strcmp(argv[1], "--emit-params-files")) {
+        if (slurp_file(argv[2], &bb) < 0)
+            exit(1);
+    } else {
+        die_usage(argv[0]);
+    }
     if (memchr(bb.data, '\0', bb.size))
-        die("NUL bytes in plan %s", plan_filename);
+        die("NUL bytes in plan");
 
-    // We will create a flow job including the plan, files it references, and
-    // any params. Here we add the plan (before any NUL stuffing in
-    // parse_plan()); the remaining resources will be added in populate_input().
-    struct resource_list* job_inputs = NULL;
-    struct resource* plan_res = store_resource(bb.data, bb.size);
-    if (!plan_res)
-        exit(1);
-    resource_list_insert(&job_inputs, JOB_INPUT_FLOW, plan_res);
-
+    struct bump_list* bump = NULL;
+    // Our use of re2c requires a NUL sentinel byte after the plan contents.
+    ensure_bytebuf_null_terminated(&bb);
     struct step_list* plan = parse_plan(&bump, bb.data);
     if (!plan) {
         char buf[PATH_MAX];
-        error("in file %s", realpath(plan_filename, buf));
+        if (job)
+            error("in job %s input %s", argv[2], JOB_INPUT_FLOW);
+        else
+            error("in file %s", realpath(argv[2], buf));
         exit(1);
     }
 
-    if (params) {
-        struct input_list* new_param =
-            input_list_override(&bump, &plan->inputs, params);
-        if (new_param)
-            die("params step missing or does not declare %s", new_param->name);
+    if (job) {
+        // Only the first step of the plan may be a params process. If the job
+        // has any params they should override the params step inputs.
+        struct input_list* params = job_params_to_inputs(&bump, job->inputs);
+        if (params && !plan->is_params)
+            die("params step missing");
+        struct input_list* added = input_list_override(&bump, &plan->inputs, params);
+        if (added)
+            die("params step does not declare %s", added->name);
+
+        for (struct step_list* step = plan; step; step = step->next)
+            for (struct input_list* input = step->inputs; input; input = input->next)
+                if (populate_input(input, job->inputs) < 0)
+                    exit(1);
+
+        if (print_build_instructions(stdout, job, plan) < 0)
+            exit(1);
+    } else {
+        for (struct step_list* step = plan; step; step = step->next) {
+            if (step->is_params)
+                emit_params(step);
+            else
+                emit_files(step);
+        }
     }
 
-    for (struct step_list* step = plan; step; step = step->next)
-        for (struct input_list* input = step->inputs; input; input = input->next)
-            if (populate_input(input, files_dir, &job_inputs) < 0)
-                exit(1);
-
-    struct job* job = store_job(job_inputs);
-    if (!job || print_build_instructions(stdout, job, plan) < 0)
-        exit(1);
     // leak bump and bb
-
     return 0;
 }

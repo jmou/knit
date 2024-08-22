@@ -13,6 +13,7 @@ knit-init
 knit-list-steps
 knit-pack-production
 knit-parse-plan
+knit-plan-job
 knit-remix-production
 knit-run-plan
 knit-unpack-job
