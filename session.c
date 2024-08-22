@@ -182,11 +182,8 @@ int new_session(const char* sessname) {
 }
 
 int load_current_session() {
-    int fd = open(session_filepath, O_RDONLY);
-    if (fd < 0)
-        return error("cannot open %s: %s", session_filepath, strerror(errno));
     struct bytebuf bb; // leaked
-    if (mmap_fd(fd, &bb) < 0 && slurp_fd(fd, &bb) < 0)
+    if (mmap_or_slurp_file(session_filepath, &bb) < 0)
         return -1;
 
     if (bb.size < sizeof(struct session_header))

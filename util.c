@@ -153,3 +153,16 @@ int slurp_file(const char* filename, struct bytebuf* out) {
     close(fd);
     return 0;
 }
+
+int mmap_or_slurp_file(const char* filename, struct bytebuf* out) {
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0)
+        return error("cannot open %s: %s", filename, strerror(errno));
+
+    if (mmap_fd(fd, out) < 0 && slurp_fd(fd, out) < 0) {
+        close(fd);
+        return error("cannot read %s: %s", filename, strerror(errno));
+    }
+    close(fd);
+    return 0;
+}
