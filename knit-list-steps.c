@@ -70,7 +70,7 @@ static void emit(size_t step_pos, struct session_step* ss) {
 }
 
 static void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s [--available] [--porcelain|--debug]\n", arg0);
+    fprintf(stderr, "usage: %s [--available] [--blocked] [--fulfilled] [--unmet] [--porcelain|--debug] <session>\n", arg0);
     exit(1);
 }
 
@@ -87,11 +87,14 @@ int main(int argc, char** argv) {
         } else if (!strcmp(flag, "--available")) {
             wants_available = 1;
             wants_all = 0;
-        } else if (!strcmp(flag, "--unmet")) {
-            wants_unmet = 1;
+        } else if (!strcmp(flag, "--blocked")) {
+            wants_blocked = 1;
             wants_all = 0;
         } else if (!strcmp(flag, "--fulfilled")) {
             wants_fulfilled = 1;
+            wants_all = 0;
+        } else if (!strcmp(flag, "--unmet")) {
+            wants_unmet = 1;
             wants_all = 0;
         } else {
             break;

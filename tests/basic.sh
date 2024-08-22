@@ -25,6 +25,6 @@ step asomewhatlongstepname: partial bash
 EOF
 
 inv=$(expect_ok knit-run-plan)
-knit-run-plan -v 2>&1 | grep -q 'Cache hit'
+expect_ok test $(knit-run-plan -v 2>&1 | grep 'Cache hit' | wc -l) -eq 3
 inv2=$(expect_ok knit-run-plan)
 expect_ok test "$inv" == "$inv2"

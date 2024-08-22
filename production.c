@@ -1,7 +1,7 @@
 #include "production.h"
 
 struct production* get_production(const struct object_id* oid) {
-    return intern_object(oid, TYPE_PRODUCTION, sizeof(struct production));
+    return intern_object(oid, OBJ_PRODUCTION, sizeof(struct production));
 }
 
 struct production_header {
@@ -54,7 +54,7 @@ int parse_production(struct production* prd) {
     if (prd->object.is_parsed)
         return 0;
     size_t size;
-    void* buf = read_object_of_type(&prd->object.oid, TYPE_PRODUCTION, &size);
+    void* buf = read_object_of_type(&prd->object.oid, OBJ_PRODUCTION, &size);
     if (!buf)
         return -1;
     int ret = parse_production_bytes(prd, buf, size);
@@ -84,7 +84,7 @@ struct production* store_production(struct job* job, struct resource_list* outpu
     hdr->num_outputs = htonl(count);
 
     struct object_id oid;
-    int rc = write_object(TYPE_PRODUCTION, buf, size, &oid);
+    int rc = write_object(OBJ_PRODUCTION, buf, size, &oid);
     free(buf);
     return rc < 0 ? NULL : get_production(&oid);
 }

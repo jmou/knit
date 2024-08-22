@@ -208,8 +208,12 @@ static int cmp_dep(const void* a, const void* b) {
 
 int save_session() {
     // TODO should allocate a new session name, avoiding collisions
-    if (!session_name)
+    if (!session_name) {
         set_session_name("default");
+        struct stat st;
+        if (stat(session_filepath, &st) == 0)
+            return error("existing session %s", session_name);
+    }
 
     if (deps_dirty)
         qsort(active_deps, num_active_deps, sizeof(*active_deps), cmp_dep);
@@ -314,7 +318,7 @@ static struct job* store_job(struct session_input** inputs, size_t inputs_size) 
     }
 
     struct object_id oid;
-    int rc = write_object(TYPE_JOB, buf, size, &oid);
+    int rc = write_object(OBJ_JOB, buf, size, &oid);
     free(buf);
     return rc < 0 ? NULL : get_job(&oid);
 }

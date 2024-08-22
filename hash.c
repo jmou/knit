@@ -54,14 +54,16 @@ const char* oid_to_hex(const struct object_id* oid) {
 
 uint32_t make_typesig(const char* type) {
     if (!strcmp(type, "resource")) {
-        return TYPE_RESOURCE;
+        return OBJ_RESOURCE;
     } else if (!strcmp(type, "job")) {
-        return TYPE_JOB;
+        return OBJ_JOB;
     } else if (!strcmp(type, "production")) {
-        return TYPE_PRODUCTION;
+        return OBJ_PRODUCTION;
+    } else if (!strcmp(type, "invocation")) {
+        return OBJ_INVOCATION;
     } else {
         uint32_t u32;
-        if (!strcmp(type, "res") || !strcmp(type, "prd"))
+        if (!strcmp(type, "res") || !strcmp(type, "prd") || !strcmp(type, "inv"))
             warning("use longhand type instead of '%s'", type);
         else
             warning("nonstandard type '%s'", type);
@@ -72,12 +74,14 @@ uint32_t make_typesig(const char* type) {
 
 char* strtypesig(uint32_t typesig) {
     switch (typesig) {
-    case TYPE_RESOURCE:
+    case OBJ_RESOURCE:
         return "resource";
-    case TYPE_JOB:
+    case OBJ_JOB:
         return "job";
-    case TYPE_PRODUCTION:
+    case OBJ_PRODUCTION:
         return "production";
+    case OBJ_INVOCATION:
+        return "invocation";
     }
     // Rotate among 4 statically allocated buffers so we can be invoked on
     // nonstandard types multiple times (like in printf()).

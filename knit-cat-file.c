@@ -33,15 +33,15 @@ int main(int argc, char** argv) {
         buf = read_object(&oid, &typesig, &size);
         if (!buf) {
             exit(1);
-        } else if (typesig == TYPE_RESOURCE) {
+        } else if (typesig == OBJ_RESOURCE || typesig == OBJ_INVOCATION) {
             // fall through
-        } else if (typesig == TYPE_JOB) {
+        } else if (typesig == OBJ_JOB) {
             struct job* job = get_job(&oid);
             if (parse_job_bytes(job, buf, size) < 0)
                 exit(1);
             pretty_job(job);
             return 0;
-        } else if (typesig == TYPE_PRODUCTION) {
+        } else if (typesig == OBJ_PRODUCTION) {
             struct production* prd = get_production(&oid);
             if (parse_production_bytes(prd, buf, size) < 0)
                 exit(1);

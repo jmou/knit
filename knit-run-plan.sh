@@ -20,7 +20,7 @@ session="$(knit-parse-plan "$plan" | knit-build-session)"
 echo "Session $session" >&3
 
 declare -A started
-while ! knit-close-session "$session"; do
+while [[ $(knit-list-steps --available --blocked "$session" | wc -l) -gt 0 ]]; do
     unset has_scheduled
 
     while IFS=$'\t' read -r step _ job _ name; do
@@ -49,3 +49,12 @@ while ! knit-close-session "$session"; do
         wait -n
     fi
 done
+
+num_unmet=$(knit-list-steps --unmet "$session" | wc -l)
+if [[ $num_unmet -gt 0 ]]; then
+    [[ $num_unmet -eq 1 ]] || plural=s
+    echo "$num_unmet step$plural with unmet requirements:" >&2
+    knit-list-steps --unmet "$session" >&2
+fi
+
+knit-close-session "$session"

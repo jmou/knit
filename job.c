@@ -1,7 +1,7 @@
 #include "job.h"
 
 struct job* get_job(const struct object_id* oid) {
-    return intern_object(oid, TYPE_JOB, sizeof(struct job));
+    return intern_object(oid, OBJ_JOB, sizeof(struct job));
 }
 
 int parse_job_bytes(struct job* job, void* data, size_t size) {
@@ -43,7 +43,7 @@ int parse_job(struct job* job) {
     if (job->object.is_parsed)
         return 0;
     size_t size;
-    void* buf = read_object_of_type(&job->object.oid, TYPE_JOB, &size);
+    void* buf = read_object_of_type(&job->object.oid, OBJ_JOB, &size);
     if (!buf)
         return -1;
     int ret = parse_job_bytes(job, buf, size);

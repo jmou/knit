@@ -16,9 +16,10 @@ const char* oid_to_hex(const struct object_id* oid);
 // Returns statically allocated object_id.
 struct object_id* oid_of_hash(uint8_t* hash);
 
-#define TYPE_RESOURCE   0x72657300 // "res\0"
-#define TYPE_JOB        0x6a6f6200 // "job\0"
-#define TYPE_PRODUCTION 0x70726400 // "prd\0"
+#define OBJ_RESOURCE   0x72657300 // "res\0"
+#define OBJ_JOB        0x6a6f6200 // "job\0"
+#define OBJ_PRODUCTION 0x70726400 // "prd\0"
+#define OBJ_INVOCATION 0x696e7600 // "inv\0"
 
 uint32_t make_typesig(const char* type);
 char* strtypesig(uint32_t typesig);
