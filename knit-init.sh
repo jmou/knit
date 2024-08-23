@@ -1,10 +1,16 @@
 #!/bin/bash -e
 
-if [[ $# -ne 1 ]]; then
+. knit-bash-setup.sh
+
+if [[ $# -gt 1 ]]; then
     echo "usage: $0 <dir>" >&2
     exit 1
 fi
 
-mkdir -p "$1"/.knit/{objects,scratch,sessions}
+if [[ $# -eq 1 && $KNIT_DIR != /* ]]; then
+    KNIT_DIR="$1/$KNIT_DIR"
+fi
 
-echo Initialized Knit repository in "$1/.knit" >&2
+mkdir -p "$KNIT_DIR"/{objects,scratch,sessions}
+
+echo Initialized Knit repository in "$KNIT_DIR" >&2

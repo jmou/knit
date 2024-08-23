@@ -227,10 +227,10 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
 
     switch (lex_keyword(&ctx->in)) {
     case TOKEN_CMD:
-        input_name = ".knit/cmd";
+        input_name = JOB_INPUT_CMD;
         goto parse_process_value;
     case TOKEN_FLOW:
-        input_name = ".knit/flow";
+        input_name = JOB_INPUT_FLOW;
 parse_process_value:
         step->inputs = create_input(ctx->bump_p, input_name);
         if (lex(in) != TOKEN_SPACE)
@@ -241,7 +241,7 @@ parse_process_value:
         step->is_params = 1;
         // fall through
     case TOKEN_IDENTITY:
-        step->inputs = create_input(ctx->bump_p, ".knit/identity");
+        step->inputs = create_input(ctx->bump_p, JOB_INPUT_IDENTITY);
         step->inputs->val->tag = VALUE_LITERAL;
         step->inputs->val->literal = NULL;
         step->inputs->val->literal_len = 0;
@@ -535,7 +535,7 @@ int main(int argc, char** argv) {
     struct resource* plan_res = store_resource(bb.data, bb.size);
     if (!plan_res)
         exit(1);
-    resource_list_insert(&job_inputs, ".knit/flow", plan_res);
+    resource_list_insert(&job_inputs, JOB_INPUT_FLOW, plan_res);
 
     struct step_list* plan = parse_plan(&bump, bb.data);
     if (!plan) {

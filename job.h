@@ -21,3 +21,7 @@ struct job_input {
     uint8_t res_hash[KNIT_HASH_RAWSZ];
     char path[];
 };
+
+#define JOB_INPUT_CMD ".knit/cmd"
+#define JOB_INPUT_FLOW ".knit/flow"
+#define JOB_INPUT_IDENTITY ".knit/identity"
