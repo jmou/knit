@@ -11,7 +11,7 @@ struct production_header {
 
 struct output {
     uint8_t res_hash[KNIT_HASH_RAWSZ];
-    char path[];
+    char name[];
 };
 
 int parse_production_bytes(struct production* prd, void* data, size_t size) {
@@ -30,13 +30,13 @@ int parse_production_bytes(struct production* prd, void* data, size_t size) {
         ssize_t nrem = size - off - sizeof(*out);
         if (nrem <= 0)
             return error("truncated production output");
-        int pathlen = strnlen(out->path, nrem);
+        int pathlen = strnlen(out->name, nrem);
         if (pathlen == nrem)
             return error("production output not NUL-terminated");
 
         struct resource_list* list = xmalloc(sizeof(*list));
         list->res = get_resource(oid_of_hash(out->res_hash));
-        list->path = strdup(out->path);
+        list->name = strdup(out->name);
         list->next = NULL;
 
         off += sizeof(*out) + pathlen + 1;
@@ -65,7 +65,7 @@ int parse_production(struct production* prd) {
 struct production* store_production(struct job* job, struct resource_list* outputs) {
     size_t size = sizeof(struct production_header);
     for (const struct resource_list* curr = outputs; curr; curr = curr->next)
-        size += sizeof(struct output) + strlen(curr->path) + 1;
+        size += sizeof(struct output) + strlen(curr->name) + 1;
 
     char* buf = xmalloc(size);
     struct production_header* hdr = (struct production_header*)buf;
@@ -76,8 +76,8 @@ struct production* store_production(struct job* job, struct resource_list* outpu
     for (const struct resource_list* curr = outputs; curr; curr = curr->next) {
         struct output* out = (struct output*)p;
         memcpy(out->res_hash, curr->res->object.oid.hash, KNIT_HASH_RAWSZ);
-        size_t pathsize = strlen(curr->path) + 1;
-        memcpy(out->path, curr->path, pathsize);
+        size_t pathsize = strlen(curr->name) + 1;
+        memcpy(out->name, curr->name, pathsize);
         p += sizeof(*out) + pathsize;
         count++;
     }

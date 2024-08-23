@@ -34,7 +34,7 @@ struct session_input {
     // TODO remove padding?
     uint16_t padding;
     uint16_t si_flags;
-    char path[];
+    char name[];
 };
 
 // SI_FINAL is technically redundant since it is implied by !ss->num_unresolved.
@@ -42,13 +42,13 @@ struct session_input {
 #define SI_RESOURCE 0x4000
 #define SI_PATHMASK 0x0fff
 
-#define si_init_flags(si, path_len, flags) ((void)(si->si_flags = htons((path_len & SI_PATHMASK) | flags)))
+#define si_init_flags(si, name_len, flags) ((void)(si->si_flags = htons((name_len & SI_PATHMASK) | flags)))
 #define si_setflag(si, flag) ((void)(si->si_flags |= htons(flag)))
 #define si_hasflag(si, flag) (ntohs(si->si_flags) & (flag))
-#define si_path_len(si) (ntohs(si->si_flags) & SI_PATHMASK)
-#define si_size(si) (sizeof(struct session_input) + si_path_len(si) + 1)
+#define si_name_len(si) (ntohs(si->si_flags) & SI_PATHMASK)
+#define si_size(si) (sizeof(struct session_input) + si_name_len(si) + 1)
 
-size_t create_session_input(size_t step_pos, const char* path);
+size_t create_session_input(size_t step_pos, const char* name);
 
 struct session_dependency {
     uint32_t input_pos;

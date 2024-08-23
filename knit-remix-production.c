@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
             break;
         case OPT_REMOVE_PREFIX:
             for (struct resource_list** list_p = &outputs; *list_p; list_p = &(*list_p)->next) {
-                if (!strncmp((*list_p)->path, optarg, strlen(optarg))) {
+                if (!strncmp((*list_p)->name, optarg, strlen(optarg))) {
                     free(*list_p);
                     *list_p = (*list_p)->next;
                 }

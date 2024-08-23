@@ -14,7 +14,7 @@ static void resolve_dependencies(size_t step_pos,
 
         // Iterate production outputs in parallel with the dependencies waiting
         // on this step. Compare their paths to find matching dependencies.
-        int cmp = outputs ? strcmp(outputs->path, dep->output) : 1;
+        int cmp = outputs ? strcmp(outputs->name, dep->output) : 1;
 
         // If a production output has no dependencies on it, we can skip it.
         if (cmp < 0) {

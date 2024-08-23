@@ -39,7 +39,7 @@ static void emit(size_t step_pos, struct session_step* ss) {
             struct session_input* si = active_inputs[i];
             if (ntohl(si->step_pos) != step_pos)
                 continue;
-            printf("     input      %-2zu %s %s\n", i, pflags(si->si_flags), si->path);
+            printf("     input      %-2zu %s %s\n", i, pflags(si->si_flags), si->name);
             printf("     resource   %s\n", to_hex(si->res_hash));
         }
 

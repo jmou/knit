@@ -21,15 +21,15 @@ struct resource* store_resource_file(const char* filename) {
 }
 
 struct resource_list* resource_list_insert(struct resource_list** list_p,
-                                           const char* path,
+                                           const char* name,
                                            struct resource* res) {
     struct resource_list* list = *list_p;
-    while (list && strcmp(list->path, path) < 0) {
+    while (list && strcmp(list->name, name) < 0) {
         list_p = &list->next;
         list = list->next;
     }
     struct resource_list* node = xmalloc(sizeof(*node));
-    node->path = strdup(path);
+    node->name = strdup(name);
     node->res = res;
     node->next = list;
     *list_p = node;

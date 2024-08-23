@@ -58,7 +58,7 @@ size_t create_session_step(const char* name) {
     return num_active_steps++;
 }
 
-size_t create_session_input(size_t step_pos, const char* path) {
+size_t create_session_input(size_t step_pos, const char* name) {
     assert(step_pos < num_active_steps);
     if (num_active_inputs == MAX_SESSION_NUM)
         die("too many inputs");
@@ -68,19 +68,19 @@ size_t create_session_input(size_t step_pos, const char* path) {
         struct session_input* prev_si = active_inputs[num_active_inputs - 1];
         size_t prev_step_pos = ntohl(prev_si->step_pos);
         if (step_pos < prev_step_pos ||
-                (step_pos == prev_step_pos && strcmp(path, prev_si->path) <= 0))
+                (step_pos == prev_step_pos && strcmp(name, prev_si->name) <= 0))
             die("step %zu input %s <= previous step %zu input %s",
-                step_pos, path, prev_step_pos, prev_si->path);
+                step_pos, name, prev_step_pos, prev_si->name);
     }
 
-    size_t pathlen = strlen(path);
-    struct session_input* si = xmalloc(sizeof(struct session_input) + pathlen + 1);
+    size_t namelen = strlen(name);
+    struct session_input* si = xmalloc(sizeof(struct session_input) + namelen + 1);
     memset(si, 0, sizeof(*si));
     si->step_pos = htonl(step_pos);
-    if (pathlen > SI_PATHMASK)
-        die("input path too long %s", path);
-    si_init_flags(si, pathlen, 0);
-    strcpy(si->path, path);
+    if (namelen > SI_PATHMASK)
+        die("input name too long %s", name);
+    si_init_flags(si, namelen, 0);
+    strcpy(si->name, name);
 
     ensure_alloc_inputs();
     active_inputs[num_active_inputs] = si;
@@ -106,7 +106,7 @@ size_t create_session_dependency(size_t input_pos,
     sd->input_pos = htonl(input_pos);
     sd->step_pos = htonl(step_pos);
     if (outlen > SD_OUTPUTMASK)
-        die("output path too long %s", output);
+        die("output name too long %s", output);
     sd_init_flags(sd, outlen, flags);
     strcpy(sd->output, output);
 
@@ -214,8 +214,8 @@ int load_current_session() {
         p += si_size(si);
         if (p > end)
             return error("session EOF in inputs");
-        if (si->path[si_path_len(si)] != '\0')
-            return error("input path not NUL-terminated");
+        if (si->name[si_name_len(si)] != '\0')
+            return error("input name not NUL-terminated");
     }
     for (size_t i = 0; i < num_active_deps; i++) {
         struct session_dependency* sd = (struct session_dependency*)p;
@@ -333,7 +333,7 @@ static struct job* session_store_job(struct session_input** inputs, size_t input
     for (size_t i = 0; i < inputs_size; i++) {
         if (!si_hasflag(inputs[i], SI_RESOURCE))
             continue;
-        size += sizeof(struct job_input) + strlen(inputs[i]->path) + 1;
+        size += sizeof(struct job_input) + strlen(inputs[i]->name) + 1;
         num_inputs++;
     }
 
@@ -347,8 +347,8 @@ static struct job* session_store_job(struct session_input** inputs, size_t input
             continue;
         struct job_input* in = (struct job_input*)p;
         memcpy(in->res_hash, inputs[i]->res_hash, KNIT_HASH_RAWSZ);
-        size_t pathsize = strlen(inputs[i]->path) + 1;
-        memcpy(in->path, inputs[i]->path, pathsize);
+        size_t pathsize = strlen(inputs[i]->name) + 1;
+        memcpy(in->name, inputs[i]->name, pathsize);
         p += sizeof(*in) + pathsize;
     }
 

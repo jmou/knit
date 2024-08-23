@@ -21,10 +21,10 @@ struct value {
             size_t literal_len;
         };
         struct {
-            char* dep_name;
+            char* dep_step;
             size_t dep_pos;
-            char* dep_path;
-            int dep_optional;
+            char* dep_output;
+            unsigned dep_optional : 1;
         };
     };
     struct resource* res;
@@ -183,15 +183,15 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         return 0;
     case TOKEN_IDENT:
         out->tag = VALUE_DEPENDENCY;
-        out->dep_name = lex_stuff_null(in);
+        out->dep_step = lex_stuff_null(in);
         if (lex(in) != TOKEN_COLON)
             return error("expected :");
         if (lex_path(in) < 0)
             return -1;
-        out->dep_path = lex_stuff_null(in);
-        dep = find_step(ctx->plan, out->dep_name);
+        out->dep_output = lex_stuff_null(in);
+        dep = find_step(ctx->plan, out->dep_step);
         if (!dep)
-            return error("dependency on not yet defined step %s", out->dep_name);
+            return error("dependency on not yet defined step %s", out->dep_step);
         out->dep_pos = dep->pos;
         return 0;
     case TOKEN_DOTSLASH:
@@ -385,7 +385,7 @@ static int print_value(FILE* fh, const struct value* val) {
     case VALUE_DEPENDENCY:
         fprintf(fh, "dependency %s %zu %s\n",
                 val->dep_optional ? "optional" : "required",
-                val->dep_pos, val->dep_path);
+                val->dep_pos, val->dep_output);
         return 0;
     case VALUE_FILENAME:
     case VALUE_LITERAL:
@@ -444,15 +444,15 @@ static int populate_input(struct input_list* input, const char* files_dir,
 
     // Add params and files referenced by the plan to the flow job.
     if (input->is_param) {
-        char* path = joindir("params", input->name);
-        resource_list_insert(job_inputs_p, path, val->res);
+        char* name = joindir("params", input->name);
+        resource_list_insert(job_inputs_p, name, val->res);
     } else if (val->tag == VALUE_FILENAME) {
-        char* path = joindir("files", val->filename);
+        char* name = joindir("files", val->filename);
         struct resource_list* inserted =
-            resource_list_insert(job_inputs_p, path, val->res);
+            resource_list_insert(job_inputs_p, name, val->res);
         // The flow plan may include distinct references to the same file;
         // dedupe them here.
-        if (inserted->next && !strcmp(inserted->path, inserted->next->path)) {
+        if (inserted->next && !strcmp(inserted->name, inserted->next->name)) {
             assert(inserted->res == inserted->next->res);
             inserted->next = inserted->next->next;
         }

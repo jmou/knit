@@ -3,13 +3,13 @@
 
 static void pretty_job(const struct job* job) {
     for (struct resource_list* in = job->inputs; in; in = in->next)
-        printf("%s\t%s\n", oid_to_hex(&in->res->object.oid), in->path);
+        printf("%s\t%s\n", oid_to_hex(&in->res->object.oid), in->name);
 }
 
 static void pretty_production(const struct production* prd) {
     printf("job %s\n\n", oid_to_hex(&prd->job->object.oid));
     for (struct resource_list* out = prd->outputs; out; out = out->next)
-        printf("%s\t%s\n", oid_to_hex(&out->res->object.oid), out->path);
+        printf("%s\t%s\n", oid_to_hex(&out->res->object.oid), out->name);
 }
 
 static void die_usage(char* arg0) {

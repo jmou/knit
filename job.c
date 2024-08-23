@@ -19,13 +19,13 @@ int parse_job_bytes(struct job* job, void* data, size_t size) {
         ssize_t nrem = size - off - sizeof(*in);
         if (nrem <= 0)
             return error("truncated job input");
-        int pathlen = strnlen(in->path, nrem);
+        int pathlen = strnlen(in->name, nrem);
         if (pathlen == nrem)
             return error("job input not NUL-terminated");
 
         struct resource_list* list = xmalloc(sizeof(*list));
         list->res = get_resource(oid_of_hash(in->res_hash));
-        list->path = strdup(in->path);
+        list->name = strdup(in->name);
         list->next = NULL;
 
         off += sizeof(*in) + pathlen + 1;
@@ -56,7 +56,7 @@ struct job* store_job(struct resource_list* inputs) {
     size_t size = sizeof(struct job_header);
     size_t num_inputs = 0;
     for (struct resource_list* curr = inputs; curr; curr = curr->next) {
-        size += sizeof(struct job_input) + strlen(curr->path) + 1;
+        size += sizeof(struct job_input) + strlen(curr->name) + 1;
         num_inputs++;
     }
 
@@ -68,8 +68,8 @@ struct job* store_job(struct resource_list* inputs) {
     for (struct resource_list* curr = inputs; curr; curr = curr->next) {
         struct job_input* in = (struct job_input*)p;
         memcpy(in->res_hash, curr->res->object.oid.hash, KNIT_HASH_RAWSZ);
-        size_t pathsize = strlen(curr->path) + 1;
-        memcpy(in->path, curr->path, pathsize);
+        size_t pathsize = strlen(curr->name) + 1;
+        memcpy(in->name, curr->name, pathsize);
         p += sizeof(*in) + pathsize;
     }
 

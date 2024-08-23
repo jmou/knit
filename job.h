@@ -19,7 +19,7 @@ struct job_header {
 
 struct job_input {
     uint8_t res_hash[KNIT_HASH_RAWSZ];
-    char path[];
+    char name[];
 };
 
 #define JOB_INPUT_CMD ".knit/cmd"
