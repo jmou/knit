@@ -6,19 +6,19 @@
 #define TRIE_MAX_LEVELS (KNIT_HASH_RAWSZ * TRIE_LEVELS_PER_BYTE)
 
 struct object_trie {
-    int num_leaves;
+    int num_items;
     union {
-        struct object* leaves[TRIE_BRANCHING_FACTOR];
-        struct object_trie* children[TRIE_BRANCHING_FACTOR];
+        struct object* items[TRIE_BRANCHING_FACTOR];
+        struct object_trie* nodes[TRIE_BRANCHING_FACTOR];
     };
 };
 
-static int trie_is_leaf(struct object_trie* trie) { return trie->num_leaves >= 0; }
+static int trie_is_leaf(struct object_trie* trie) { return trie->num_items >= 0; }
 
 static size_t trie_child(size_t level, const struct object_id* oid) {
     unsigned char byte = oid->hash[level / TRIE_LEVELS_PER_BYTE];
     int shift = (level % TRIE_LEVELS_PER_BYTE) * TRIE_BITS_PER_LEVEL;
-    return byte >> shift;
+    return (byte >> shift) % TRIE_BRANCHING_FACTOR;
 }
 
 // Do not call with duplicate obj->oid.
@@ -27,22 +27,23 @@ static void trie_insert(struct object_trie** trie_p, size_t level, struct object
     struct object_trie* trie;
     if (!*trie_p) {
         *trie_p = trie = xmalloc(sizeof(*trie));
-        trie->num_leaves = 0;
-        memset(trie->children, 0, sizeof(trie->children));
+        memset(trie, 0, sizeof(*trie));
     }
     trie = *trie_p;
-    if (trie->num_leaves == TRIE_BRANCHING_FACTOR) {
+    if (trie->num_items == TRIE_BRANCHING_FACTOR) {
         // Make this node internal and redistribute its children.
-        struct object* leaves[TRIE_BRANCHING_FACTOR];
-        memcpy(leaves, trie->leaves, sizeof(leaves));
-        trie->num_leaves = -1;
+        struct object* items[TRIE_BRANCHING_FACTOR];
+        memcpy(items, trie->items, sizeof(items));
+        trie->num_items = -1;
+        memset(trie->nodes, 0, sizeof(trie->nodes));
         for (int i = 0; i < TRIE_BRANCHING_FACTOR; i++)
-            trie_insert(trie_p, level, leaves[i]);
+            trie_insert(trie_p, level, items[i]);
     } else if (trie_is_leaf(trie)) {
-        trie->leaves[trie->num_leaves++] = obj;
+        trie->items[trie->num_items++] = obj;
         return;
     }
-    trie_insert(&trie->children[trie_child(level, &obj->oid)],
+    assert(!trie_is_leaf(trie));
+    trie_insert(&trie->nodes[trie_child(level, &obj->oid)],
                 level + 1, obj);
 }
 
@@ -52,14 +53,15 @@ static struct object* trie_find(struct object_trie* trie, const struct object_id
         if (!trie)
             break;
         if (trie_is_leaf(trie)) {
-            for (int i = 0; i < trie->num_leaves; i++) {
-                struct object* leaf = trie->leaves[i];
+            for (int i = 0; i < trie->num_items; i++) {
+                struct object* leaf = trie->items[i];
                 if (!memcmp(leaf->oid.hash, oid->hash, KNIT_HASH_RAWSZ))
                     return leaf;
             }
             break;
         }
-        trie = trie->children[trie_child(level, oid)];
+        assert(!trie_is_leaf(trie));
+        trie = trie->nodes[trie_child(level, oid)];
     }
     return NULL;
 }
