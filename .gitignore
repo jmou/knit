@@ -10,6 +10,7 @@ knit-dispatch-job
 knit-exec-cmd
 knit-hash-object
 knit-init
+knit-invoke-flow
 knit-list-steps
 knit-pack-production
 knit-parse-plan
