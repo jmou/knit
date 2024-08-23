@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
         if (read_stdin) {
             read_stdin = 0;
             if (slurp_fd(0, &bbuf) < 0) {
-                error("reading stdin failed: %s", strerror(errno));
+                error_errno("reading stdin failed");
                 ret = 1;
                 continue;
             }

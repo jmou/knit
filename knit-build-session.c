@@ -81,6 +81,6 @@ int main(int argc, char** argv) {
     }
     free(line);
     if (nread < 0 && errno > 0)
-        die("cannot read stdin: %s", strerror(errno));
+        die_errno("cannot read stdin");
     die("missing done line");
 }

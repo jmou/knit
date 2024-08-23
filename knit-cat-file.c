@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
     while (buf < end) {
         int nwritten = write(STDOUT_FILENO, buf, end - buf);
         if (nwritten < 0 && errno != EAGAIN && errno != EINTR)
-            die("write failed: %s", strerror(errno));
+            die_errno("write failed");
         buf += nwritten;
     }
 

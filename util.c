@@ -3,34 +3,59 @@
 #include <dirent.h>
 #include <sys/mman.h>
 
-void die(const char* format, ...) {
-    va_list params;
-    va_start(params, format);
-    fprintf(stderr, "fatal: ");
-    vfprintf(stderr, format, params);
-    fprintf(stderr, "\n");
-    va_end(params);
+static void emit_stderr(const char* prefix, int with_errno,
+                        const char* fmt, va_list argp) {
+    fputs(prefix, stderr);
+    vfprintf(stderr, fmt, argp);
+    if (with_errno)
+        fprintf(stderr, ": %s", strerror(errno));
+    fputc('\n', stderr);
+}
+
+void die(const char* fmt, ...) {
+    va_list argp;
+    va_start(argp, fmt);
+    emit_stderr("fatal: ", 0, fmt, argp);
+    va_end(argp);
     exit(1);
 }
 
-int error(const char* format, ...) {
-    va_list params;
-    va_start(params, format);
-    fprintf(stderr, "error: ");
-    vfprintf(stderr, format, params);
-    fprintf(stderr, "\n");
-    va_end(params);
+void die_errno(const char* fmt, ...) {
+    va_list argp;
+    va_start(argp, fmt);
+    emit_stderr("fatal: ", 1, fmt, argp);
+    va_end(argp);
+    exit(1);
+}
+
+int error(const char* fmt, ...) {
+    va_list argp;
+    va_start(argp, fmt);
+    emit_stderr("error: ", 0, fmt, argp);
+    va_end(argp);
     return -1;
 }
 
-int warning(const char* format, ...) {
-    va_list params;
-    va_start(params, format);
-    fprintf(stderr, "warning: ");
-    vfprintf(stderr, format, params);
-    fprintf(stderr, "\n");
-    va_end(params);
+int error_errno(const char* fmt, ...) {
+    va_list argp;
+    va_start(argp, fmt);
+    emit_stderr("error: ", 1, fmt, argp);
+    va_end(argp);
     return -1;
+}
+
+void warning(const char* fmt, ...) {
+    va_list argp;
+    va_start(argp, fmt);
+    emit_stderr("warning: ", 0, fmt, argp);
+    va_end(argp);
+}
+
+void warning_errno(const char* fmt, ...) {
+    va_list argp;
+    va_start(argp, fmt);
+    emit_stderr("warning: ", 1, fmt, argp);
+    va_end(argp);
 }
 
 static int valid_knit_dir(const char* dirname) {
@@ -49,7 +74,7 @@ static int valid_knit_dir(const char* dirname) {
         }
     }
     if (errno != 0)
-        die("readdir: %s", strerror(errno));
+        die_errno("readdir");
     closedir(dir);
     return needs_entries == 0;
 }
@@ -85,7 +110,7 @@ void ensure_bytebuf_null_terminated(struct bytebuf* bb) {
         memcpy(buf, bb->data, bb->size);
         buf[bb->size] = '\0';
         if (munmap(bb->data, bb->size) < 0)
-            warning("munmap: %s", strerror(errno));
+            warning_errno("munmap");
         bb->data = buf;
         bb->should_munmap = 0;
         bb->should_free = 1;
@@ -152,11 +177,11 @@ int slurp_fd(int fd, struct bytebuf* out) {
 int mmap_file(const char* filename, struct bytebuf* out) {
     int fd = open(filename, O_RDONLY);
     if (fd < 0)
-        return error("cannot open %s: %s", filename, strerror(errno));
+        return error_errno("cannot open %s", filename);
 
     if (mmap_fd(fd, out) < 0) {
         close(fd);
-        return error("cannot mmap %s: %s", filename, strerror(errno));
+        return error_errno("cannot mmap %s", filename);
     }
     close(fd);
     return 0;
@@ -165,11 +190,11 @@ int mmap_file(const char* filename, struct bytebuf* out) {
 int slurp_file(const char* filename, struct bytebuf* out) {
     int fd = open(filename, O_RDONLY);
     if (fd < 0)
-        return error("cannot open %s: %s", filename, strerror(errno));
+        return error_errno("cannot open %s", filename);
 
     if (slurp_fd(fd, out) < 0) {
         close(fd);
-        return error("cannot read %s: %s", filename, strerror(errno));
+        return error_errno("cannot read %s", filename);
     }
     close(fd);
     return 0;
@@ -178,11 +203,11 @@ int slurp_file(const char* filename, struct bytebuf* out) {
 int mmap_or_slurp_file(const char* filename, struct bytebuf* out) {
     int fd = open(filename, O_RDONLY);
     if (fd < 0)
-        return error("cannot open %s: %s", filename, strerror(errno));
+        return error_errno("cannot open %s", filename);
 
     if (mmap_fd(fd, out) < 0 && slurp_fd(fd, out) < 0) {
         close(fd);
-        return error("cannot read %s: %s", filename, strerror(errno));
+        return error_errno("cannot read %s", filename);
     }
     close(fd);
     return 0;

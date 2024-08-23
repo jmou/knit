@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
             if (!dir)
                 die("missing directory argument to -C");
             if (chdir(dir) < 0)
-                die("cannot change to %s: %s", dir, strerror(errno));
+                die_errno("cannot change to %s", dir);
         } else {
             die("unrecognized option %s", option);
         }

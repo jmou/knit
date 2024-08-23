@@ -158,7 +158,7 @@ static int set_session_name_and_lock(const char* sessname) {
     if (fd < 0) {
         if (errno == EEXIST)
             return error("lockfile already exists: %s", session_lockfile);
-        return error("open error %s: %s", session_lockfile, strerror(errno));
+        return error_errno("open error %s", session_lockfile);
     }
 
     atexit(unlock_session);
@@ -275,7 +275,7 @@ int save_session() {
 
     int fd = creat(tempfile, 0666);
     if (fd < 0)
-        return error("open error %s: %s", tempfile, strerror(errno));
+        return error_errno("open error %s", tempfile);
 
     struct session_header hdr = {
         .num_steps = htonl(num_active_steps),
@@ -303,19 +303,19 @@ int save_session() {
     }
 
     if (close(fd) < 0) {
-        error("close error %s: %s", tempfile, strerror(errno));
+        error_errno("close error %s", tempfile);
         goto fail_and_unlink;
     }
 
     if (rename(tempfile, session_filepath) < 0) {
-        error("rename error to %s: %s", session_filepath, strerror(errno));
+        error_errno("rename error to %s", session_filepath);
         goto fail_and_unlink;
     }
 
     return 0;
 
 write_fail:
-    error("write error %s: %s", tempfile, strerror(errno));
+    error_errno("write error %s", tempfile);
     close(fd);
 
 fail_and_unlink:

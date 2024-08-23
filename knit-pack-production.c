@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
 
     filename_offset = strlen(outputs) + 1;
     if (nftw(outputs, each_file, 16, 0) != 0)
-        die("directory traversal failed on %s: %s", outputs, strerror(errno));
+        die_errno("directory traversal failed on %s", outputs);
 
     struct production* prd = store_production(get_job(&job_oid), NULL, resources);
     if (!prd)

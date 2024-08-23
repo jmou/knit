@@ -18,8 +18,11 @@
 #define NORETURN __attribute__((__noreturn__))
 
 void die(const char* format, ...) NORETURN;
+void die_errno(const char* format, ...) NORETURN;
 int error(const char* format, ...);
-int warning(const char* format, ...);
+int error_errno(const char* format, ...);
+void warning(const char* format, ...);
+void warning_errno(const char* format, ...);
 
 static inline void* xmalloc(size_t size) {
     void* buf = malloc(size);

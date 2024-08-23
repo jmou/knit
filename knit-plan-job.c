@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
 
     struct bytebuf bb;
     if (slurp_fd(STDIN_FILENO, &bb) < 0)
-        die("cannot read stdin: %s", strerror(errno));
+        die_errno("cannot read stdin");
     size_t num_lines;
     struct input_line* lines = parse_lines(bb.data, bb.size, &num_lines);
 

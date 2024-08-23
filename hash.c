@@ -147,17 +147,17 @@ int write_object(uint32_t typesig, void* data, size_t size,
         return error("path too long");
     int fd = mkstemp(tmpfile);
     if (fd < 0)
-        return error("cannot open object temp file: %s", strerror(errno));
+        return error_errno("cannot open object temp file");
     // TODO compress
     if (write(fd, &hdr, sizeof(hdr)) != sizeof(hdr) ||
             write(fd, data, size) != (ssize_t)size)
         return error("write failed");
     fchmod(fd, 0444);
     if (close(fd) < 0)
-        return error("close failed: %s", strerror(errno));
+        return error_errno("close failed");
 
     if (move_temp_to_file(tmpfile, filename) < 0)
-        return error("failed to rename object file: %s", strerror(errno));
+        return error_errno("failed to rename object file");
 
     return 0;
 }
