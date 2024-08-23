@@ -13,7 +13,6 @@ char** parse_args(char* buf, size_t size) {
             args = xrealloc(args, alloc_args * sizeof(char*));
         }
         args[num_args++] = p;
-        // slurp_file() always adds a NUL byte.
         p = memchr(p, '\0', end + 1 - p);
         assert(p);
         p++;
@@ -34,6 +33,7 @@ int main(int argc, char** argv) {
     struct bytebuf bb;
     if (slurp_file(argv[2], &bb) < 0)
         exit(1);
+    ensure_bytebuf_null_terminated(&bb);
 
     char path[PATH_MAX];
     if (snprintf(path, PATH_MAX, "%s/work", argv[1]) >= PATH_MAX)

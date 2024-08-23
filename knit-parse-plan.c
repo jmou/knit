@@ -521,10 +521,10 @@ int main(int argc, char** argv) {
         die_usage(argv[0]);
 
     struct bytebuf bb;
-    // Our use of re2c requires a NUL sentinel byte after the file contents,
-    // which slurp ensures.
     if (slurp_file(plan_filename, &bb) < 0)
         exit(1);
+    // Our use of re2c requires a NUL sentinel byte after the file contents.
+    ensure_bytebuf_null_terminated(&bb);
     if (memchr(bb.data, '\0', bb.size))
         die("NUL bytes in plan %s", plan_filename);
 

@@ -42,15 +42,16 @@ struct bytebuf {
     size_t size;
     unsigned should_free : 1;
     unsigned should_munmap : 1;
+    unsigned null_terminated : 1;
 };
 
 void cleanup_bytebuf(struct bytebuf* bbuf);
+void ensure_bytebuf_null_terminated(struct bytebuf* bb);
 
 // mmap will be private and writable (COW).
 int mmap_file(const char* filename, struct bytebuf* out);
 int mmap_fd(int fd, struct bytebuf* out);
 
-// slurp will always ensure a NUL byte exists after the end of the file.
 int slurp_file(const char* filename, struct bytebuf* out);
 int slurp_fd(int fd, struct bytebuf* out);
 

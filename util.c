@@ -73,6 +73,26 @@ void cleanup_bytebuf(struct bytebuf* bbuf) {
         munmap(bbuf->data, bbuf->size);
 }
 
+void ensure_bytebuf_null_terminated(struct bytebuf* bb) {
+    if (bb->null_terminated)
+        return;
+    if (bb->should_free) {
+        bb->data = xrealloc(bb->data, bb->size + 1);
+        ((char*)bb->data)[bb->size] = '\0';
+    } else {
+        assert(bb->should_munmap);
+        char* buf = xmalloc(bb->size + 1);
+        memcpy(buf, bb->data, bb->size);
+        buf[bb->size] = '\0';
+        if (munmap(bb->data, bb->size) < 0)
+            warning("munmap: %s", strerror(errno));
+        bb->data = buf;
+        bb->should_munmap = 0;
+        bb->should_free = 1;
+    }
+    bb->null_terminated = 1;
+}
+
 int mmap_fd(int fd, struct bytebuf* out) {
     memset(out, 0, sizeof(*out));
 
@@ -125,6 +145,7 @@ int slurp_fd(int fd, struct bytebuf* out) {
     ((char*)out->data)[out->size] = '\0';
 
     out->should_free = 1;
+    out->null_terminated = 1;
     return 0;
 }
 
