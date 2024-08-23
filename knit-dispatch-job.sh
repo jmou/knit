@@ -2,7 +2,9 @@
 
 . knit-bash-setup
 
+unset verbose
 if [[ $1 == -v ]]; then
+    verbose=-v
     exec 3>&2
     shift
 else
@@ -86,6 +88,10 @@ while read -r input; do
 
         # TODO when to keep scratch dir?
         rm -rf "$scratch"
+        finish
+    elif [[ $input == .knit/flow ]]; then
+        inv=$(knit-invoke-flow $verbose "$job")
+        prd=$(knit-remix-production --set-job "$job" --wrap-invocation "$inv")
         finish
     elif [[ $input == .knit/identity ]]; then
         empty_res=$(knit-hash-object -t resource -w /dev/null)

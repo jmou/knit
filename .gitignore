@@ -14,6 +14,7 @@ knit-invoke-flow
 knit-list-steps
 knit-pack-production
 knit-parse-plan
+knit-peel-spec
 knit-plan-job
 knit-remix-production
 knit-run-plan

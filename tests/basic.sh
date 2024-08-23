@@ -36,3 +36,12 @@ expect_ok test $(knit-run-plan -v -p limit=3 2>&1 | grep 'Cache hit' | wc -l) -e
 inv2=$(expect_ok knit-run-plan -p limit=3)
 expect_ok test "$inv" == "$inv2"
 expect_ok knit-run-plan -p limit=5
+
+cat <<'EOF' > super.knit
+step sub: flow ./plan.knit
+    params/limit = "5"
+EOF
+
+inv=$(expect_ok knit-run-plan -f super.knit)
+inv2=$(expect_ok knit-run-plan -p limit=5)
+expect_ok test "$(knit-peel-spec $inv^{production}^{invocation})" == "$inv2"

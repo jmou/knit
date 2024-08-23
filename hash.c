@@ -11,6 +11,8 @@ struct object_id* oid_of_hash(uint8_t* hash) {
     return &oid;
 }
 
+// TODO this has an ambiguous and misused interface; it does not check that the
+// entire string is a valid hex oid.
 int hex_to_oid(const char* hex, struct object_id* oid) {
     unsigned char byte = 0; // initialize to suppress warning
     for (int i = 0; i < KNIT_HASH_HEXSZ; i++) {
