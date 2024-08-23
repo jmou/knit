@@ -4,6 +4,17 @@ struct resource* get_resource(const struct object_id* oid) {
     return intern_object(oid, OBJ_RESOURCE, sizeof(struct resource));
 }
 
+int parse_resource(struct resource* res) {
+    if (res->object.is_parsed)
+        return 0;
+    size_t size;
+    void* buf = read_object_of_type(&res->object.oid, OBJ_RESOURCE, &size);
+    if (!buf)
+        return -1;
+    free(buf);
+    return 0;
+}
+
 struct resource* store_resource(void* data, size_t size) {
     struct object_id oid;
     if (write_object(OBJ_RESOURCE, data, size, &oid))

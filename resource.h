@@ -7,6 +7,7 @@ struct resource {
 };
 
 struct resource* get_resource(const struct object_id* oid);
+int parse_resource(struct resource* res);
 struct resource* store_resource(void* data, size_t size);
 struct resource* store_resource_file(const char* filename);
 

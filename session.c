@@ -345,6 +345,11 @@ static struct job* session_store_job(struct session_input** inputs, size_t input
     for (size_t i = 0; i < inputs_size; i++) {
         if (!si_hasflag(inputs[i], SI_RESOURCE))
             continue;
+        struct resource* res = get_resource(oid_of_hash(inputs[i]->res_hash));
+        if (parse_resource(res) < 0) {
+            free(buf);
+            return NULL;
+        }
         struct job_input* in = (struct job_input*)p;
         memcpy(in->res_hash, inputs[i]->res_hash, KNIT_HASH_RAWSZ);
         size_t pathsize = strlen(inputs[i]->name) + 1;

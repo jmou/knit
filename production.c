@@ -63,9 +63,14 @@ int parse_production(struct production* prd) {
 }
 
 struct production* store_production(struct job* job, struct resource_list* outputs) {
+    if (parse_job(job) < 0)
+        return NULL;
     size_t size = sizeof(struct production_header);
-    for (const struct resource_list* curr = outputs; curr; curr = curr->next)
+    for (const struct resource_list* curr = outputs; curr; curr = curr->next) {
+        if (parse_resource(curr->res) < 0)
+            return NULL;
         size += sizeof(struct output) + strlen(curr->name) + 1;
+    }
 
     char* buf = xmalloc(size);
     struct production_header* hdr = (struct production_header*)buf;

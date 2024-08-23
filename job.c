@@ -56,6 +56,8 @@ struct job* store_job(struct resource_list* inputs) {
     size_t size = sizeof(struct job_header);
     size_t num_inputs = 0;
     for (struct resource_list* curr = inputs; curr; curr = curr->next) {
+        if (parse_resource(curr->res) < 0)
+            return NULL;
         size += sizeof(struct job_input) + strlen(curr->name) + 1;
         num_inputs++;
     }
