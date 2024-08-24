@@ -16,10 +16,10 @@ size_t create_session_step(const char* name);
 #define SS_JOB      0x4000
 #define SS_NAMEMASK 0x0fff
 
-#define ss_init_flags(ss, name_len, flags) ((void)(ss->ss_flags = htons((name_len & SS_NAMEMASK) | flags)))
-#define ss_setflag(ss, flag) ((void)(ss->ss_flags |= htons(flag)))
-#define ss_hasflag(ss, flag) (ntohs(ss->ss_flags) & (flag))
-#define ss_name_len(ss) (ntohs(ss->ss_flags) & SS_NAMEMASK)
+#define ss_init_flags(ss, name_len, flags) ((void)((ss)->ss_flags = htons(((name_len) & SS_NAMEMASK) | (flags))))
+#define ss_setflag(ss, flag) ((void)((ss)->ss_flags |= htons(flag)))
+#define ss_hasflag(ss, flag) (ntohs((ss)->ss_flags) & (flag))
+#define ss_name_len(ss) (ntohs((ss)->ss_flags) & SS_NAMEMASK)
 #define ss_size(ss) (sizeof(struct session_step) + ss_name_len(ss) + 1)
 static inline void ss_inc_unresolved(struct session_step* ss) {
     ss->num_unresolved = htons(ntohs(ss->num_unresolved) + 1);
@@ -42,10 +42,10 @@ struct session_input {
 #define SI_RESOURCE 0x4000
 #define SI_PATHMASK 0x0fff
 
-#define si_init_flags(si, name_len, flags) ((void)(si->si_flags = htons((name_len & SI_PATHMASK) | flags)))
-#define si_setflag(si, flag) ((void)(si->si_flags |= htons(flag)))
-#define si_hasflag(si, flag) (ntohs(si->si_flags) & (flag))
-#define si_name_len(si) (ntohs(si->si_flags) & SI_PATHMASK)
+#define si_init_flags(si, name_len, flags) ((void)((si)->si_flags = htons(((name_len) & SI_PATHMASK) | (flags))))
+#define si_setflag(si, flag) ((void)((si)->si_flags |= htons(flag)))
+#define si_hasflag(si, flag) (ntohs((si)->si_flags) & (flag))
+#define si_name_len(si) (ntohs((si)->si_flags) & SI_PATHMASK)
 #define si_size(si) (sizeof(struct session_input) + si_name_len(si) + 1)
 
 size_t create_session_input(size_t step_pos, const char* name);
@@ -62,10 +62,10 @@ struct session_dependency {
 #define SD_REQUIRED   0x8000
 #define SD_OUTPUTMASK 0x0fff
 
-#define sd_init_flags(sd, output_len, flags) ((void)(sd->sd_flags = htons((output_len & SD_OUTPUTMASK) | flags)))
-#define sd_setflag(sd, flag) ((void)(sd->sd_flags |= htons(flag)))
-#define sd_hasflag(sd, flag) (ntohs(sd->sd_flags) & (flag))
-#define sd_output_len(sd) (ntohs(sd->sd_flags) & SD_OUTPUTMASK)
+#define sd_init_flags(sd, output_len, flags) ((void)((sd)->sd_flags = htons(((output_len) & SD_OUTPUTMASK) | (flags))))
+#define sd_setflag(sd, flag) ((void)((sd)->sd_flags |= htons(flag)))
+#define sd_hasflag(sd, flag) (ntohs((sd)->sd_flags) & (flag))
+#define sd_output_len(sd) (ntohs((sd)->sd_flags) & SD_OUTPUTMASK)
 #define sd_size(sd) (sizeof(struct session_dependency) + sd_output_len(sd) + 1)
 
 size_t create_session_dependency(size_t input_pos,
