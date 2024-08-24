@@ -1,6 +1,8 @@
 #include "session.h"
 
+#include "hash.h"
 #include "job.h"
+#include "resource.h"
 
 #define MAX_SESSION_NUM (~(uint32_t)0)
 static_assert(MAX_SESSION_NUM <= SIZE_MAX);
@@ -323,44 +325,41 @@ fail_and_unlink:
     return -1;
 }
 
-// This translates between session_input and job, so it could reasonably reside
-// in either job.c or session.c. In any case, session_store_job() is primarily
-// concerned with serialization, while compile_job_for_step() does the rest.
-// This implementation is largely the same as store_job() in job.c.
-static struct job* session_store_job(struct session_input** inputs, size_t inputs_size) {
-    size_t size = sizeof(struct job_header);
-    size_t num_inputs = 0;
-    for (size_t i = 0; i < inputs_size; i++) {
-        if (!si_hasflag(inputs[i], SI_RESOURCE))
-            continue;
-        size += sizeof(struct job_input) + strlen(inputs[i]->name) + 1;
-        num_inputs++;
-    }
-
-    char* buf = xmalloc(size);
-    struct job_header* hdr = (struct job_header*)buf;
-    hdr->num_inputs = htonl(num_inputs);
-    char* p = buf + sizeof(*hdr);
-
-    for (size_t i = 0; i < inputs_size; i++) {
-        if (!si_hasflag(inputs[i], SI_RESOURCE))
-            continue;
-        struct resource* res = get_resource(oid_of_hash(inputs[i]->res_hash));
-        if (parse_resource(res) < 0) {
-            free(buf);
-            return NULL;
+size_t first_step_input(size_t step_pos, size_t start, size_t end) {
+    while (start < end) {
+        size_t mid = (start + end) / 2;
+        if (step_pos <= ntohl(active_inputs[mid]->step_pos)) {
+            end = mid;
+        } else {
+            start = mid + 1;
         }
-        struct job_input* in = (struct job_input*)p;
-        memcpy(in->res_hash, inputs[i]->res_hash, KNIT_HASH_RAWSZ);
-        size_t pathsize = strlen(inputs[i]->name) + 1;
-        memcpy(in->name, inputs[i]->name, pathsize);
-        p += sizeof(*in) + pathsize;
+    }
+    return start;
+}
+
+static struct resource_list* step_inputs_to_resource_list(size_t step_pos) {
+    struct resource_list* head = NULL;
+    struct resource_list** list_p = &head;
+
+    for (size_t i = first_step_input(step_pos, 0, num_active_inputs);
+         i < num_active_inputs; i++) {
+        struct session_input* si = active_inputs[i];
+        if (ntohl(si->step_pos) != step_pos)
+            break;
+
+        assert(si_hasflag(si, SI_FINAL));
+        if (!si_hasflag(si, SI_RESOURCE))
+            continue;
+
+        struct resource_list* list = xmalloc(sizeof(*list));
+        list->name = si->name;
+        list->res = get_resource(oid_of_hash(si->res_hash));
+        list->next = NULL;
+        *list_p = list;
+        list_p = &list->next;
     }
 
-    struct object_id oid;
-    int rc = write_object(OBJ_JOB, buf, size, &oid);
-    free(buf);
-    return rc < 0 ? NULL : get_job(&oid);
+    return head;
 }
 
 int compile_job_for_step(size_t step_pos) {
@@ -372,18 +371,12 @@ int compile_job_for_step(size_t step_pos) {
     if (ss->num_unresolved)
         return error("step blocked on %u dependencies", ntohs(ss->num_unresolved));
 
-    size_t i = 0;
-    while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) < step_pos)
-        i++;
-    size_t start = i;
-    while (i < num_active_inputs && ntohl(active_inputs[i]->step_pos) == step_pos) {
-        if (!si_hasflag(active_inputs[i], SI_FINAL))
-            return error("expected final input");
-        i++;
-    }
-    size_t limit = i;
+    struct resource_list* inputs = step_inputs_to_resource_list(step_pos);
+    if (!inputs)
+        warning("empty job at step_pos %zu", step_pos);
 
-    struct job* job = session_store_job(&active_inputs[start], limit - start);
+    struct job* job = store_job(inputs);
+    free_resource_list(inputs);
     if (!job)
         return -1;
 

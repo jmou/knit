@@ -46,3 +46,11 @@ struct resource_list* resource_list_insert(struct resource_list** list_p,
     *list_p = node;
     return node;
 }
+
+void free_resource_list(struct resource_list* list) {
+    while (list) {
+        struct resource_list* temp = list;
+        list = list->next;
+        free(temp);
+    }
+}

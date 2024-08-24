@@ -51,7 +51,6 @@ int parse_job(struct job* job) {
     return ret;
 }
 
-// This implementation is largely the same as session_store_job() in session.c.
 struct job* store_job(struct resource_list* inputs) {
     size_t size = sizeof(struct job_header);
     size_t num_inputs = 0;
