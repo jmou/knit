@@ -24,6 +24,7 @@ struct value {
             size_t dep_pos;
             char* dep_output;
             unsigned dep_optional : 1;
+            unsigned dep_prefix : 1;
         };
     };
     struct resource* res;
@@ -129,6 +130,14 @@ static int try_read_token(struct lex_input* in, enum token expected) {
     return actual == expected;
 }
 
+int is_dir(const char* s) {
+    return s[0] == '\0' || s[strlen(s) - 1] == '/';
+}
+
+int is_dep_dir(const struct value* val) {
+    return val->tag == VALUE_DEPENDENCY && is_dir(val->dep_output);
+}
+
 static int parse_value(struct parse_context* ctx, struct value* out) {
     struct lex_input* in = &ctx->in;
     memset(out, 0, sizeof(*out));
@@ -161,7 +170,7 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         out->dep_step = lex_stuff_null(in);
         if (lex(in) != TOKEN_COLON)
             return error("expected :");
-        if (lex_path(in) < 0)
+        if (lex_path_or_empty(in) < 0)
             return -1;
         out->dep_output = lex_stuff_null(in);
         dep = find_step(ctx->plan, out->dep_step);
@@ -210,7 +219,11 @@ parse_process_value:
         step->inputs = create_input(ctx->bump_p, input_name);
         if (lex(in) != TOKEN_SPACE)
             return error("expected space");
-        return parse_value(ctx, step->inputs->val);
+        if (parse_value(ctx, step->inputs->val) < 0)
+            return -1;
+        if (is_dep_dir(step->inputs->val))
+            return error("cmd/flow dependency output must be a file");
+        return 0;
 
     case TOKEN_PARAMS:
         step->is_params = 1;
@@ -253,6 +266,21 @@ static struct input_list* parse_input(struct parse_context* ctx) {
             return NULL;
         }
         input->val->dep_optional = 1;
+    }
+    if (is_dir(input->name)) {
+        if (input->val->tag != VALUE_DEPENDENCY) {
+            error("input name ends in '/' but value is not a dependency");
+            return NULL;
+        }
+        if (!is_dir(input->val->dep_output)) {
+            error("input name ends in '/' but dependency output does not");
+            return NULL;
+        }
+        assert(is_dep_dir(input->val));
+        input->val->dep_prefix = 1;
+    } else if (is_dep_dir(input->val)) {
+        error("dependency output ends in '/' but input name does not");
+        return NULL;
     }
 
     save_lex_input(in);
@@ -358,8 +386,9 @@ static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
 static int print_value(FILE* fh, const struct value* val) {
     switch (val->tag) {
     case VALUE_DEPENDENCY:
-        fprintf(fh, "dependency %s %zu %s\n",
+        fprintf(fh, "dependency %s%s %zu %s\n",
                 val->dep_optional ? "optional" : "required",
+                val->dep_prefix ? " prefix" : "",
                 val->dep_pos, val->dep_output);
         return 0;
     case VALUE_FILENAME:

@@ -83,7 +83,7 @@ enum token lex_keyword(struct lex_input* in) {
     return token;
 }
 
-int lex_path(struct lex_input* in) {
+int lex_path_or_empty(struct lex_input* in) {
     pre_lex(in);
     while (1) {
         char* rew = in->curr;
@@ -96,9 +96,15 @@ int lex_path(struct lex_input* in) {
             * { in->curr = rew; break; }
         */
     }
+    post_lex(in);
+    return 0;
+}
+
+int lex_path(struct lex_input* in) {
+    if (lex_path_or_empty(in) < 0)
+        return -1;
     if (in->curr == in->prev)
         return error("expected path");
-    post_lex(in);
     return 0;
 }
 

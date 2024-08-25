@@ -8,4 +8,6 @@ struct bump_list {
     struct bump_list* next;
 };
 
+void free_bump_list(struct bump_list** bump_p);
+
 void* bump_alloc(struct bump_list** bump_p, size_t size);

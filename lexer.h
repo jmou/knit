@@ -45,6 +45,7 @@ enum token lex(struct lex_input* in);
 enum token lex_keyword(struct lex_input* in);
 
 int lex_path(struct lex_input* in);
+int lex_path_or_empty(struct lex_input* in);
 
 // in->curr should be just after the opening quote. lex_string*() lexes up to
 // but not past the closing quote.

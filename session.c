@@ -1,5 +1,6 @@
 #include "session.h"
 
+#include "alloc.h"
 #include "hash.h"
 #include "job.h"
 #include "resource.h"
@@ -9,16 +10,16 @@ static_assert(MAX_SESSION_NUM <= SIZE_MAX);
 
 struct session_step** active_steps;
 size_t num_active_steps;
-size_t alloc_active_steps;
+static size_t alloc_active_steps;
 
 struct session_input** active_inputs;
 size_t num_active_inputs;
-size_t alloc_active_inputs;
+static size_t alloc_active_inputs;
 
 struct session_dependency** active_deps;
 size_t num_active_deps;
-size_t alloc_active_deps;
-int deps_dirty; // may not be ordered
+static size_t alloc_active_deps;
+static int deps_dirty; // may not be ordered
 
 static size_t realloc_size(size_t alloc) { return (alloc + 16) * 2; }
 
@@ -46,6 +47,8 @@ static void ensure_alloc_deps() {
 size_t create_session_step(const char* name) {
     if (num_active_steps == MAX_SESSION_NUM)
         die("too many steps");
+    if (num_active_fanout > 0)
+        die("step created after fanout started");
 
     size_t namelen = strlen(name);
     struct session_step* ss = xmalloc(sizeof(struct session_step) + namelen + 1);
@@ -61,7 +64,7 @@ size_t create_session_step(const char* name) {
 }
 
 size_t create_session_input(size_t step_pos, const char* name) {
-    assert(step_pos < num_active_steps);
+    assert(step_pos < num_active_steps + num_active_fanout);
     if (num_active_inputs == MAX_SESSION_NUM)
         die("too many inputs");
 
@@ -118,6 +121,14 @@ size_t create_session_dependency(size_t input_pos,
     return num_active_deps++;
 }
 
+size_t num_active_fanout;
+
+size_t add_session_fanout_step() {
+    if (num_active_steps + num_active_fanout == MAX_SESSION_NUM)
+        die("too many fanout steps");
+    return num_active_steps + num_active_fanout++;
+}
+
 static char session_filepath[PATH_MAX];
 static char session_lockfile[PATH_MAX];
 static const char* session_name;
@@ -171,6 +182,7 @@ struct session_header {
     uint32_t num_steps;
     uint32_t num_inputs;
     uint32_t num_deps;
+    uint32_t num_fanout;
 };
 
 int new_session(const char* sessname) {
@@ -198,6 +210,7 @@ int load_current_session() {
     active_inputs = xmalloc(alloc_active_inputs * sizeof(struct session_input*));
     alloc_active_deps = num_active_deps = ntohl(hdr->num_deps);
     active_deps = xmalloc(alloc_active_deps * sizeof(struct session_dependency*));
+    num_active_fanout = ntohl(hdr->num_fanout);
 
     char* end = (char*)bb.data + bb.size;
     char* p = (char*)hdr + sizeof(*hdr);
@@ -283,6 +296,7 @@ int save_session() {
         .num_steps = htonl(num_active_steps),
         .num_inputs = htonl(num_active_inputs),
         .num_deps = htonl(num_active_deps),
+        .num_fanout = htonl(num_active_fanout),
     };
 
     if (write(fd, &hdr, sizeof(hdr)) != sizeof(hdr))
@@ -337,7 +351,9 @@ size_t first_step_input(size_t step_pos, size_t start, size_t end) {
     return start;
 }
 
-static struct resource_list* step_inputs_to_resource_list(size_t step_pos) {
+static struct resource_list* step_inputs_to_resource_list(struct bump_list** bump_p,
+                                                          size_t step_pos,
+                                                          const char* prefix) {
     struct resource_list* head = NULL;
     struct resource_list** list_p = &head;
 
@@ -348,11 +364,30 @@ static struct resource_list* step_inputs_to_resource_list(size_t step_pos) {
             break;
 
         assert(si_hasflag(si, SI_FINAL));
+        if (si_hasflag(si, SI_FANOUT)) {
+            assert(!prefix); // recursive SI_FANOUT is not supported
+            *list_p = step_inputs_to_resource_list(bump_p, ntohl(si->fanout_step_pos),
+                                                   si->name);
+            assert(*list_p);
+            while (*list_p)
+                list_p = &(*list_p)->next;
+            continue;
+        }
         if (!si_hasflag(si, SI_RESOURCE))
             continue;
 
-        struct resource_list* list = xmalloc(sizeof(*list));
-        list->name = si->name;
+        struct resource_list* list = bump_alloc(bump_p, sizeof(*list));
+        if (prefix) {
+            char name[PATH_MAX];
+            int len = snprintf(name, PATH_MAX, "%s%s", prefix, si->name);
+            if (len >= PATH_MAX)
+                die("input name too long");
+            list->name = bump_alloc(bump_p, len + 1);
+            memcpy(list->name, name, len + 1);
+        } else {
+            list->name = si->name;
+        }
+
         list->res = get_resource(oid_of_hash(si->res_hash));
         list->next = NULL;
         *list_p = list;
@@ -371,12 +406,13 @@ int compile_job_for_step(size_t step_pos) {
     if (ss->num_unresolved)
         return error("step blocked on %u dependencies", ntohs(ss->num_unresolved));
 
-    struct resource_list* inputs = step_inputs_to_resource_list(step_pos);
+    struct bump_list* bump = NULL;
+    struct resource_list* inputs = step_inputs_to_resource_list(&bump, step_pos, NULL);
     if (!inputs)
         warning("empty job at step_pos %zu", step_pos);
 
     struct job* job = store_job(inputs);
-    free_resource_list(inputs);
+    free_bump_list(&bump);
     if (!job)
         return -1;
 

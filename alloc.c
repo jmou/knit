@@ -4,6 +4,15 @@
 
 #define BUMP_PAGE_SIZE (1 << 20)
 
+void free_bump_list(struct bump_list** bump_p) {
+    while (*bump_p) {
+        struct bump_list* tmp = *bump_p;
+        *bump_p = tmp->next;
+        free(tmp->base);
+        free(tmp);
+    }
+}
+
 void* bump_alloc(struct bump_list** bump_p, size_t size) {
     struct bump_list* bump = *bump_p;
     if (!*bump_p || (*bump_p)->nused + size < BUMP_PAGE_SIZE) {

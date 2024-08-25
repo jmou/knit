@@ -29,7 +29,10 @@ static inline void ss_dec_unresolved(struct session_step* ss) {
 }
 
 struct session_input {
-    uint8_t res_hash[KNIT_HASH_RAWSZ];
+    union {
+        uint8_t res_hash[KNIT_HASH_RAWSZ];
+        uint32_t fanout_step_pos;
+    };
     uint32_t step_pos;
     // TODO remove padding?
     uint16_t padding;
@@ -40,6 +43,7 @@ struct session_input {
 // SI_FINAL is technically redundant since it is implied by !ss->num_unresolved.
 #define SI_FINAL    0x8000
 #define SI_RESOURCE 0x4000
+#define SI_FANOUT   0x2000
 #define SI_PATHMASK 0x0fff
 
 #define si_init_flags(si, name_len, flags) ((void)((si)->si_flags = htons(((name_len) & SI_PATHMASK) | (flags))))
@@ -60,6 +64,7 @@ struct session_dependency {
 };
 
 #define SD_REQUIRED   0x8000
+#define SD_PREFIX     0x4000
 #define SD_OUTPUTMASK 0x0fff
 
 #define sd_init_flags(sd, output_len, flags) ((void)((sd)->sd_flags = htons(((output_len) & SD_OUTPUTMASK) | (flags))))
@@ -78,6 +83,12 @@ extern struct session_input** active_inputs;
 extern size_t num_active_inputs;
 extern struct session_dependency** active_deps;
 extern size_t num_active_deps;
+
+// add_session_fanout_step() must be called after all normal steps have been
+// created; its returned step position is always greater than num_active_steps.
+size_t add_session_fanout_step();
+
+extern size_t num_active_fanout;
 
 const char* get_session_name();
 int new_session(const char* sessname);

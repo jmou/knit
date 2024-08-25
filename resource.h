@@ -20,4 +20,3 @@ struct resource_list {
 struct resource_list* resource_list_insert(struct resource_list** list_p,
                                            const char* name,
                                            struct resource* res);
-void free_resource_list(struct resource_list* list);

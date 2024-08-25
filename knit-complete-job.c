@@ -1,5 +1,29 @@
 #include "production.h"
+#include "resource.h"
 #include "session.h"
+
+static int has_prefix(const char* s, const char* prefix) {
+    return !strncmp(s, prefix, strlen(prefix));
+}
+
+static void set_input_resource(struct session_input* si, struct resource* res) {
+    memcpy(si->res_hash, res->object.oid.hash, KNIT_HASH_RAWSZ);
+    si_setflag(si, SI_RESOURCE | SI_FINAL);
+}
+
+// Create a session_input for each output with a matching prefix; outputs should
+// be positioned at the first match. The prefix will be removed from the input.
+static void create_fanout_inputs(size_t fanout_step_pos,
+                                 const struct resource_list* outputs,
+                                 const char* prefix) {
+    do {
+        char* name = outputs->name + strlen(prefix);
+        size_t input_pos = create_session_input(fanout_step_pos, name);
+        struct session_input* si = active_inputs[input_pos];
+        set_input_resource(si, outputs->res);
+        outputs = outputs->next;
+    } while (outputs && has_prefix(outputs->name, prefix));
+}
 
 static void resolve_dependencies(size_t step_pos,
                                  const struct resource_list* outputs) {
@@ -14,7 +38,12 @@ static void resolve_dependencies(size_t step_pos,
 
         // Iterate production outputs in parallel with the dependencies waiting
         // on this step. Compare their paths to find matching dependencies.
-        int cmp = outputs ? strcmp(outputs->name, dep->output) : 1;
+        int cmp = 1;
+        if (outputs) {
+            cmp = sd_hasflag(dep, SD_PREFIX)
+                ? strncmp(outputs->name, dep->output, strlen(dep->output))
+                : strcmp(outputs->name, dep->output);
+        }
 
         // If a production output has no dependencies on it, we can skip it.
         if (cmp < 0) {
@@ -54,10 +83,21 @@ static void resolve_dependencies(size_t step_pos,
         }
 
         // Note: cmp == 0
-        // The production and dependency outputs match so write through to the
-        // dependent step.
-        memcpy(input->res_hash, outputs->res->object.oid.hash, KNIT_HASH_RAWSZ);
-        si_setflag(input, SI_RESOURCE | SI_FINAL);
+        // The production and dependency outputs match.
+
+        // If the dependency is a prefix, create a fanout step whose inputs are
+        // all matching production outputs. However if there is only one
+        // matching output we can skip creating the fanout step.
+        if (sd_hasflag(dep, SD_PREFIX) && outputs->next &&
+                has_prefix(outputs->next->name, dep->output)) {
+            size_t fanout_step_pos = add_session_fanout_step();
+            create_fanout_inputs(fanout_step_pos, outputs, dep->output);
+            si_setflag(input, SI_FANOUT | SI_FINAL);
+            input->fanout_step_pos = htonl(fanout_step_pos);
+        } else {
+            // Set a single matching resource for the input.
+            set_input_resource(input, outputs->res);
+        }
 
 mark_resolved:
         if (!dependent->num_unresolved)

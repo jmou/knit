@@ -60,6 +60,8 @@ int main(int argc, char** argv) {
             } else if (!removeprefix(&s, "optional ")) {
                 die("dependency must be required or optional");
             }
+            if (removeprefix(&s, "prefix "))
+                flags |= SD_PREFIX;
             size_t dep_pos;
             int off;
             if (sscanf(s, "%zu %n", &dep_pos, &off) != 1)

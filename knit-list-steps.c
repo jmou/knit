@@ -30,17 +30,24 @@ static const char* pflags(uint16_t flags) {
 
 static void emit(size_t step_pos, struct session_step* ss) {
     if (debug) {
-        printf("step @%-9zu %-2u %s %s\n",
-               step_pos, ntohs(ss->num_unresolved), pflags(ss->ss_flags), ss->name);
-        printf("     job        %s\n", to_hex(ss->job_hash));
-        printf("     production %s\n", to_hex(ss->prd_hash));
+        if (ss) {
+            printf("step @%-9zu %-2u %s %s\n",
+                   step_pos, ntohs(ss->num_unresolved), pflags(ss->ss_flags), ss->name);
+            printf("     job        %s\n", to_hex(ss->job_hash));
+            printf("     production %s\n", to_hex(ss->prd_hash));
+        } else {
+            printf("fan  @%-9zu\n", step_pos);
+        }
 
         for (size_t i = 0; i < num_active_inputs; i++) {
             struct session_input* si = active_inputs[i];
             if (ntohl(si->step_pos) != step_pos)
                 continue;
             printf("     input      %-2zu %s %s\n", i, pflags(si->si_flags), si->name);
-            printf("     resource   %s\n", to_hex(si->res_hash));
+            if (si_hasflag(si, SI_FANOUT))
+                printf("     fanout     @%u\n", ntohl(si->fanout_step_pos));
+            else
+                printf("     resource   %s\n", to_hex(si->res_hash));
         }
 
         for (size_t i = 0; i < num_active_deps; i++) {
@@ -70,7 +77,9 @@ static void emit(size_t step_pos, struct session_step* ss) {
 }
 
 static void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s [--available] [--blocked] [--fulfilled] [--unmet] [--porcelain|--debug] <session>\n", arg0);
+    int len = strlen(arg0);
+    fprintf(stderr, "usage: %*s [--available] [--blocked] [--fulfilled] [--unmet]\n", len, arg0);
+    fprintf(stderr, "       %*s [--porcelain|--debug] <session>\n", len, "");
     exit(1);
 }
 
@@ -137,6 +146,11 @@ int main(int argc, char** argv) {
                     emit(i, ss);
             }
         }
+    }
+
+    if (debug && wants_all) {
+        for (size_t i = 0; i < num_active_fanout; i++)
+            emit(num_active_steps + i, NULL);
     }
 
     return rc < 0 ? 1 : 0;
