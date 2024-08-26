@@ -18,7 +18,7 @@ SCRIPTS = \
 	$(patsubst %.sh,%,$(wildcard *.sh)) \
 	$(patsubst %.pl,%,$(wildcard *.pl))
 
-OBJS = hash.o invocation.o job.o lexer.o object.o production.o resource.o session.o util.o
+OBJS = alloc.o hash.o invocation.o job.o lexer.o object.o production.o resource.o session.o util.o
 
 all: $(BIN) $(SCRIPTS)
 
