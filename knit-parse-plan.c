@@ -57,6 +57,7 @@ static struct input_list* create_input(struct bump_list** bump_p, char* name) {
     memset(input, 0, sizeof(*input));
     input->name = name;
     input->val = xmalloc(sizeof(*input->val));
+    memset(input->val, 0, sizeof(*input->val));
     return input;
 }
 
