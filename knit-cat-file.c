@@ -65,8 +65,8 @@ int main(int argc, char** argv) {
 
     char* end = buf + size;
     while (buf < end) {
-        int nwritten = write(STDOUT_FILENO, buf, end - buf);
-        if (nwritten < 0 && errno != EAGAIN && errno != EINTR)
+        int nwritten = xwrite(STDOUT_FILENO, buf, end - buf);
+        if (nwritten < 0)
             die_errno("write failed");
         buf += nwritten;
     }

@@ -58,6 +58,14 @@ void warning_errno(const char* fmt, ...) {
     va_end(argp);
 }
 
+ssize_t xwrite(int fd, const void* buf, size_t len) {
+    int ret;
+    do {
+        ret = write(fd, buf, len);
+    } while (ret < 0 && (errno == EAGAIN || errno == EINTR));
+    return ret;
+}
+
 static int valid_knit_dir(const char* dirname) {
     DIR* dir = opendir(dirname);
     if (!dir) {
