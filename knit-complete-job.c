@@ -51,12 +51,20 @@ static void resolve_dependencies(size_t step_pos,
             continue;
         }
 
-        size_t input_pos = ntohl(dep->input_pos);
-        if (input_pos >= num_active_inputs)
-            die("input out of bounds");
-        struct session_input* input = active_inputs[input_pos];
-
-        size_t dependent_pos = ntohl(input->step_pos);
+        struct session_input* input;
+        size_t dependent_pos;
+        if (sd_hasflag(dep, SD_INPUTISSTEP)) {
+            input = NULL;
+            dependent_pos = ntohl(dep->input_pos);
+            if (sd_hasflag(dep, SD_PREFIX))
+                die("SD_INPUTISSTEP and SD_PREFIX are incompatible");
+        } else {
+            size_t input_pos = ntohl(dep->input_pos);
+            if (input_pos >= num_active_inputs)
+                die("input out of bounds");
+            input = active_inputs[input_pos];
+            dependent_pos = ntohl(input->step_pos);
+        }
         if (dependent_pos >= num_active_steps)
             die("dependent out of bounds");
         if (dependent_pos <= step_pos)
@@ -66,7 +74,8 @@ static void resolve_dependencies(size_t step_pos,
         // Otherwise, we have a dependency to resolve. If we have no matching
         // production output, then the dependency is missing.
         if (cmp > 0) {
-            si_setflag(input, SI_FINAL);
+            if (input)
+                si_setflag(input, SI_FINAL);
             if (!sd_hasflag(dep, SD_REQUIRED)) {
                 goto mark_resolved;
             } else if (!ss_hasflag(dependent, SS_FINAL)) {
@@ -90,11 +99,12 @@ static void resolve_dependencies(size_t step_pos,
         // matching output we can skip creating the fanout step.
         if (sd_hasflag(dep, SD_PREFIX) && outputs->next &&
                 has_prefix(outputs->next->name, dep->output)) {
+            assert(input);
             size_t fanout_step_pos = add_session_fanout_step();
             create_fanout_inputs(fanout_step_pos, outputs, dep->output);
             si_setflag(input, SI_FANOUT | SI_FINAL);
             input->fanout_step_pos = htonl(fanout_step_pos);
-        } else {
+        } else if (input) {
             // Set a single matching resource for the input.
             set_input_resource(input, outputs->res);
         }

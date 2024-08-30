@@ -24,6 +24,7 @@ struct value {
             size_t dep_pos;
             char* dep_output;
             unsigned dep_optional : 1;
+            unsigned dep_implicit_ok : 1;
             unsigned dep_prefix : 1;
         };
     };
@@ -131,12 +132,8 @@ static int try_read_token(struct lex_input* in, enum token expected) {
     return actual == expected;
 }
 
-int is_dir(const char* s) {
+static int is_dir(const char* s) {
     return s[0] == '\0' || s[strlen(s) - 1] == '/';
-}
-
-int is_dep_dir(const struct value* val) {
-    return val->tag == VALUE_DEPENDENCY && is_dir(val->dep_output);
 }
 
 static int parse_value(struct parse_context* ctx, struct value* out) {
@@ -222,7 +219,8 @@ parse_process_value:
             return error("expected space");
         if (parse_value(ctx, step->inputs->val) < 0)
             return -1;
-        if (is_dep_dir(step->inputs->val))
+        if (step->inputs->val->tag == VALUE_DEPENDENCY &&
+                is_dir(step->inputs->val->dep_output))
             return error("cmd/flow dependency output must be a file");
         return 0;
 
@@ -250,9 +248,12 @@ static struct input_list* parse_input(struct parse_context* ctx) {
     struct input_list* input = create_input(ctx->bump_p, lex_stuff_null(in));
 
     int is_optional = 0;
+    int suppress_implicit_ok = 0;
     while (try_read_token(in, TOKEN_SPACE));
     if (try_read_token(in, TOKEN_QUESTION))
         is_optional = 1;
+    if (try_read_token(in, TOKEN_COLON))
+        suppress_implicit_ok = 1;
     if (lex(in) != TOKEN_EQUALS) {
         error("expected =");
         return NULL;
@@ -261,26 +262,27 @@ static struct input_list* parse_input(struct parse_context* ctx) {
 
     if (parse_value(ctx, input->val) < 0)
         return NULL;
-    if (is_optional) {
-        if (input->val->tag != VALUE_DEPENDENCY) {
-            error("optional input must be a dependency");
+    if (input->val->tag == VALUE_DEPENDENCY) {
+        input->val->dep_optional = is_optional;
+        input->val->dep_implicit_ok = !suppress_implicit_ok;
+        if (is_dir(input->name)) {
+            if (!is_dir(input->val->dep_output)) {
+                error("input name ends in '/' but dependency output does not");
+                return NULL;
+            }
+            input->val->dep_prefix = 1;
+        } else if (is_dir(input->val->dep_output)) {
+            error("dependency output ends in '/' but input name does not");
             return NULL;
         }
-        input->val->dep_optional = 1;
-    }
-    if (is_dir(input->name)) {
-        if (input->val->tag != VALUE_DEPENDENCY) {
-            error("input name ends in '/' but value is not a dependency");
-            return NULL;
-        }
-        if (!is_dir(input->val->dep_output)) {
-            error("input name ends in '/' but dependency output does not");
-            return NULL;
-        }
-        assert(is_dep_dir(input->val));
-        input->val->dep_prefix = 1;
-    } else if (is_dep_dir(input->val)) {
-        error("dependency output ends in '/' but input name does not");
+    } else if (is_optional) {
+        error("optional input must be a dependency");
+        return NULL;
+    } else if (suppress_implicit_ok) {
+        error("input suppressing implicit ok must be a dependency");
+        return NULL;
+    } else if (is_dir(input->name)) {
+        error("input name ends in '/' but value is not a dependency");
         return NULL;
     }
 
@@ -387,10 +389,14 @@ static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
 static int print_value(FILE* fh, const struct value* val) {
     switch (val->tag) {
     case VALUE_DEPENDENCY:
-        fprintf(fh, "dependency %s%s %zu %s\n",
+        fprintf(fh, "dependency input %s%s %zu %s\n",
                 val->dep_optional ? "optional" : "required",
                 val->dep_prefix ? " prefix" : "",
                 val->dep_pos, val->dep_output);
+        // We could deduplicate implicit dependencies to reduce session size and
+        // reduce work in knit-complete-job, but it probably has a minor impact.
+        if (val->dep_implicit_ok)
+            fprintf(fh, "dependency step required %zu .knit/ok\n", val->dep_pos);
         return 0;
     case VALUE_FILENAME:
     case VALUE_LITERAL:

@@ -90,6 +90,7 @@ int lex_path_or_empty(struct lex_input* in) {
         /*!re2c
             component = [a-zA-Z0-9_.-]+;
 
+            (".knit") [/]? { return error("reserved path component"); }
             ("." | "..") [/]? { return error("invalid path component"); }
             component [/] { continue; }
             component { break; }

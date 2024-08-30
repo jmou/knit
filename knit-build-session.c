@@ -52,9 +52,17 @@ int main(int argc, char** argv) {
             memcpy(si->res_hash, res_oid.hash, KNIT_HASH_RAWSZ);
             si_setflag(si, SI_RESOURCE | SI_FINAL);
         } else if (removeprefix(&s, "dependency ")) {
-            if (input_pos < 0)
-                die("input must precede dependency");
             uint16_t flags = 0;
+            if (removeprefix(&s, "input ")) {
+                if (input_pos < 0)
+                    die("input must precede input dependency");
+            } else if (removeprefix(&s, "step ")) {
+                flags |= SD_INPUTISSTEP;
+                if (step_pos < 0)
+                    die("step must precede step dependency");
+            } else {
+                die("dependency must be on input or step");
+            }
             if (removeprefix(&s, "required ")) {
                 flags |= SD_REQUIRED;
             } else if (!removeprefix(&s, "optional ")) {
@@ -66,7 +74,8 @@ int main(int argc, char** argv) {
             int off;
             if (sscanf(s, "%zu %n", &dep_pos, &off) != 1)
                 die("couldn't parse dependency %s", s);
-            create_session_dependency(input_pos, dep_pos, s + off, flags);
+            create_session_dependency(flags & SD_INPUTISSTEP ? step_pos : input_pos,
+                                      dep_pos, s + off, flags);
             should_compile_job = 0;
         } else if (!strcmp(s, "done")) {
             if (fgetc(stdin) != EOF)

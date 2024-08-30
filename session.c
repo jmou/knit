@@ -95,12 +95,17 @@ size_t create_session_input(size_t step_pos, const char* name) {
 size_t create_session_dependency(size_t input_pos,
                                  size_t step_pos, const char* output,
                                  uint16_t flags) {
-    assert(input_pos < num_active_inputs);
     if (num_active_deps == MAX_SESSION_NUM)
         die("too many dependencies");
 
-    struct session_input* si = active_inputs[input_pos];
-    size_t dependent_pos = ntohl(si->step_pos);
+    size_t dependent_pos;
+    if (flags & SD_INPUTISSTEP) {
+        dependent_pos = input_pos;
+    } else {
+        assert(input_pos < num_active_inputs);
+        struct session_input* si = active_inputs[input_pos];
+        dependent_pos = ntohl(si->step_pos);
+    }
     if (dependent_pos >= num_active_steps)
         die("dependent out of bounds");
     ss_inc_unresolved(active_steps[dependent_pos]);
@@ -270,7 +275,11 @@ static int cmp_dep(const void* a, const void* b) {
     int rc = strcmp(pa->output, pb->output);
     if (rc != 0)
         return rc;
-    // Ordering by input is not essential but determinism is nice.
+    // Ordering by flags and input is not essential but determinism is nice.
+    size_t a_flags = ntohs(pa->sd_flags);
+    size_t b_flags = ntohs(pb->sd_flags);
+    if (a_flags != b_flags)
+        return a_flags < b_flags ? -1 : 1;
     size_t a_input = ntohl(pa->input_pos);
     size_t b_input = ntohl(pb->input_pos);
     if (a_input != b_input)

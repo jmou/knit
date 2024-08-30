@@ -15,35 +15,29 @@ step a: partial bash
 
 step b: partial bash
     script = "cp -RL in/* out"
-    a.ok = a:.knit/ok
     data ?= a:data
     # This comment will be ignored. Empty lines are ok.
 
     optional ?= a:nonexistent
 
 step c: identity
-    b.ok = b:.knit/ok
     renamed = b:data
 
 step d: partial bash
-    script = "split -l1 in/lines out/"
-    c.ok = c:.knit/ok
+    script = "split -l1 in/lines out/ && false"
     lines = c:renamed
 
 step e: identity
-    d.ok = d:.knit/ok
-    1/ = d:
-    2/ = d:
+    1/ ?:= d:
+    2/ := d:
 
 step f: partial bash
-    e.ok = e:.knit/ok
     script = "rm in/e2/aa && cat in/e1/aa in/e2/* > out/combined"
     e1/ = e:1/
     e2/ = e:2/
 
 step asomewhatlongstepname: partial bash
     script = "tac in/lines > out/data"
-    f.ok = f:.knit/ok
     lines = f:combined
 EOF
 

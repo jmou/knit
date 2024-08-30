@@ -63,9 +63,10 @@ struct session_dependency {
     char output[];
 };
 
-#define SD_REQUIRED   0x8000
-#define SD_PREFIX     0x4000
-#define SD_OUTPUTMASK 0x0fff
+#define SD_REQUIRED    0x8000
+#define SD_PREFIX      0x4000
+#define SD_INPUTISSTEP 0x2000
+#define SD_OUTPUTMASK  0x0fff
 
 #define sd_init_flags(sd, output_len, flags) ((void)((sd)->sd_flags = htons(((output_len) & SD_OUTPUTMASK) | (flags))))
 #define sd_setflag(sd, flag) ((void)((sd)->sd_flags |= htons(flag)))
