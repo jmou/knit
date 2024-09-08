@@ -100,13 +100,59 @@ static struct object* peel_deref(char* spec, size_t len) {
     return deref_type(inner, typesig);
 }
 
+static struct object* peel_path(char* spec, size_t len) {
+    char* delim = spec + len - 1;
+    while (delim >= spec && *delim != ':')
+        delim--;
+    if (delim < spec)
+        return NULL;
+
+    struct object* inner = peel_spec(spec, delim - spec);
+    if (!inner)
+        return NULL;
+
+    if (inner->typesig == OBJ_INVOCATION) {
+        inner = deref_type(inner, OBJ_PRODUCTION);
+        if (!inner)
+            return NULL;
+    }
+
+    if (delim + 1 == spec + len)
+        return inner;
+
+    struct resource_list* resources;
+    if (inner->typesig == OBJ_JOB) {
+        struct job* job = (struct job*)inner;
+        if (parse_job(job) < 0)
+            return NULL;
+        resources = job->inputs;
+    } else if (inner->typesig == OBJ_PRODUCTION) {
+        struct production* prd = (struct production*)inner;
+        if (parse_production(prd) < 0)
+            return NULL;
+        resources = prd->outputs;
+    } else {
+        warning("%s specified on type %s", delim, strtypesig(inner->typesig));
+        return NULL;
+    }
+
+    for (; resources; resources = resources->next) {
+        if (!strcmp(resources->name, delim + 1))
+            return &resources->res->object;
+    }
+    warning("'%s' not found in %s %.*s",
+            delim + 1, strtypesig(inner->typesig), (int)(delim - spec), spec);
+    return NULL;
+}
+
 static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
     struct object* ret;
     struct object_id oid;
 
-    // TODO peel :path from job or output
-
     if ((ret = peel_deref(spec, len)))
+        return ret;
+
+    if ((ret = peel_path(spec, len)))
         return ret;
 
     if (len == KNIT_HASH_HEXSZ && !hex_to_oid(spec, &oid))
