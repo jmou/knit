@@ -1,6 +1,8 @@
+#include "hash.h"
 #include "production.h"
 #include "resource.h"
 #include "session.h"
+#include "spec.h"
 
 static int has_prefix(const char* s, const char* prefix) {
     return !strncmp(s, prefix, strlen(prefix));
@@ -133,18 +135,11 @@ int main(int argc, char** argv) {
 
     if (load_session(argv[1]) < 0)
         exit(1);
-
-    struct object_id oid;
-    if (hex_to_oid(argv[2], &oid) < 0)
-        die("invalid job hash");
-    struct job* job = get_job(&oid);
-    if (parse_job(job) < 0)
+    struct job* job = peel_job(argv[2]);
+    if (!job || parse_job(job) < 0)
         exit(1);
-
-    if (hex_to_oid(argv[3], &oid) < 0)
-        die("invalid production hash");
-    struct production* prd = get_production(&oid);
-    if (parse_production(prd) < 0)
+    struct production* prd = peel_production(argv[3]);
+    if (!prd || parse_production(prd) < 0)
         exit(1);
 
     int found_job = 0;
@@ -160,8 +155,7 @@ int main(int argc, char** argv) {
                     found_job = -1;
                 continue;
             }
-            memcpy(oid.hash, ss->prd_hash, KNIT_HASH_RAWSZ);
-            die("step already fulfilled with production %s", oid_to_hex(&oid));
+            die("step already fulfilled with production %s", oid_to_hex(oid_of_hash(ss->prd_hash)));
         }
 
         found_job = 1;

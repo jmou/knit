@@ -1,7 +1,7 @@
-#include "hash.h"
 #include "job.h"
 #include "resource.h"
 #include "util.h"
+#include "spec.h"
 
 static char* joindir(const char* dir, const char* suffix) {
     static char buf[PATH_MAX];
@@ -39,11 +39,8 @@ int main(int argc, char** argv) {
     if (argc != 4 || strcmp(argv[1], "--scratch"))
         die_usage(argv[0]);
 
-    struct object_id job_oid;
-    if (hex_to_oid(argv[2], &job_oid) < 0)
-        exit(1);
-    struct job* job = get_job(&job_oid);
-    if (parse_job(job) < 0)
+    struct job* job = peel_job(argv[2]);
+    if (!job || parse_job(job) < 0)
         exit(1);
     char* dir = argv[3];
 

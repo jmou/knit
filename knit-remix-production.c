@@ -1,8 +1,8 @@
-#include "hash.h"
 #include "invocation.h"
 #include "job.h"
 #include "production.h"
 #include "resource.h"
+#include "spec.h"
 
 #include <getopt.h>
 
@@ -52,17 +52,14 @@ int main(int argc, char** argv) {
 
     char* tok;
     struct job* job;
-    struct object_id oid;
     struct production* prd;
     struct resource* res;
     int opt;
     while ((opt = getopt_long(argc, argv, "", longopts, NULL)) != -1) {
         switch (opt) {
         case OPT_COPY_JOB_INPUTS:
-            if (hex_to_oid(optarg, &oid) < 0)
-                die("invalid job hash");
-            job = get_job(&oid);
-            if (parse_job(job) < 0)
+            job = peel_job(optarg);
+            if (!job || parse_job(job) < 0)
                 exit(1);
             outputs = deep_copy(job->inputs);
             break;
@@ -75,25 +72,23 @@ int main(int argc, char** argv) {
             }
             break;
         case OPT_SET_JOB:
-            if (hex_to_oid(optarg, &oid) < 0)
-                die("invalid job hash");
-            final_job = get_job(&oid);
+            final_job = peel_job(optarg);
+            if (!final_job)
+                exit(1);
             break;
         case OPT_SET_OUTPUT:
             tok = strpbrk(optarg, "=");
             if (!tok)
                 die("missing = after output name");
             *tok++ = '\0';
-            if (hex_to_oid(tok, &oid) < 0)
-                die("invalid resource hash");
-            res = get_resource(&oid);
+            res = peel_resource(tok);
+            if (!res)
+                exit(1);
             resource_list_insert(&outputs, optarg, res);
             break;
         case OPT_WRAP_INVOCATION:
-            if (hex_to_oid(optarg, &oid) < 0)
-                die("invalid invocation hash");
-            final_inv = get_invocation(&oid);
-            if (parse_invocation(final_inv) < 0)
+            final_inv = peel_invocation(optarg);
+            if (!final_inv || parse_invocation(final_inv) < 0)
                 exit(1);
             if (final_inv->terminal->prd) {
                 if (parse_production(final_inv->terminal->prd) < 0)

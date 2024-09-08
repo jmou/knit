@@ -11,15 +11,10 @@ struct object_id* oid_of_hash(uint8_t* hash) {
     return &oid;
 }
 
-// TODO this has an ambiguous and misused interface; it does not check that the
-// entire string is a valid hex oid.
 int hex_to_oid(const char* hex, struct object_id* oid) {
-    unsigned char byte = 0; // initialize to suppress warning
+    unsigned char byte;
     for (int i = 0; i < KNIT_HASH_HEXSZ; i++) {
         char c = hex[i];
-        if (!c)
-            return -1;
-
         unsigned char nibble;
         if (c >= '0' && c <= '9') {
             nibble = c - '0';
@@ -84,6 +79,8 @@ char* strtypesig(uint32_t typesig) {
         return "production";
     case OBJ_INVOCATION:
         return "invocation";
+    case OBJ_UNKNOWN:
+        return "unknown";
     }
     // Rotate among 4 statically allocated buffers so we can be invoked on
     // nonstandard types multiple times (like in printf()).

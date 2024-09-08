@@ -3,6 +3,7 @@
 #include "job.h"
 #include "lexer.h"
 #include "resource.h"
+#include "spec.h"
 
 enum value_tag {
     VALUE_DEPENDENCY,
@@ -518,11 +519,8 @@ int main(int argc, char** argv) {
     if (argc != 3)
         die_usage(argv[0]);
     if (!strcmp(argv[1], "--job-to-session")) {
-        struct object_id job_oid;
-        if (hex_to_oid(argv[2], &job_oid) < 0)
-            die("invalid job hash");
-        job = get_job(&job_oid);
-        if (parse_job(job) < 0)
+        job = peel_job(argv[2]);
+        if (!job || parse_job(job) < 0)
             exit(1);
 
         struct resource* plan_res = find_resource(job->inputs, JOB_INPUT_FLOW);

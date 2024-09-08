@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
     if (bb.size == KNIT_HASH_HEXSZ + 1 && ((char*)bb.data)[KNIT_HASH_HEXSZ] == '\n')
         ((char*)bb.data)[KNIT_HASH_HEXSZ] = '\0';
     struct object_id job_oid;
-    if (hex_to_oid(bb.data, &job_oid) < 0)
+    if (strlen(bb.data) != KNIT_HASH_HEXSZ || hex_to_oid(bb.data, &job_oid) < 0)
         die("invalid job hash");
 
     filename_offset = strlen(outputs) + 1;

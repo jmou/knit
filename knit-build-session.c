@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
                 die("input must precede resource");
             struct session_input* si = active_inputs[input_pos];
             struct object_id res_oid;
-            if (hex_to_oid(s, &res_oid) < 0)
+            if (strlen(s) != KNIT_HASH_HEXSZ || hex_to_oid(s, &res_oid) < 0)
                 die("invalid resource hash");
             memcpy(si->res_hash, res_oid.hash, KNIT_HASH_RAWSZ);
             si_setflag(si, SI_RESOURCE | SI_FINAL);

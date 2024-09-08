@@ -84,8 +84,11 @@ struct production* store_production(struct job* job, struct invocation* inv,
     if (parse_job(job) < 0)
         return NULL;
     size_t size = sizeof(struct production_header);
-    if (inv)
+    if (inv) {
+        if (parse_invocation(inv) < 0)
+            return NULL;
         size += sizeof(struct production_invocation);
+    }
     for (const struct resource_list* curr = outputs; curr; curr = curr->next) {
         if (parse_resource(curr->res) < 0)
             return NULL;

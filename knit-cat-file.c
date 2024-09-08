@@ -1,6 +1,8 @@
+#include "hash.h"
 #include "invocation.h"
 #include "job.h"
 #include "production.h"
+#include "spec.h"
 
 static void pretty_job(const struct job* job) {
     for (struct resource_list* in = job->inputs; in; in = in->next)
@@ -26,42 +28,39 @@ int main(int argc, char** argv) {
         die_usage(argv[0]);
 
     int pretty = !strcmp(argv[1], "-p");
-    struct object_id oid;
-    if (hex_to_oid(argv[2], &oid) < 0)
-        die("invalid object id");
+    struct object* obj = peel_spec(argv[2], strlen(argv[2]));
+    if (!obj)
+        exit(1);
 
-    size_t size;
-    char* buf = NULL; // leaked
     if (pretty) {
-        uint32_t typesig;
-        buf = read_object(&oid, &typesig, &size);
-        if (!buf) {
-            exit(1);
-        } else if (typesig == OBJ_RESOURCE || typesig == OBJ_INVOCATION) {
+        if (obj->typesig == OBJ_RESOURCE || obj->typesig == OBJ_INVOCATION) {
+            // Note we will read the object from storage again below. This is
+            // probably fine because pretty is normally for interactive use.
             // fall through
-        } else if (typesig == OBJ_JOB) {
-            struct job* job = get_job(&oid);
-            if (parse_job_bytes(job, buf, size) < 0)
+        } else if (obj->typesig == OBJ_JOB) {
+            struct job* job = (struct job*)obj;
+            if (parse_job(job) < 0)
                 exit(1);
             pretty_job(job);
             return 0;
-        } else if (typesig == OBJ_PRODUCTION) {
-            struct production* prd = get_production(&oid);
-            if (parse_production_bytes(prd, buf, size) < 0)
+        } else if (obj->typesig == OBJ_PRODUCTION) {
+            struct production* prd = (struct production*)obj;
+            if (parse_production(prd) < 0)
                 exit(1);
             pretty_production(prd);
             return 0;
         } else {
-            die("don't know how to pretty print %s", strtypesig(typesig));
+            die("don't know how to pretty print %s", strtypesig(obj->typesig));
         }
+    } else if (obj->typesig != make_typesig(argv[1])) {
+        die("object %s is type %s, expected %s", oid_to_hex(&obj->oid),
+            strtypesig(obj->typesig), argv[1]);
     }
 
-    if (!buf) {
-        assert(!pretty);
-        buf = read_object_of_type(&oid, make_typesig(argv[1]), &size);
-        if (!buf)
-            exit(1);
-    }
+    size_t size;
+    char* buf = read_object_of_type(&obj->oid, obj->typesig, &size);
+    if (!buf)
+        exit(1);
 
     char* end = buf + size;
     while (buf < end) {
