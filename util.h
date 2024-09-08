@@ -16,13 +16,19 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define NORETURN __attribute__((__noreturn__))
-
-void die(const char* format, ...) NORETURN;
-void die_errno(const char* format, ...) NORETURN;
+[[gnu::format(printf, 1, 2)]]
+[[noreturn]]
+void die(const char* format, ...);
+[[gnu::format(printf, 1, 2)]]
+[[noreturn]]
+void die_errno(const char* format, ...);
+[[gnu::format(printf, 1, 2)]]
 int error(const char* format, ...);
+[[gnu::format(printf, 1, 2)]]
 int error_errno(const char* format, ...);
+[[gnu::format(printf, 1, 2)]]
 void warning(const char* format, ...);
+[[gnu::format(printf, 1, 2)]]
 void warning_errno(const char* format, ...);
 
 static inline void* xmalloc(size_t size) {

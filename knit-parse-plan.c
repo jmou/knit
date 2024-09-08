@@ -377,7 +377,7 @@ static struct step_list* parse_plan(struct bump_list** bump_p, char* buf) {
     lex_input_init(&ctx.in, buf);
     if (parse_plan_internal(&ctx) < 0) {
         int column = ctx.in.prev < ctx.in.line_p ? 0 : ctx.in.prev - ctx.in.line_p;
-        error("at line %d column %zd near %s",
+        error("at line %d column %d near %s",
               ctx.in.lineno, column, ctx.block_decl ? ctx.block_decl : "top");
         // We could try to print the offending line but it would likely be
         // corrupted by NUL stuffing.
