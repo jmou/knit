@@ -47,6 +47,14 @@ inv2=$(expect_ok knit-run-plan -p limit=3)
 expect_ok test "$inv" == "$inv2"
 expect_ok knit-run-plan -p limit=5
 
+diff - <(knit-cat-file -p @:data) <<'EOF'
+5
+4
+3
+2
+1
+EOF
+
 cat <<'EOF' > super.knit
 step sub: flow ./plan.knit
     params/limit = "5"

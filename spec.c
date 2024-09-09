@@ -6,6 +6,7 @@
 #include "invocation.h"
 #include "production.h"
 #include "resource.h"
+#include "util.h"
 
 static struct object* get_object(const struct object_id* oid, uint32_t typesig) {
     size_t size;
@@ -145,6 +146,47 @@ static struct object* peel_path(char* spec, size_t len) {
     return NULL;
 }
 
+static struct object* invocation_log_last() {
+    char filename[PATH_MAX];
+    if (snprintf(filename, PATH_MAX, "%s/log", get_knit_dir()) >= PATH_MAX)
+        die("path too long");
+
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0)
+        warning_errno("failed to open %s", filename);
+
+    char buf[KNIT_HASH_HEXSZ + 2];
+    if (lseek(fd, -(off_t)sizeof(buf), SEEK_END) < 0) {
+        close(fd);
+        warning_errno("lseek (short log file?)");
+        return NULL;
+    }
+
+    int nr;
+    size_t offset = 0;
+    while (offset < sizeof(buf)) {
+        nr = read(fd, buf + offset, sizeof(buf) - offset);
+        if (nr < 0 && errno != EAGAIN && errno != EINTR)
+            die_errno("read");
+        if (nr == 0)
+            die("unexpected eof");
+        offset += nr;
+    }
+    close(fd);
+
+    if (buf[0] != '\n' || buf[sizeof(buf) - 1] != '\n') {
+        warning("corrupted log line");
+        return NULL;
+    }
+
+    struct object_id oid;
+    if (hex_to_oid(buf + 1, &oid) < 0) {
+        warning("bad invocation log hash");
+        return NULL;
+    }
+    return &get_invocation(&oid)->object;
+}
+
 static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
     struct object* ret;
     struct object_id oid;
@@ -157,6 +199,9 @@ static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
 
     if (len == KNIT_HASH_HEXSZ && !hex_to_oid(spec, &oid))
         return get_object(&oid, typesig);
+
+    if (len == 1 && spec[0] == '@')
+        return invocation_log_last();
 
     return NULL;
 }
