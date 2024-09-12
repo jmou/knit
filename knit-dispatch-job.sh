@@ -67,10 +67,19 @@ process_cmd() {
 
 finish() {
     echo "Complete $job -> $prd" >&3
-    knit-cache "$job" "$prd"
+    if [[ -z $nocache ]]; then
+        knit-cache "$job" "$prd"
+    fi
     knit-complete-job "$session" "$job" "$prd"
     exit
 }
+
+# This quick-and-dirty invocation of knit-cat-file could be optimized away, but
+# it would require more lines of code :)
+unset nocache
+if knit-cat-file -p "$job" | cut -f2- | grep -qxF .knit/nocache; then
+    nocache=1
+fi
 
 unset prd
 while read -r input; do

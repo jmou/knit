@@ -75,6 +75,7 @@ enum token lex_keyword(struct lex_input* in) {
             "step" { token = TOKEN_STEP; break; }
             "cmd" { token = TOKEN_CMD; break; }
             "identity" { token = TOKEN_IDENTITY; break; }
+            "nocache" { token = TOKEN_NOCACHE; break; }
             "params" { token = TOKEN_PARAMS; break; }
             "flow" { token = TOKEN_FLOW; break; }
         */

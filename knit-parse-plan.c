@@ -44,6 +44,7 @@ struct step_list {
     struct input_list* inputs;
     struct step_list* next;
     unsigned is_params : 1;
+    unsigned is_nocache : 1;
 };
 
 static struct step_list* find_step(struct step_list* step, const char* name) {
@@ -208,7 +209,15 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
     struct lex_input* in = &ctx->in;
     char* input_name;
 
-    switch (lex_keyword(&ctx->in)) {
+    enum token tok = lex_keyword(&ctx->in);
+    if (tok == TOKEN_NOCACHE) {
+        if (lex(in) != TOKEN_SPACE)
+            return error("expected space");
+        step->is_nocache = 1;
+        tok = lex_keyword(&ctx->in);
+    }
+
+    switch (tok) {
     case TOKEN_CMD:
         input_name = JOB_INPUT_CMD;
         goto parse_process_value;
@@ -560,10 +569,21 @@ int main(int argc, char** argv) {
         if (added)
             die("params step does not declare %s", added->name);
 
-        for (struct step_list* step = plan; step; step = step->next)
+        for (struct step_list* step = plan; step; step = step->next) {
+            // Represent nocache as a special input so it is part of the job id.
+            if (step->is_nocache) {
+                struct input_list* input = create_input(&bump, ".knit/nocache");
+                input->val->tag = VALUE_LITERAL;
+                input->val->literal = NULL;
+                input->val->literal_len = 0;
+                if (input_list_insert(&step->inputs, input))
+                    exit(1);
+            }
+
             for (struct input_list* input = step->inputs; input; input = input->next)
                 if (populate_input(input, job->inputs) < 0)
                     exit(1);
+        }
 
         if (print_build_instructions(stdout, job, plan) < 0)
             exit(1);
