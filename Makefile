@@ -1,8 +1,12 @@
 CFLAGS = -Wall -Wextra -ggdb
 
 CC = gcc
+INSTALL = install
 PKGCONFIG = pkg-config
 RE2C = re2c
+
+prefix = /usr
+bindir = $(prefix)/bin
 
 LIBCRYPTO_CFLAGS = $(shell $(PKGCONFIG) --cflags libcrypto)
 LIBCRYPTO_LIBS = $(shell $(PKGCONFIG) --libs libcrypto)
@@ -48,4 +52,10 @@ clean:
 	rm -f lexer.c
 	$(MAKE) -C tests clean
 
-.PHONY: all clean test
+install: all
+	$(INSTALL) -d $(DESTDIR)$(bindir)
+	$(INSTALL) $(BIN) $(SCRIPTS) $(DESTDIR)$(bindir)
+
+.SECONDARY: lexer.o
+
+.PHONY: all clean install test

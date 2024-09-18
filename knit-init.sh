@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-. knit-bash-setup.sh
+. knit-bash-setup
 
 if [[ $# -gt 1 ]]; then
     echo "usage: $0 <dir>" >&2

@@ -8,8 +8,11 @@ int parse_invocation_bytes(struct invocation* inv, void* data, size_t size) {
     if (inv->object.is_parsed)
         return 0;
     char* end = (char*)data + size;
-    char* p = memmem(data, size, "\n\n", 2);
-    if (!p)
+    char* p;
+    for (p = data; p <= end - 2; p++)
+        if (p[0] == '\n' && p[1] == '\n')
+            break;
+    if (p > end - 2)
         return error("truncated invocation header");
     p += 2;
 

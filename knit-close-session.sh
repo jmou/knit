@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-. knit-bash-setup.sh
+. knit-bash-setup
 
 [[ $# -eq 1 ]]
 session="$1"
