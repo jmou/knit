@@ -141,8 +141,8 @@ static struct object* peel_path(char* spec, size_t len) {
         if (!strcmp(resources->name, delim + 1))
             return &resources->res->object;
     }
-    warning("'%s' not found in %s %.*s",
-            delim + 1, strtypesig(inner->typesig), (int)(delim - spec), spec);
+    warning("'%s' not found in %s %s",
+            delim + 1, strtypesig(inner->typesig), oid_to_hex(&inner->oid));
     return NULL;
 }
 
@@ -155,7 +155,7 @@ static struct object* invocation_log_last() {
     if (fd < 0)
         warning_errno("failed to open %s", filename);
 
-    char buf[KNIT_HASH_HEXSZ + 2];
+    char buf[KNIT_HASH_HEXSZ + 1];
     if (lseek(fd, -(off_t)sizeof(buf), SEEK_END) < 0) {
         close(fd);
         warning_errno("lseek (short log file?)");
@@ -174,13 +174,13 @@ static struct object* invocation_log_last() {
     }
     close(fd);
 
-    if (buf[0] != '\n' || buf[sizeof(buf) - 1] != '\n') {
+    if (buf[sizeof(buf) - 1] != '\n') {
         warning("corrupted log line");
         return NULL;
     }
 
     struct object_id oid;
-    if (hex_to_oid(buf + 1, &oid) < 0) {
+    if (hex_to_oid(buf, &oid) < 0) {
         warning("bad invocation log hash");
         return NULL;
     }
