@@ -172,11 +172,16 @@ static int set_session_name_and_lock(const char* sessname) {
     if (set_session_name(sessname) < 0)
         return -1;
 
-    int fd = open(session_lockfile, O_WRONLY | O_CREAT | O_EXCL, 0666);
-    if (fd < 0) {
-        if (errno == EEXIST)
-            return error("lockfile already exists: %s", session_lockfile);
-        return error_errno("open error %s", session_lockfile);
+    int fd;
+    int backoff_ms = 1;
+    while ((fd = open(session_lockfile, O_WRONLY | O_CREAT | O_EXCL, 0666)) < 0) {
+        if (errno != EEXIST)
+            return error_errno("open error %s", session_lockfile);
+
+        backoff_ms *= 2;
+        if (backoff_ms > 1000)
+            return error("lockfile timed out: %s", session_lockfile);
+        usleep(backoff_ms * 1000);
     }
 
     atexit(unlock_session);
