@@ -212,9 +212,9 @@ static struct object* peel_path(char* spec, size_t len) {
     return NULL;
 }
 
-static struct object* invocation_log_last() {
+static struct object* invocation_history_last() {
     char filename[PATH_MAX];
-    if (snprintf(filename, PATH_MAX, "%s/log", get_knit_dir()) >= PATH_MAX)
+    if (snprintf(filename, PATH_MAX, "%s/history", get_knit_dir()) >= PATH_MAX)
         die("path too long");
 
     int fd = open(filename, O_RDONLY);
@@ -224,7 +224,7 @@ static struct object* invocation_log_last() {
     char buf[KNIT_HASH_HEXSZ + 1];
     if (lseek(fd, -(off_t)sizeof(buf), SEEK_END) < 0) {
         close(fd);
-        warning_errno("lseek (short log file?)");
+        warning_errno("lseek (short history file?)");
         return NULL;
     }
 
@@ -241,13 +241,13 @@ static struct object* invocation_log_last() {
     close(fd);
 
     if (buf[sizeof(buf) - 1] != '\n') {
-        warning("corrupted log line");
+        warning("corrupted history line");
         return NULL;
     }
 
     struct object_id oid;
     if (hex_to_oid(buf, &oid) < 0) {
-        warning("bad invocation log hash");
+        warning("bad invocation history hash");
         return NULL;
     }
     return &get_invocation(&oid)->object;
@@ -270,7 +270,7 @@ static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
         return get_object(&oid, typesig);
 
     if (len == 1 && spec[0] == '@')
-        return invocation_log_last();
+        return invocation_history_last();
 
     return NULL;
 }
