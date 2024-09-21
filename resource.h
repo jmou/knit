@@ -20,3 +20,8 @@ struct resource_list {
 struct resource_list* resource_list_insert(struct resource_list** list_p,
                                            const char* name,
                                            struct resource* res);
+void resource_list_remove_and_free(struct resource_list** list_p);
+
+// On error, returns -1 and sets errno. Not thread-safe.
+int resource_list_insert_dir_files(struct resource_list** list_p,
+                                   const char* dir);

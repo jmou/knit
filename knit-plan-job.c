@@ -86,9 +86,7 @@ static int add_file(const char* files_dir, const char* filename,
     // dedupe them here.
     if (inserted->next && !strcmp(inserted->name, inserted->next->name)) {
         assert(inserted->res == inserted->next->res);
-        struct resource_list* next = inserted->next->next;
-        free(inserted->next);
-        inserted->next = next;
+        resource_list_remove_and_free(&inserted->next);
     }
     return 0;
 }
