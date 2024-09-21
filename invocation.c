@@ -35,10 +35,13 @@ int parse_invocation_bytes(struct invocation* inv, void* data, size_t size) {
             die("unknown invocation entry stage: %c", p[0]);
         }
 
-        p = memchr(p, '\n', end - p);
-        if (!p)
+        char* eol = memchr(p, '\n', end - p);
+        if (!eol)
             return error("unterminated invocation entry");
-        p++;
+        entry->name = xmalloc(eol - &p[132]);
+        memcpy(entry->name, &p[132], eol - &p[132]);
+
+        p = eol + 1;
         *entry_p = inv->terminal = entry;
         entry_p = &entry->next;
     }

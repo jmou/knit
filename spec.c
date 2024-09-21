@@ -76,29 +76,89 @@ static struct object* deref_type(struct object* obj, uint32_t typesig) {
     return NULL;
 }
 
+// Find position of sigil that is followed by a value within braces, or else -1.
+// Given return value pos, the braced value starts at pos + 2 until len - 1.
+static int find_sigil_braced(char* spec, size_t len, char sigil) {
+    if (len < 4 || spec[len - 1] != '}')
+        return -1;
+
+    char* p = &spec[len - 3];
+    for (; p >= spec; p--)
+        if (p[0] == sigil && p[1] == '{')
+            return p - spec;
+    return -1;
+}
+
 static struct object* peel_deref(char* spec, size_t len) {
     // Try to peel a dereference of the form ^{type}.
-    if (len < 4 || spec[len - 1] != '}')
+    int inner_len = find_sigil_braced(spec, len, '^');
+    if (inner_len < 0 || inner_len == (int)len)
         return NULL;
 
-    char* p;
-    for (p = &spec[len - 3]; p > spec; p--)
-        if (p[0] == '^' && p[1] == '{')
-            break;
-
-    if (p == spec)
-        return NULL;
-
-    size_t inner_len = p - spec;
-    p += 2;
     // Icky NUL termination.
     spec[len - 1] = '\0';
-    uint32_t typesig = make_typesig(p);
+    uint32_t typesig = make_typesig(&spec[inner_len + 2]);
 
     struct object* inner = peel_spec(spec, inner_len);
     if (!inner)
         return NULL;
     return deref_type(inner, typesig);
+}
+
+static struct object* peel_step(char* spec, size_t len) {
+    // Try to peel an invocation step of the form @{step}.
+    int inner_len = find_sigil_braced(spec, len, '@');
+    if (inner_len < 0 || inner_len == (int)len)
+        return NULL;
+    char* step = &spec[inner_len + 2];
+    size_t step_len = len - inner_len - 3;
+
+    struct object* inner = peel_spec(spec, inner_len);
+    if (!inner)
+        return NULL;
+    inner = deref_type(inner, OBJ_INVOCATION);
+    if (!inner)
+        return NULL;
+    struct invocation* inv = (struct invocation*)inner;
+    if (parse_invocation(inv) < 0)
+        return NULL;
+
+    char* end;
+    errno = 0;
+    long pos = strtol(step, &end, 10);
+    if (end != step + step_len || errno) { // non-numeric step name
+        for (struct invocation_entry_list* entry = inv->entries; entry; entry = entry->next) {
+            if (strlen(entry->name) == step_len && !memcmp(entry->name, step, step_len))
+                return &entry->prd->object;
+        }
+        return NULL;
+    }
+
+    if (pos == 0) {
+        warning("@{0} is invalid; first entry is @{1}");
+        return NULL;
+    } else if (pos < 0) {
+        long num_entries = 0;
+        for (struct invocation_entry_list* entry = inv->entries; entry; entry = entry->next)
+            num_entries++;
+        if (pos + num_entries < 0) {
+            warning("negative position %ld too large for %ld steps of invocation %s",
+                    pos, num_entries, oid_to_hex(&inv->object.oid));
+            return NULL;
+        }
+        pos += num_entries;
+    } else {
+        pos--;
+    }
+    struct invocation_entry_list* entry = inv->entries;
+    for (long i = 0; i < pos && entry; i++)
+        entry = entry->next;
+    if (!entry) {
+        warning("step position %ld too large for invocation %s",
+                pos, oid_to_hex(&inv->object.oid));
+        return NULL;
+    }
+    return &entry->prd->object;
 }
 
 static struct object* peel_path(char* spec, size_t len) {
@@ -118,8 +178,14 @@ static struct object* peel_path(char* spec, size_t len) {
             return NULL;
     }
 
-    if (delim + 1 == spec + len)
+    // Without a path, just return the resourceful object.
+    if (delim + 1 == spec + len) {
+        if (inner->typesig != OBJ_PRODUCTION && inner->typesig != OBJ_JOB) {
+            warning(":path invalid on %s", strtypesig(inner->typesig));
+            return NULL;
+        }
         return inner;
+    }
 
     struct resource_list* resources;
     if (inner->typesig == OBJ_JOB) {
@@ -192,6 +258,9 @@ static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
     struct object_id oid;
 
     if ((ret = peel_deref(spec, len)))
+        return ret;
+
+    if ((ret = peel_step(spec, len)))
         return ret;
 
     if ((ret = peel_path(spec, len)))

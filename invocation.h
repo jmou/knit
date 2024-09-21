@@ -6,6 +6,7 @@
 #include "resource.h"
 
 struct invocation_entry_list {
+    char* name;
     struct job* job;
     struct production* prd;
     struct invocation_entry_list* next;
