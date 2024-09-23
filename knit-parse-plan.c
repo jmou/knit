@@ -59,7 +59,7 @@ static struct input_list* create_input(struct bump_list** bump_p, char* name) {
     struct input_list* input = bump_alloc(bump_p, sizeof(*input));
     memset(input, 0, sizeof(*input));
     input->name = name;
-    input->val = xmalloc(sizeof(*input->val));
+    input->val = bump_alloc(bump_p, sizeof(*input->val));
     memset(input->val, 0, sizeof(*input->val));
     return input;
 }
@@ -491,9 +491,42 @@ static int populate_input(struct input_list* input, struct resource_list* job_in
         break;
     case VALUE_FILENAME:
         val->res = find_resource(job_inputs, joindir("files", val->filename));
+        if (!val->res)
+            return error("missing job input file %s", val->filename);
         break;
     }
     return val->res ? 0 : -1;
+}
+
+static int finalize_flow_job_plan(struct bump_list** bump_p,
+                                  struct step_list* plan,
+                                  struct resource_list* job_inputs) {
+    // Only the first step of the plan may be a params process. If the job
+    // has any params they should override the params step inputs.
+    struct input_list* params = job_params_to_inputs(bump_p, job_inputs);
+    if (params && !plan->is_params)
+        return error("params step missing");
+    struct input_list* added = input_list_override(bump_p, &plan->inputs, params);
+    if (added)
+        return error("params step does not declare %s", added->name);
+
+    for (struct step_list* step = plan; step; step = step->next) {
+        // Represent nocache as a special input so it is part of the job id.
+        if (step->is_nocache) {
+            struct input_list* input = create_input(bump_p, ".knit/nocache");
+            input->val->tag = VALUE_LITERAL;
+            input->val->literal = NULL;
+            input->val->literal_len = 0;
+            if (input_list_insert(&step->inputs, input))
+                return -1;
+        }
+
+        for (struct input_list* input = step->inputs; input; input = input->next)
+            if (populate_input(input, job_inputs) < 0)
+                return -1;
+    }
+
+    return 0;
 }
 
 static void emit_params(struct step_list* step) {
@@ -560,31 +593,10 @@ int main(int argc, char** argv) {
     }
 
     if (job) {
-        // Only the first step of the plan may be a params process. If the job
-        // has any params they should override the params step inputs.
-        struct input_list* params = job_params_to_inputs(&bump, job->inputs);
-        if (params && !plan->is_params)
-            die("params step missing");
-        struct input_list* added = input_list_override(&bump, &plan->inputs, params);
-        if (added)
-            die("params step does not declare %s", added->name);
-
-        for (struct step_list* step = plan; step; step = step->next) {
-            // Represent nocache as a special input so it is part of the job id.
-            if (step->is_nocache) {
-                struct input_list* input = create_input(&bump, ".knit/nocache");
-                input->val->tag = VALUE_LITERAL;
-                input->val->literal = NULL;
-                input->val->literal_len = 0;
-                if (input_list_insert(&step->inputs, input))
-                    exit(1);
-            }
-
-            for (struct input_list* input = step->inputs; input; input = input->next)
-                if (populate_input(input, job->inputs) < 0)
-                    exit(1);
+        if (finalize_flow_job_plan(&bump, plan, job->inputs) < 0) {
+            error("in job %s", oid_to_hex(&job->object.oid));
+            exit(1);
         }
-
         if (print_build_instructions(stdout, job, plan) < 0)
             exit(1);
     } else {
