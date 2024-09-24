@@ -30,27 +30,30 @@ static struct input_line* parse_lines(char* buf, size_t size, size_t* num_lines)
     for (size_t i = 0; i < *num_lines; i++) {
         struct input_line* line = &lines[i];
         char* nl = memchr(p, '\n', end - p);
-        if (!memcmp(p, "param ", 6)) {
-            p += 6;
-            line->param = p;
-            line->filename = memchr(p, '=', nl - p);
-            if (line->filename)
-                line->filename++;
-        } else if (!memcmp(p, "file ", 5)) {
-            line->filename = p + 5;
-        }
         *nl = '\0';
+        if (!strncmp(p, "param ", 6)) {
+            line->param = p + 6;
+            line->filename = strchr(line->param, '=');
+            if (line->filename)
+                *line->filename++ = '\0';
+            if (!*line->param) {
+                error("missing param name");
+                return NULL;
+            }
+        } else if (!strncmp(p, "file ", 5)) {
+            line->filename = p + 5;
+            if (!*line->filename) {
+                error("missing filename");
+                return NULL;
+            }
+        } else {
+            error("cannot parse line %s", p);
+            return NULL;
+        }
         p = nl + 1;
     }
 
     return lines;
-}
-
-static char* joindir(const char* dir, const char* filename) {
-    static char buf[PATH_MAX];
-    if (snprintf(buf, PATH_MAX, "%s/%s", dir, filename) >= PATH_MAX)
-        die("path too long");
-    return buf;
 }
 
 static int add_param_arg(const struct param_arg* arg,
@@ -67,21 +70,29 @@ static int add_param_arg(const struct param_arg* arg,
     // the file unless it is referenced elsewhere.
     lines[j].filename = NULL;
 
+    char input_name[strlen(arg->name) + 8];
+    stpcpy(stpcpy(input_name, "params/"), arg->name);
     struct resource_list* inserted =
-        resource_list_insert(inputs_p, joindir("params", arg->name), arg->res);
+        resource_list_insert(inputs_p, input_name, arg->res);
     if (inserted->next && !strcmp(inserted->name, inserted->next->name))
         return error("duplicate param %s", arg->name);
     return 0;
 }
 
-static int add_file(const char* files_dir, const char* filename,
+static int add_file(const char* name, const char* basedir,
                     struct resource_list** inputs_p) {
-    struct resource* res =
-        store_resource_file(files_dir ? joindir(files_dir, filename) : filename);
+    char path[strlen(basedir) + strlen(name) + 1];
+    stpcpy(stpcpy(path, basedir), name);
+
+    size_t name_len = strlen(name);
+    char input_name[name_len + 7];
+    stpcpy(stpcpy(input_name, "files/"), name);
+
+    struct resource* res = store_resource_file(path);
     if (!res)
         return -1;
     struct resource_list* inserted =
-        resource_list_insert(inputs_p, joindir("files", filename), res);
+        resource_list_insert(inputs_p, input_name, res);
     // The flow plan may include distinct references to the same file;
     // dedupe them here.
     if (inserted->next && !strcmp(inserted->name, inserted->next->name)) {
@@ -92,24 +103,19 @@ static int add_file(const char* files_dir, const char* filename,
 }
 
 static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s [-F <files-dir>] [(-p|-P) <param>=<value>]... <plan>\n", arg0);
+    fprintf(stderr, "usage: %s [(-p|-P) <param>=<value>]... <plan>\n", arg0);
     exit(1);
 }
 
 int main(int argc, char** argv) {
-    const char* files_dir = NULL;
     struct param_arg args[MAX_ARGS];
     size_t num_args = 0;
 
     int opt;
-    while ((opt = getopt(argc, argv, "F:p:P:")) != -1) {
+    while ((opt = getopt(argc, argv, "p:P:")) != -1) {
         char* value;
         struct param_arg* arg;
         switch (opt) {
-        case 'F':
-            files_dir = optarg;
-            break;
-
         case 'p':
         case 'P':
             if (num_args == MAX_ARGS)
@@ -121,6 +127,9 @@ int main(int argc, char** argv) {
             *value++ = '\0';
 
             arg->name = optarg;
+            if (!*arg->name)
+                die("missing param name");
+
             if (opt == 'p')
                 arg->res = store_resource(value, strlen(value));
             else
@@ -135,7 +144,7 @@ int main(int argc, char** argv) {
     }
     if (argc != optind + 1)
         die_usage(argv[0]);
-    const char* plan_filename = argv[optind];
+    char* plan_filename = argv[optind];
 
     struct resource_list* inputs = NULL;
     struct resource* plan_res = store_resource_file(plan_filename);
@@ -148,17 +157,25 @@ int main(int argc, char** argv) {
         die_errno("cannot read stdin");
     size_t num_lines;
     struct input_line* lines = parse_lines(bb.data, bb.size, &num_lines);
+    if (!lines)
+        exit(1);
 
     for (size_t i = 0; i < num_args; i++) {
         if (add_param_arg(&args[i], lines, num_lines, &inputs) < 0)
             exit(1);
     }
 
+    // Look for files referenced by the flow plan relative to its own directory.
+    char* basedir_end = strrchr(plan_filename, '/');
+    if (basedir_end)
+        *++basedir_end = '\0';
+    const char* basedir = basedir_end ? plan_filename : "./";
+
     for (size_t i = 0; i < num_lines; i++) {
         char* name = lines[i].filename;
         if (!name)
             continue;
-        if (add_file(files_dir, name, &inputs) < 0)
+        if (add_file(name, basedir, &inputs) < 0)
             exit(1);
     }
 
