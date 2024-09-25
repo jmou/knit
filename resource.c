@@ -80,13 +80,18 @@ static int each_file(const char* filename, const struct stat* /*st*/,
         return 1;
     }
 
+    const char* name = filename + filename_offset;
+    if (!strncmp(name, ".knit/", 6))
+        return 0;
+
     struct resource* res = store_resource_file(filename);
     if (!res) {
         errno = EIO;
         return 1;
     }
+
     // We expect resource lists to be short, but building them may be quadratic.
-    resource_list_insert(resources_p, filename + filename_offset, res);
+    resource_list_insert(resources_p, name, res);
     return 0;
 }
 

@@ -19,6 +19,7 @@ struct resource_list* deep_copy(struct resource_list* orig) {
 
 enum options {
     OPT_COPY_JOB_INPUTS,
+    OPT_READ_OUTPUTS_FROM_DIR,
     OPT_REMOVE_PREFIX,
     OPT_SET_JOB,
     OPT_SET_OUTPUT,
@@ -27,6 +28,7 @@ enum options {
 
 static struct option longopts[] = {
     { .name = "copy-job-inputs", .val = OPT_COPY_JOB_INPUTS, .has_arg = 1 },
+    { .name = "read-outputs-from-dir", .val = OPT_READ_OUTPUTS_FROM_DIR, .has_arg = 1 },
     { .name = "remove-prefix", .val = OPT_REMOVE_PREFIX, .has_arg = 1 },
     { .name = "set-job", .val = OPT_SET_JOB, .has_arg = 1 },
     { .name = "set-output", .val = OPT_SET_OUTPUT, .has_arg = 1 },
@@ -36,7 +38,9 @@ static struct option longopts[] = {
 
 static void die_usage(char* arg0) {
     int len = strlen(arg0);
-    fprintf(stderr, "usage: %*s [--copy-job-inputs <job>] [--remove-prefix <prefix>]\n", len, arg0);
+    fprintf(stderr, "usage: %*s [--copy-job-inputs <job>]\n", len, arg0);
+    fprintf(stderr, "       %*s [--read-outputs-from-dir <dir>]\n", len, "");
+    fprintf(stderr, "       %*s [--remove-prefix <prefix>]\n", len, "");
     fprintf(stderr, "       %*s [--set-job <job>] [--set-output <name>=<resource>]\n", len, "");
     fprintf(stderr, "       %*s [--wrap-invocation <invocation>]\n", len, "");
     exit(1);
@@ -62,6 +66,10 @@ int main(int argc, char** argv) {
             if (!job || parse_job(job) < 0)
                 exit(1);
             outputs = deep_copy(job->inputs);
+            break;
+        case OPT_READ_OUTPUTS_FROM_DIR:
+            if (resource_list_insert_dir_files(&outputs, optarg) < 0)
+                die_errno("directory traversal failed on %s", optarg);
             break;
         case OPT_REMOVE_PREFIX:
             for (struct resource_list** list_p = &outputs; *list_p; list_p = &(*list_p)->next) {

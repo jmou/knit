@@ -17,6 +17,8 @@ job="$2"
 
 scratch="$KNIT_DIR/scratch/$job"
 
+empty_res=$(knit-hash-object -t resource -w /dev/null)
+
 lock_scratch() {
     if [[ -s "$scratch.lock" ]]; then
         echo "warning: existing lockfile $scratch.lock: $(< $scratch.lock)" >&2
@@ -38,7 +40,8 @@ unpack_job() {
 }
 
 process_cmd() {
-    local rc
+    local rc res
+    local -a remix_opts
 
     set +e
     # TODO disambiguate errors from knit-exec-cmd and .knit/cmd
@@ -46,23 +49,22 @@ process_cmd() {
     rc=$?
     set -e
 
-    if [[ ! -s "$scratch/out.knit/log" ]]; then
-        rm "$scratch/out.knit/log"
-    fi
-    echo $rc > "$scratch/out.knit/exitcode"
-    if [[ $rc -eq 0 ]]; then
-        touch "$scratch/out.knit/ok"
-    fi
-
     if [[ -e "$scratch/work/out/.knit" ]]; then
-        echo "warning: removing $scratch/work/out/.knit" >&2
-        rm -rf "$scratch/work/out/.knit"
+        echo "warning: discarding $scratch/work/out/.knit" >&2
     fi
-    mv "$scratch/out.knit" "$scratch/work/out/.knit"
 
-    rm -rf "$scratch/work/job"
-    echo "$job" > "$scratch/work/job"
-    knit-pack-production "$scratch/work"
+    remix_opts=(--set-job "$job" --read-outputs-from-dir "$scratch/work/out")
+    if [[ -s "$scratch/out.knit/log" ]]; then
+        res="$(knit-hash-object -t resource -w "$scratch/out.knit/log")"
+        remix_opts+=(--set-output ".knit/log=$res")
+    fi
+    res="$(knit-hash-object -t resource -w --stdin <<< $rc)"
+    remix_opts+=(--set-output ".knit/exitcode=$res")
+    if [[ $rc -eq 0 ]]; then
+        remix_opts+=(--set-output ".knit/ok=$empty_res")
+    fi
+
+    knit-remix-production "${remix_opts[@]}"
 }
 
 finish() {
@@ -103,7 +105,6 @@ while read -r input; do
         prd=$(knit-remix-production --set-job "$job" --wrap-invocation "$inv")
         finish
     elif [[ $input == .knit/identity ]]; then
-        empty_res=$(knit-hash-object -t resource -w /dev/null)
         prd=$(knit-remix-production --set-job "$job" --copy-job-inputs "$job" \
             --remove-prefix .knit/ --set-output ".knit/ok=$empty_res")
         finish
