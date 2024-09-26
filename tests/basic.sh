@@ -2,15 +2,21 @@
 
 . test-setup.sh
 
+echo -n 1 > start
+echo -n 3 > limit
+mkdir empty
+
 cat <<'EOF' > plan.knit
 partial bash: cmd "bash\0in/script"
     script = !
 
 step params: params
-    limit = "3"
+    start = ./start
+    limit = ./limit
 
 step a: partial bash
-    script = "seq 1 $(< in/limit) > out/data"
+    script = "seq $(< in/start) $(< in/limit) > out/data"
+    start = params:start
     limit = params:limit
 
 step b: partial bash
@@ -19,6 +25,7 @@ step b: partial bash
     # This comment will be ignored. Empty lines are ok.
 
     optional ?= a:nonexistent
+    optional2/ ?= ./empty/
 
 step c: identity
     renamed = b:data
@@ -58,6 +65,7 @@ EOF
 cat <<'EOF' > super.knit
 step sub: flow ./plan.knit
     params/limit = "5"
+    files/ = ./
 EOF
 
 inv=$(expect_ok knit-run-plan -f super.knit)

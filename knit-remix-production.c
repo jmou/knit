@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
             outputs = deep_copy(job->inputs);
             break;
         case OPT_READ_OUTPUTS_FROM_DIR:
-            if (resource_list_insert_dir_files(&outputs, optarg) < 0)
+            if (resource_list_insert_dir_files(&outputs, optarg, "") < 0)
                 die_errno("directory traversal failed on %s", optarg);
             break;
         case OPT_REMOVE_PREFIX:

@@ -13,6 +13,7 @@ struct param_arg {
 struct input_line {
     char* param;
     char* filename;
+    unsigned file_is_optional : 1;
 };
 
 static struct input_line* parse_lines(char* buf, size_t size, size_t* num_lines) {
@@ -33,19 +34,20 @@ static struct input_line* parse_lines(char* buf, size_t size, size_t* num_lines)
         *nl = '\0';
         if (!strncmp(p, "param ", 6)) {
             line->param = p + 6;
-            line->filename = strchr(line->param, '=');
-            if (line->filename)
-                *line->filename++ = '\0';
+            line->filename = strstr(p, "=./");
+            if (line->filename) {
+                *line->filename = '\0';
+                line->filename += 3;
+            }
             if (!*line->param) {
                 error("missing param name");
                 return NULL;
             }
-        } else if (!strncmp(p, "file ", 5)) {
-            line->filename = p + 5;
-            if (!*line->filename) {
-                error("missing filename");
-                return NULL;
-            }
+        } else if (!strncmp(p, "file optional ./", 16)) {
+            line->filename = p + 16;
+            line->file_is_optional = 1;
+        } else if (!strncmp(p, "file ./", 7)) {
+            line->filename = p + 7;
         } else {
             error("cannot parse line %s", p);
             return NULL;
@@ -79,6 +81,8 @@ static int add_param_arg(const struct param_arg* arg,
     return 0;
 }
 
+// Returns number of files added (this will be 1 for any non-directory) or -1 on
+// error. Note that name may be empty to add basedir itself.
 static int add_file(const char* name, const char* basedir,
                     struct resource_list** inputs_p) {
     char path[strlen(basedir) + strlen(name) + 1];
@@ -88,18 +92,19 @@ static int add_file(const char* name, const char* basedir,
     char input_name[name_len + 7];
     stpcpy(stpcpy(input_name, "files/"), name);
 
+    // If a directory, add every file inside.
+    if (name_len == 0 || name[name_len - 1] == '/') {
+        int rc = resource_list_insert_dir_files(inputs_p, path, input_name);
+        if (rc < 0)
+            return error_errno("directory traversal failed on %s", path);
+        return rc;
+    }
+
     struct resource* res = store_resource_file(path);
     if (!res)
         return -1;
-    struct resource_list* inserted =
-        resource_list_insert(inputs_p, input_name, res);
-    // The flow plan may include distinct references to the same file;
-    // dedupe them here.
-    if (inserted->next && !strcmp(inserted->name, inserted->next->name)) {
-        assert(inserted->res == inserted->next->res);
-        resource_list_remove_and_free(&inserted->next);
-    }
-    return 0;
+    resource_list_insert(inputs_p, input_name, res);
+    return 1;
 }
 
 static void die_usage(const char* arg0) {
@@ -175,8 +180,20 @@ int main(int argc, char** argv) {
         char* name = lines[i].filename;
         if (!name)
             continue;
-        if (add_file(name, basedir, &inputs) < 0)
+        int num_added = add_file(name, basedir, &inputs);
+        if (num_added < 0)
             exit(1);
+        if (num_added == 0 && !lines[i].file_is_optional)
+            die("no files in %s", lines[i].filename);
+    }
+
+    // The flow plan may include distinct references to the same file; dedupe
+    // them here.
+    for (struct resource_list* curr = inputs; curr && curr->next; curr = curr->next) {
+        if (!strcmp(curr->name, curr->next->name)) {
+            assert(curr->res == curr->next->res);
+            resource_list_remove_and_free(&curr->next);
+        }
     }
 
     struct job* job = store_job(inputs);

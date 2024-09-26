@@ -60,6 +60,8 @@ void resource_list_remove_and_free(struct resource_list** list_p) {
 // Global state used by nftw callback each_file().
 static struct resource_list** resources_p;
 static size_t filename_offset;
+static const char* name_prefix;
+static int num_inserted;
 
 static int each_file(const char* filename, const struct stat* /*st*/,
                      int type, struct FTW* /*ftwbuf*/) {
@@ -84,6 +86,13 @@ static int each_file(const char* filename, const struct stat* /*st*/,
     if (!strncmp(name, ".knit/", 6))
         return 0;
 
+    char buf[PATH_MAX];
+    if (*name_prefix) {
+        if (snprintf(buf, PATH_MAX, "%s%s", name_prefix, name) >= PATH_MAX)
+            die("name too long: %s%s", name_prefix, name);
+        name = buf;
+    }
+
     struct resource* res = store_resource_file(filename);
     if (!res) {
         errno = EIO;
@@ -92,11 +101,12 @@ static int each_file(const char* filename, const struct stat* /*st*/,
 
     // We expect resource lists to be short, but building them may be quadratic.
     resource_list_insert(resources_p, name, res);
+    num_inserted++;
     return 0;
 }
 
 int resource_list_insert_dir_files(struct resource_list** list_p,
-                                   const char* dir) {
+                                   const char* dir, const char* prefix) {
     // Assume a reasonable implementation of nftw that preserves dir as the
     // callback filename prefix.
     filename_offset = strlen(dir);
@@ -104,10 +114,12 @@ int resource_list_insert_dir_files(struct resource_list** list_p,
         filename_offset++;
 
     resources_p = list_p;
+    name_prefix = prefix;
+    num_inserted = 0;
     if (nftw(dir, each_file, 16, 0) != 0) {
         while (*resources_p)
             resource_list_remove_and_free(resources_p);
         return -1;
     }
-    return 0;
+    return num_inserted;
 }

@@ -15,7 +15,11 @@ enum value_tag {
 struct value {
     enum value_tag tag;
     union {
-        char* filename;
+        struct {
+            char* filename;
+            unsigned file_optional : 1;
+            unsigned file_dir : 1;
+        };
         struct {
             char* literal;
             size_t literal_len;
@@ -180,7 +184,7 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         return 0;
     case TOKEN_DOTSLASH:
         out->tag = VALUE_FILENAME;
-        if (lex_path(in) < 0)
+        if (lex_path_or_empty(in) < 0)
             return -1;
         out->filename = lex_stuff_null(in);
         return 0;
@@ -277,22 +281,37 @@ static struct input_list* parse_input(struct parse_context* ctx) {
         input->val->dep_implicit_ok = !suppress_implicit_ok;
         if (is_dir(input->name)) {
             if (!is_dir(input->val->dep_output)) {
-                error("input name ends in '/' but dependency output does not");
+                error("input name ends in '/' but dependency output is not directory prefix");
                 return NULL;
             }
             input->val->dep_prefix = 1;
         } else if (is_dir(input->val->dep_output)) {
-            error("dependency output ends in '/' but input name does not");
+            error("dependency output is directory prefix but input name does not end in '/'");
             return NULL;
         }
-    } else if (is_optional) {
-        error("optional input must be a dependency");
-        return NULL;
     } else if (suppress_implicit_ok) {
         error("input suppressing implicit ok must be a dependency");
         return NULL;
+    } else if (input->val->tag == VALUE_FILENAME) {
+        if (is_dir(input->name)) {
+            if (!is_dir(input->val->filename)) {
+                error("input name ends in '/' but filename does not");
+                return NULL;
+            }
+            input->val->file_dir = 1;
+            input->val->file_optional = is_optional;
+        } else if (is_dir(input->val->filename)) {
+            error("filename ends in '/' but input name does not");
+            return NULL;
+        } else if (is_optional) {
+            error("optional file input must end in '/'");
+            return NULL;
+        }
+    } else if (is_optional) {
+        error("optional input must be a dependency or file");
+        return NULL;
     } else if (is_dir(input->name)) {
-        error("input name ends in '/' but value is not a dependency");
+        error("input name ending in '/' must be a dependency or file");
         return NULL;
     }
 
@@ -377,6 +396,14 @@ static int parse_plan_internal(struct parse_context* ctx) {
         }
 
         input_list_override(ctx->bump_p, &step->inputs, inputs);
+
+        for (struct input_list* input = step->inputs;
+             input && input->next; input = input->next) {
+            if (is_dir(input->name) &&
+                    !strncmp(input->next->name, input->name, strlen(input->name)))
+                return error("overlapping inputs %s and %s",
+                             input->name, input->next->name);
+        }
     }
 }
 
@@ -498,6 +525,46 @@ static int populate_input(struct input_list* input, struct resource_list* job_in
     return val->res ? 0 : -1;
 }
 
+char* make_joined_str(struct bump_list** bump_p,
+                      const char* prefix, const char* suffix) {
+    char* buf = bump_alloc(bump_p, strlen(prefix) + strlen(suffix) + 1);
+    stpcpy(stpcpy(buf, prefix), suffix);
+    return buf;
+}
+
+static void expand_input_file_dir(struct bump_list** bump_p,
+                                  struct input_list** input_p,
+                                  struct resource_list* job_inputs) {
+    struct input_list* dir_input = *input_p;
+    // Remove dir_input (that is, *input_p) from the step.
+    *input_p = dir_input->next;
+
+    size_t prefix_len = strlen(dir_input->val->filename) + 6;
+    char prefix[prefix_len + 1];
+    stpcpy(stpcpy(prefix, "files/"), dir_input->val->filename);
+
+    // Add an expanded step input for each job input in the directory of the
+    // dir_input value.
+    for (; job_inputs; job_inputs = job_inputs->next) {
+        int cmp = strncmp(job_inputs->name, prefix, prefix_len);
+        if (cmp < 0) {
+            continue;
+        } else if (cmp > 0) {
+            break;
+        }
+
+        char* suffix = job_inputs->name + prefix_len;
+        char* step_input_name = make_joined_str(bump_p, dir_input->name, suffix);
+        struct input_list* inserted = create_input(bump_p, step_input_name);
+        inserted->val->tag = VALUE_FILENAME;
+        inserted->val->filename =
+            make_joined_str(bump_p, dir_input->val->filename, suffix);
+        inserted->next = *input_p;
+        *input_p = inserted;
+        input_p = &inserted->next;
+    }
+}
+
 static int finalize_flow_job_plan(struct bump_list** bump_p,
                                   struct step_list* plan,
                                   struct resource_list* job_inputs) {
@@ -521,9 +588,18 @@ static int finalize_flow_job_plan(struct bump_list** bump_p,
                 return -1;
         }
 
-        for (struct input_list* input = step->inputs; input; input = input->next)
-            if (populate_input(input, job_inputs) < 0)
+        for (struct input_list** input_p = &step->inputs;
+             *input_p; input_p = &(*input_p)->next) {
+            struct value* val = (*input_p)->val;
+            if (val->tag == VALUE_FILENAME && val->file_dir) {
+                expand_input_file_dir(bump_p, input_p, job_inputs);
+                if (!*input_p) // empty expansion
+                    break;
+            }
+
+            if (populate_input(*input_p, job_inputs) < 0)
                 return -1;
+        }
     }
 
     return 0;
@@ -536,7 +612,7 @@ static void emit_params(struct step_list* step) {
             continue;
         printf("param %s", input->name);
         if (input->val->tag == VALUE_FILENAME)
-            printf("=%s\n", input->val->filename);
+            printf("=./%s\n", input->val->filename);
         else
             printf("\n");
     }
@@ -545,7 +621,9 @@ static void emit_params(struct step_list* step) {
 static void emit_files(struct step_list* step) {
     for (struct input_list* input = step->inputs; input; input = input->next)
         if (input->val->tag == VALUE_FILENAME)
-            printf("file %s\n", input->val->filename);
+            printf("file%s ./%s\n",
+                   input->val->file_optional ? " optional" : "",
+                   input->val->filename);
 }
 
 static void die_usage(const char* arg0) {
