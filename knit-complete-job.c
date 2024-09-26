@@ -19,6 +19,12 @@ static void create_fanout_inputs(size_t fanout_step_pos,
                                  const struct resource_list* outputs,
                                  const char* prefix) {
     do {
+        // When depending on an entire production, skip special .knit/ outputs.
+        if (!*prefix && !strncmp(outputs->name, ".knit/", 6)) {
+            outputs = outputs->next;
+            continue;
+        }
+
         char* name = outputs->name + strlen(prefix);
         size_t input_pos = create_session_input(fanout_step_pos, name);
         struct session_input* si = active_inputs[input_pos];
