@@ -257,7 +257,8 @@ parse_process_value:
 
 static struct input_list* parse_input(struct parse_context* ctx) {
     struct lex_input* in = &ctx->in;
-    if (lex_path(in) < 0)
+    if (!try_read_token(in, TOKEN_ENVVAR) &&
+            lex_path(in) < 0)
         return NULL;
     struct input_list* input = create_input(ctx->bump_p, lex_stuff_null(in));
 

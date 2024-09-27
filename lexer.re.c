@@ -42,10 +42,12 @@ enum token lex(struct lex_input* in) {
             re2c:yyfill:enable = 0;
         */
         /*!rules:re2c
+            envvar = [$][a-zA-Z_][a-zA-Z0-9_]*;
             ident = [a-zA-Z_][a-zA-Z0-9_.@-]*;
             comment = [ ]*[#][^\n\x00]*;
 
             comment? [\r]?[\n] { in->lineno++; in->line_p = in->curr; token = TOKEN_NEWLINE; break; }
+            envvar { token = TOKEN_ENVVAR; break; }
             [ ]+ { token = TOKEN_SPACE; break; }
             [!] { token = TOKEN_EXCLAMATION; break; }
             ["] { token = TOKEN_QUOTE; break; }
@@ -56,6 +58,7 @@ enum token lex(struct lex_input* in) {
             [\x00] { token = TOKEN_EOF; break; }
             * { token = TOKEN_ERROR; break; }
         */
+        // Exclude ident from global rules to avoid ambiguity in lex_keyword().
         // TODO loosen ident to accommodate non-ASCII?
         /*!use:re2c
             ident { token = TOKEN_IDENT; break; }

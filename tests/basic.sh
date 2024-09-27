@@ -15,9 +15,9 @@ step params: params
     limit = ./limit
 
 step a: partial bash
-    script = "seq $(< in/start) $(< in/limit) > out/data"
+    script = "seq $(< in/start) $limit > out/data"
     start = params:start
-    limit = params:limit
+    $limit = params:limit
 
 step b: partial bash
     script = "cp -RL in/* out"

@@ -10,12 +10,12 @@ static char* joindir(const char* dir, const char* suffix) {
     return buf;
 }
 
-void mkdir_or_die(const char* dir) {
+static void mkdir_or_die(const char* dir) {
     if (mkdir(dir, 0777) < 0)
         die_errno("cannot mkdir %s", dir);
 }
 
-int mkparents(const char* dir, const char* filename) {
+static int mkparents(const char* dir, const char* filename) {
     char subdir[PATH_MAX];
     for (int i = 0; filename[i] != '\0'; i++) {
         if (i >= PATH_MAX)
@@ -27,6 +27,42 @@ int mkparents(const char* dir, const char* filename) {
         }
         subdir[i] = filename[i];
     }
+    return 0;
+}
+
+static int write_in_full(int fd, const char* buf, size_t size) {
+    size_t offset = 0;
+    while (offset < size) {
+        int n = xwrite(fd, buf + offset, size - offset);
+        if (n < 0)
+            return -1;
+        offset += n;
+    }
+    return 0;
+}
+
+static int write_environ(int fd, const char* name, const char* buf, size_t size) {
+    if (memchr(buf, '\0', size))
+        die("NUL in environment variable %s", name);
+    if (write_in_full(fd, name, strlen(name)) < 0 ||
+        write_in_full(fd, "=", 1) < 0 ||
+        write_in_full(fd, buf, size) < 0 ||
+        write_in_full(fd, "", 1) < 0)
+        die_errno("write failed to environ");
+    return 0;
+}
+
+static int write_input(const char* inputs_dir, const char* name,
+                       const char* buf, size_t size) {
+    if (mkparents(inputs_dir, name) < 0)
+        return -1;
+    int fd = creat(joindir(inputs_dir, name), 0666);
+    if (fd < 0)
+        return error_errno("cannot open %s/%s", inputs_dir, name);
+    if (write_in_full(fd, buf, size) < 0)
+        return error_errno("write failed %s/%s", inputs_dir, name);
+    if (close(fd) < 0)
+        return error_errno("close failed %s/%s", inputs_dir, name);
     return 0;
 }
 
@@ -54,29 +90,29 @@ int main(int argc, char** argv) {
         die("path too long: %s/work/in", dir);
     mkdir_or_die(inputs_dir);
 
+    int env_fd = -1;
     for (struct resource_list* input = job->inputs; input; input = input->next) {
-        if (mkparents(inputs_dir, input->name) < 0)
-            exit(1);
-
         size_t size;
         char* buf = read_object_of_type(&input->res->object.oid, OBJ_RESOURCE, &size);
         if (!buf)
             exit(1);
 
-        int fd = creat(joindir(inputs_dir, input->name), 0666);
-        if (fd < 0)
-            die_errno("cannot open %s/%s", inputs_dir, input->name);
+        if (*input->name == '$') {
+            if (env_fd == -1) {
+                env_fd = creat(joindir(dir, "environ"), 0666);
+                if (env_fd < 0)
+                    die_errno("cannot open %s/environ", dir);
+            }
 
-        size_t offset = 0;
-        while (offset < size) {
-            int n = xwrite(fd, buf + offset, size - offset);
-            if (n < 0)
-                die_errno("write failed %s/%s", inputs_dir, input->name);
-            offset += n;
+            if (write_environ(env_fd, input->name + 1, buf, size))
+                exit(1);
+        } else {
+            if (write_input(inputs_dir, input->name, buf, size) < 0)
+                exit(1);
         }
 
-        if (close(fd) < 0)
-            die_errno("close failed %s/%s", inputs_dir, input->name);
         free(buf);
     }
+    if (env_fd >= 0 && close(env_fd) < 0)
+        die_errno("close failed %s/environ", dir);
 }
