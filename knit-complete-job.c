@@ -103,10 +103,8 @@ static void resolve_dependencies(size_t step_pos,
         // The production and dependency outputs match.
 
         // If the dependency is a prefix, create a fanout step whose inputs are
-        // all matching production outputs. However if there is only one
-        // matching output we can skip creating the fanout step.
-        if (sd_hasflag(dep, SD_PREFIX) && outputs->next &&
-                has_prefix(outputs->next->name, dep->output)) {
+        // all matching production outputs.
+        if (sd_hasflag(dep, SD_PREFIX)) {
             assert(input);
             size_t fanout_step_pos = add_session_fanout_step();
             create_fanout_inputs(fanout_step_pos, outputs, dep->output);
