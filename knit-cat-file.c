@@ -20,6 +20,7 @@ static void pretty_production(const struct production* prd) {
 
 static void die_usage(char* arg0) {
     fprintf(stderr, "usage: %s <type> <object>\n", arg0);
+    fprintf(stderr, "       %s (-p | -t) <object>\n", arg0);
     exit(1);
 }
 
@@ -27,12 +28,11 @@ int main(int argc, char** argv) {
     if (argc != 3)
         die_usage(argv[0]);
 
-    int pretty = !strcmp(argv[1], "-p");
     struct object* obj = peel_spec(argv[2], strlen(argv[2]));
     if (!obj)
         exit(1);
 
-    if (pretty) {
+    if (!strcmp(argv[1], "-p")) {
         if (obj->typesig == OBJ_RESOURCE || obj->typesig == OBJ_INVOCATION) {
             // Note we will read the object from storage again below. This is
             // probably fine because pretty is normally for interactive use.
@@ -52,6 +52,9 @@ int main(int argc, char** argv) {
         } else {
             die("don't know how to pretty print %s", strtypesig(obj->typesig));
         }
+    } else if (!strcmp(argv[1], "-t")) {
+        puts(strtypesig(obj->typesig));
+        return 0;
     } else if (obj->typesig != make_typesig(argv[1])) {
         die("object %s is type %s, expected %s", oid_to_hex(&obj->oid),
             strtypesig(obj->typesig), argv[1]);
