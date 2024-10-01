@@ -20,13 +20,19 @@ digraph {
         scratch;
     }
 
-    "plan.knit" -> session [label="parse\nbuild"];
+    "plan.knit" -> "params/files" [label=emit];
+    "plan.knit" -> "flow job" [label=plan];
+    "params/files" -> "flow job";
+    "flow job" -> instructions [label=parse];
+    instructions -> session [label=build];
     "plan.knit" -> resources;
     step -> job [label=compile];
     job -> cache [label=check];
     production -> step [label=complete];
     session -> step [label=list];
     session -> invocation [label=close];
+
+    { rank=same; "params/files"; "flow job"; instructions; }
 
     // dispatch
     job -> scratch [label="unpack\nexplode\nextract"];
