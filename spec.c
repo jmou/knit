@@ -84,8 +84,8 @@ static int find_sigil_braced(char* spec, size_t len, char sigil) {
 
     char* p = &spec[len - 3];
     for (; p >= spec; p--)
-        if (p[0] == sigil && p[1] == '{')
-            return p - spec;
+        if (p[1] == '{')
+            return p[0] == sigil ? p - spec : -1;
     return -1;
 }
 
