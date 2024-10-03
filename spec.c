@@ -55,9 +55,9 @@ static struct object* deref_type(struct object* obj, uint32_t typesig) {
         if (parse_invocation(inv) < 0)
             return NULL;
         // TODO how to handle missing production?
-        if (!inv->terminal->prd || parse_production(inv->terminal->prd) < 0)
+        if (!inv->entries->prd || parse_production(inv->entries->prd) < 0)
             return NULL;
-        return &inv->terminal->prd->object;
+        return &inv->entries->prd->object;
     } else if (obj->typesig == OBJ_PRODUCTION) {
         struct production* prd = (struct production*)obj;
         if (parse_production(prd) < 0)

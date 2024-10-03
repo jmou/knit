@@ -14,7 +14,7 @@ fi
     echo -n 'session '
     knit-hash-object -t resource -w "$KNIT_DIR/sessions/$session"
     echo
-    knit-list-steps --porcelain "$session" | while read -r step state job prd name; do
+    knit-list-steps --porcelain --reverse "$session" | while read -r step state job prd name; do
         echo "$state $job $prd $name"
     done
 } | knit-hash-object -t invocation -w --stdin >> "$KNIT_DIR/history"

@@ -42,7 +42,7 @@ int parse_invocation_bytes(struct invocation* inv, void* data, size_t size) {
         memcpy(entry->name, &p[132], eol - &p[132]);
 
         p = eol + 1;
-        *entry_p = inv->terminal = entry;
+        *entry_p = entry;
         entry_p = &entry->next;
     }
     if (p != end)

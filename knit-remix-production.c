@@ -98,10 +98,10 @@ int main(int argc, char** argv) {
             final_inv = peel_invocation(optarg);
             if (!final_inv || parse_invocation(final_inv) < 0)
                 exit(1);
-            if (final_inv->terminal->prd) {
-                if (parse_production(final_inv->terminal->prd) < 0)
+            if (final_inv->entries->prd) {
+                if (parse_production(final_inv->entries->prd) < 0)
                     exit(1);
-                outputs = deep_copy(final_inv->terminal->prd->outputs);
+                outputs = deep_copy(final_inv->entries->prd->outputs);
             }
             break;
         default:

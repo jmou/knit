@@ -6,16 +6,16 @@
 #include "resource.h"
 
 struct invocation_entry_list {
+    struct invocation_entry_list* next;
     char* name;
+    // job and prd will be NULL if the step has unmet dependencies.
     struct job* job;
     struct production* prd;
-    struct invocation_entry_list* next;
 };
 
 struct invocation {
     struct object object;
     struct invocation_entry_list* entries;
-    struct invocation_entry_list* terminal;
 };
 
 struct invocation* get_invocation(const struct object_id* oid);

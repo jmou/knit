@@ -3,6 +3,7 @@
 
 static int debug;
 static int porcelain;
+static int reverse;
 static int wants_available;
 static int wants_blocked;
 static int wants_fulfilled;
@@ -76,10 +77,34 @@ static void emit(size_t step_pos, struct session_step* ss) {
     }
 }
 
+static int emit_step_if_wanted(size_t step_pos) {
+    struct session_step* ss = active_steps[step_pos];
+    if (ss_hasflag(ss, SS_JOB)) {
+        if (ss_hasflag(ss, SS_FINAL)) {
+            if (wants_fulfilled)
+                emit(step_pos, ss);
+        } else {
+            if (wants_available)
+                emit(step_pos, ss);
+        }
+    } else {
+        if (ss_hasflag(ss, SS_FINAL)) {
+            if (wants_unmet)
+                emit(step_pos, ss);
+        } else {
+            if (!ss->num_unresolved)
+                return error("step not blocked but has no job: %s", ss->name);
+            if (wants_blocked)
+                emit(step_pos, ss);
+        }
+    }
+    return 0;
+}
+
 static void die_usage(char* arg0) {
     int len = strlen(arg0);
     fprintf(stderr, "usage: %*s [--available] [--blocked] [--fulfilled] [--unmet]\n", len, arg0);
-    fprintf(stderr, "       %*s [--porcelain|--debug] <session>\n", len, "");
+    fprintf(stderr, "       %*s [--porcelain|--debug] [--reverse] <session>\n", len, "");
     exit(1);
 }
 
@@ -93,6 +118,8 @@ int main(int argc, char** argv) {
             debug = 1;
         } else if (!strcmp(flag, "--porcelain")) {
             porcelain = 1;
+        } else if (!strcmp(flag, "--reverse")) {
+            reverse = 1;
         } else if (!strcmp(flag, "--available")) {
             wants_available = 1;
             wants_all = 0;
@@ -125,33 +152,21 @@ int main(int argc, char** argv) {
         printf("counts%10s%-3zu %-3zu %-3zu\n",
                "", num_active_steps, num_active_inputs, num_active_deps);
 
-    for (size_t i = 0; i < num_active_steps; i++) {
-        struct session_step* ss = active_steps[i];
-        if (ss_hasflag(ss, SS_JOB)) {
-            if (ss_hasflag(ss, SS_FINAL)) {
-                if (wants_fulfilled)
-                    emit(i, ss);
-            } else {
-                if (wants_available)
-                    emit(i, ss);
-            }
-        } else {
-            if (ss_hasflag(ss, SS_FINAL)) {
-                if (wants_unmet)
-                    emit(i, ss);
-            } else {
-                if (!ss->num_unresolved)
-                    rc = error("step not blocked but has no job: %s", ss->name);
-                if (wants_blocked)
-                    emit(i, ss);
-            }
+    if (reverse) {
+        if (debug && wants_all) {
+            for (size_t i = num_active_fanout; i > 0; i--)
+                emit(num_active_steps + i - 1, NULL);
+        }
+        for (size_t i = num_active_steps; i > 0; i--)
+            rc |= emit_step_if_wanted(i - 1);
+    } else {
+        for (size_t i = 0; i < num_active_steps; i++)
+            rc |= emit_step_if_wanted(i);
+        if (debug && wants_all) {
+            for (size_t i = 0; i < num_active_fanout; i++)
+                emit(num_active_steps + i, NULL);
         }
     }
 
-    if (debug && wants_all) {
-        for (size_t i = 0; i < num_active_fanout; i++)
-            emit(num_active_steps + i, NULL);
-    }
-
-    return rc < 0 ? 1 : 0;
+    return rc ? 1 : 0;
 }
