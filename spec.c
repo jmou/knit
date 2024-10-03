@@ -54,7 +54,6 @@ static struct object* deref_type(struct object* obj, uint32_t typesig) {
         struct invocation* inv = (struct invocation*)obj;
         if (parse_invocation(inv) < 0)
             return NULL;
-        // TODO how to handle missing production?
         if (!inv->entries->prd || parse_production(inv->entries->prd) < 0)
             return NULL;
         return &inv->entries->prd->object;
@@ -67,13 +66,25 @@ static struct object* deref_type(struct object* obj, uint32_t typesig) {
                 return NULL;
             return &prd->job->object;
         } else if (typesig == OBJ_INVOCATION) {
-            // TODO how to handle missing invocation?
             if (!prd->inv || parse_invocation(prd->inv) < 0)
                 return NULL;
             return &prd->inv->object;
         }
     }
     return NULL;
+}
+
+static struct object* peel_spec_and_deref(char* spec, size_t len, uint32_t typesig) {
+    struct object* obj = peel_spec(spec, len);
+    return obj ? deref_type(obj, typesig) : NULL;
+}
+
+static struct invocation* peel_spec_and_deref_invocation(char* spec, size_t len) {
+    struct object* obj = peel_spec_and_deref(spec, len, OBJ_INVOCATION);
+    if (!obj)
+        return NULL;
+    struct invocation* inv = (struct invocation*)obj;
+    return inv && !parse_invocation(inv) ? inv : NULL;
 }
 
 // Find position of sigil that is followed by a value within braces, or else -1.
@@ -89,8 +100,28 @@ static int find_sigil_braced(char* spec, size_t len, char sigil) {
     return -1;
 }
 
-static struct object* peel_deref(char* spec, size_t len) {
-    // Try to peel a dereference of the form ^{type}.
+// Find position of sigil that is optionally followed by a non-negative number,
+// or else -1. If a number is present it will be written to *num; otherwise it
+// will be ignored.
+static int find_sigil_numeric(char* spec, size_t len, char sigil, unsigned* num) {
+    if (len < 2)
+        return -1;
+    char* delim = spec + len - 1;
+    while (delim > spec && isdigit(*delim))
+        delim--;
+    if (delim == spec || *delim != sigil)
+        return -1;
+
+    if (delim + 1 < spec + len) {
+        *num = 0;
+        for (char* c = delim + 1; c < spec + len; c++)
+            *num = 10 * (*num) + *c - '0';
+    }
+
+    return delim - spec;
+}
+
+static struct object* peel_type(char* spec, size_t len) {
     int inner_len = find_sigil_braced(spec, len, '^');
     if (inner_len < 0 || inner_len == (int)len)
         return NULL;
@@ -99,66 +130,79 @@ static struct object* peel_deref(char* spec, size_t len) {
     spec[len - 1] = '\0';
     uint32_t typesig = make_typesig(&spec[inner_len + 2]);
 
-    struct object* inner = peel_spec(spec, inner_len);
-    if (!inner)
-        return NULL;
-    return deref_type(inner, typesig);
+    return peel_spec_and_deref(spec, inner_len, typesig);
 }
 
-static struct object* peel_step(char* spec, size_t len) {
-    // Try to peel an invocation step of the form @{step}.
-    int inner_len = find_sigil_braced(spec, len, '@');
+static struct object* peel_type_job(char* spec, size_t len) {
+    if (len < 1 || spec[len - 1] != '^')
+        return NULL;
+    return peel_spec_and_deref(spec, len - 1, OBJ_JOB);
+}
+
+static struct object* peel_step_name(char* spec, size_t len) {
+    int inner_len = find_sigil_braced(spec, len, '=');
     if (inner_len < 0 || inner_len == (int)len)
         return NULL;
     char* step = &spec[inner_len + 2];
     size_t step_len = len - inner_len - 3;
 
-    struct object* inner = peel_spec(spec, inner_len);
-    if (!inner)
-        return NULL;
-    inner = deref_type(inner, OBJ_INVOCATION);
-    if (!inner)
-        return NULL;
-    struct invocation* inv = (struct invocation*)inner;
-    if (parse_invocation(inv) < 0)
+    struct invocation* inv = peel_spec_and_deref_invocation(spec, inner_len);
+    if (!inv)
         return NULL;
 
-    char* end;
-    errno = 0;
-    long pos = strtol(step, &end, 10);
-    if (end != step + step_len || errno) { // non-numeric step name
-        for (struct invocation_entry_list* entry = inv->entries; entry; entry = entry->next) {
-            if (strlen(entry->name) == step_len && !memcmp(entry->name, step, step_len))
-                return &entry->prd->object;
-        }
-        return NULL;
+    for (struct invocation_entry_list* entry = inv->entries; entry; entry = entry->next) {
+        if (strlen(entry->name) == step_len && !memcmp(entry->name, step, step_len))
+            return &entry->prd->object;
     }
+    return NULL;
+}
 
-    if (pos == 0) {
-        warning("@{0} is invalid; first entry is @{1}");
+static struct object* peel_step_pos(char* spec, size_t len) {
+    unsigned pos = 1;
+    int inner_len = find_sigil_numeric(spec, len, '=', &pos);
+    if (inner_len < 0)
         return NULL;
-    } else if (pos < 0) {
-        long num_entries = 0;
-        for (struct invocation_entry_list* entry = inv->entries; entry; entry = entry->next)
-            num_entries++;
-        if (pos + num_entries < 0) {
-            warning("negative position %ld too large for %ld steps of invocation %s",
-                    pos, num_entries, oid_to_hex(&inv->object.oid));
-            return NULL;
-        }
-        pos += num_entries;
-    } else {
-        pos--;
-    }
+    if (pos == 0)
+        die("=0 is invalid");
+
+    struct invocation* inv = peel_spec_and_deref_invocation(spec, inner_len);
+    if (!inv)
+        return NULL;
+
     struct invocation_entry_list* entry = inv->entries;
-    for (long i = 0; i < pos && entry; i++)
+    for (unsigned i = 1; i < pos && entry; i++) // pos is 1-indexed
         entry = entry->next;
     if (!entry) {
-        warning("step position %ld too large for invocation %s",
-                pos, oid_to_hex(&inv->object.oid));
-        return NULL;
+        die("step position %d too large for invocation %s",
+            pos, oid_to_hex(&inv->object.oid));
     }
     return &entry->prd->object;
+}
+
+static struct object* peel_chain(char* spec, size_t len) {
+    unsigned depth = 1;
+    int inner_len = find_sigil_numeric(spec, len, '~', &depth);
+    if (inner_len < 0)
+        return NULL;
+
+    struct invocation* inv = peel_spec_and_deref_invocation(spec, inner_len);
+    if (!inv)
+        return NULL;
+
+    for (unsigned i = 0; i < depth; i++) {
+        if (parse_invocation(inv) < 0)
+            return NULL;
+        struct production* prd =
+            (struct production*)deref_type(&inv->object, OBJ_PRODUCTION);
+        if (!prd || parse_production(prd) < 0)
+            return NULL;
+        inv = (struct invocation*)deref_type(&prd->object, OBJ_INVOCATION);
+        if (!inv) {
+            die("cannot unwrap %u invocations for invocation %s",
+                depth, oid_to_hex(&inv->object.oid));
+        }
+    }
+    return &inv->object;
 }
 
 static struct object* peel_path(char* spec, size_t len) {
@@ -178,14 +222,14 @@ static struct object* peel_path(char* spec, size_t len) {
             return NULL;
     }
 
-    // Without a path, just return the resourceful object.
-    if (delim + 1 == spec + len) {
-        if (inner->typesig != OBJ_PRODUCTION && inner->typesig != OBJ_JOB) {
-            warning(":path invalid on %s", strtypesig(inner->typesig));
-            return NULL;
-        }
-        return inner;
+    if (inner->typesig != OBJ_PRODUCTION && inner->typesig != OBJ_JOB) {
+        die("%*s invalid on %s %s", (int)(spec + len - delim), delim,
+            strtypesig(inner->typesig), oid_to_hex(&inner->oid));
     }
+
+    // Without a path, just return the resourceful object.
+    if (delim + 1 == spec + len)
+        return inner;
 
     struct resource_list* resources;
     if (inner->typesig == OBJ_JOB) {
@@ -193,23 +237,20 @@ static struct object* peel_path(char* spec, size_t len) {
         if (parse_job(job) < 0)
             return NULL;
         resources = job->inputs;
-    } else if (inner->typesig == OBJ_PRODUCTION) {
+    } else {
+        assert(inner->typesig == OBJ_PRODUCTION);
         struct production* prd = (struct production*)inner;
         if (parse_production(prd) < 0)
             return NULL;
         resources = prd->outputs;
-    } else {
-        warning("%s specified on type %s", delim, strtypesig(inner->typesig));
-        return NULL;
     }
 
     for (; resources; resources = resources->next) {
         if (!strcmp(resources->name, delim + 1))
             return &resources->res->object;
     }
-    warning("'%s' not found in %s %s",
-            delim + 1, strtypesig(inner->typesig), oid_to_hex(&inner->oid));
-    return NULL;
+    die("'%s' not found in %s %s",
+        delim + 1, strtypesig(inner->typesig), oid_to_hex(&inner->oid));
 }
 
 static struct object* invocation_history_last() {
@@ -219,14 +260,11 @@ static struct object* invocation_history_last() {
 
     int fd = open(filename, O_RDONLY);
     if (fd < 0)
-        warning_errno("failed to open %s", filename);
+        die_errno("failed to open %s", filename);
 
     char buf[KNIT_HASH_HEXSZ + 1];
-    if (lseek(fd, -(off_t)sizeof(buf), SEEK_END) < 0) {
-        close(fd);
-        warning_errno("lseek (short history file?)");
-        return NULL;
-    }
+    if (lseek(fd, -(off_t)sizeof(buf), SEEK_END) < 0)
+        die_errno("lseek (short history file?)");
 
     int nr;
     size_t offset = 0;
@@ -240,16 +278,12 @@ static struct object* invocation_history_last() {
     }
     close(fd);
 
-    if (buf[sizeof(buf) - 1] != '\n') {
-        warning("corrupted history line");
-        return NULL;
-    }
+    if (buf[sizeof(buf) - 1] != '\n')
+        die("corrupted history line");
 
     struct object_id oid;
-    if (hex_to_oid(buf, &oid) < 0) {
-        warning("bad invocation history hash");
-        return NULL;
-    }
+    if (hex_to_oid(buf, &oid) < 0)
+        die("bad invocation history hash");
     return &get_invocation(&oid)->object;
 }
 
@@ -257,13 +291,28 @@ static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
     struct object* ret;
     struct object_id oid;
 
-    if ((ret = peel_deref(spec, len)))
-        return ret;
-
-    if ((ret = peel_step(spec, len)))
-        return ret;
-
+    // Job input or production output of the form :path.
     if ((ret = peel_path(spec, len)))
+        return ret;
+
+    // Dereference of the form ^{type}.
+    if ((ret = peel_type(spec, len)))
+        return ret;
+
+    // Shorthand of ^ for ^{job}.
+    if ((ret = peel_type_job(spec, len)))
+        return ret;
+
+    // Production from invocation step of the form ={step}.
+    if ((ret = peel_step_name(spec, len)))
+        return ret;
+
+    // Production from invocation step by = optionally followed by a number.
+    if ((ret = peel_step_pos(spec, len)))
+        return ret;
+
+    // Chain of invocations by ~ optionally followed by a number.
+    if ((ret = peel_chain(spec, len)))
         return ret;
 
     if (len == KNIT_HASH_HEXSZ && !hex_to_oid(spec, &oid))
@@ -285,7 +334,7 @@ static struct object* peel_spec_of_type(char* spec, size_t len, uint32_t typesig
         error("could not parse %s %.*s", strtypesig(typesig), (int)len, spec);
         return NULL;
     }
-    if (!(ret = deref_type(ret, typesig)))
+    if (ret->typesig != typesig)
         error("object %s not of type %s", oid_to_hex(&ret->oid), strtypesig(typesig));
     return ret;
 }
