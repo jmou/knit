@@ -27,7 +27,7 @@ struct object_id* oid_of_hash(uint8_t* hash);
 uint32_t make_typesig(const char* type);
 char* strtypesig(uint32_t typesig);
 
-int write_object(uint32_t typesig, void* data, size_t size,
+int write_object(uint32_t typesig, const void* data, size_t size,
                  struct object_id* out_oid);
 void* read_object(const struct object_id* oid, uint32_t* typesig, size_t* size);
 void* read_object_of_type(const struct object_id* oid, uint32_t typesig, size_t* size);

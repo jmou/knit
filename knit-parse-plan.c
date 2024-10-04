@@ -84,18 +84,33 @@ static struct input_list* input_list_override(struct bump_list** bump_p,
                                               struct input_list* override) {
     struct input_list* added = NULL;
     struct input_list* orig = *inputs_p;
+    int discard_orig = 0;
     while (override && orig) {
-        int cmp = strcmp(override->name, orig->name);
+        size_t orig_name_len = strlen(orig->name);
+        assert(orig_name_len > 0);
+        int is_prefix = orig->name[orig_name_len - 1] == '/';
+        int cmp = is_prefix
+            ? strncmp(override->name, orig->name, orig_name_len)
+            : strcmp(override->name, orig->name);
         if (cmp == 0) {
             *inputs_p = override;
             inputs_p = &override->next;
-            orig = orig->next;
             override = override->next;
+            // When comparing to a prefix that may match multiple times, defer
+            // iterating to orig->next.
+            if (is_prefix) {
+                discard_orig = 1;
+            } else {
+                orig = orig->next;
+            }
         } else if (cmp < 0) {
             added = override;
             *inputs_p = override;
             inputs_p = &override->next;
             override = override->next;
+        } else if (discard_orig) {
+            orig = orig->next;
+            discard_orig = 0;
         } else {
             // Copy from the original inputs_p when we need to rewrite its next.
             struct input_list* copy = bump_alloc(bump_p, sizeof(*copy));
@@ -108,6 +123,9 @@ static struct input_list* input_list_override(struct bump_list** bump_p,
     if (override) {
         added = override;
         *inputs_p = override;
+    } else if (discard_orig) {
+        assert(orig);
+        *inputs_p = orig->next;
     } else {
         *inputs_p = orig;
     }
@@ -311,8 +329,8 @@ static struct input_list* parse_input(struct parse_context* ctx) {
     } else if (is_optional) {
         error("optional input must be a dependency or file");
         return NULL;
-    } else if (is_dir(input->name)) {
-        error("input name ending in '/' must be a dependency or file");
+    } else if (is_dir(input->name) && input->val->tag != VALUE_HOLE) {
+        error("input name ending in '/' cannot be a string literal");
         return NULL;
     }
 
@@ -389,8 +407,8 @@ static int parse_plan_internal(struct parse_context* ctx) {
             struct input_list* new_input = parse_input(ctx);
             if (!new_input)
                 return -1;
-            if (!is_partial && new_input->val->tag == VALUE_HOLE)
-                return error("step input cannot be a hole");
+            if (new_input->val->tag == VALUE_HOLE && !is_partial && !step->is_params)
+                return error("non-params step input cannot be a hole");
 
             if (input_list_insert(&inputs, new_input))
                 return -1;
@@ -511,7 +529,7 @@ static int populate_input(struct input_list* input, struct resource_list* job_in
 
     switch (val->tag) {
     case VALUE_HOLE:
-        return error("unfilled hole");
+        return error("unfilled hole %s", input->name);
     case VALUE_DEPENDENCY:
         return 0;
     case VALUE_LITERAL:
@@ -566,6 +584,34 @@ static void expand_input_file_dir(struct bump_list** bump_p,
     }
 }
 
+static int finalize_flow_job_step(struct bump_list** bump_p,
+                                  struct step_list* step,
+                                  struct resource_list* job_inputs) {
+    // Represent nocache as a special input so it is part of the job id.
+    if (step->is_nocache) {
+        struct input_list* input = create_input(bump_p, ".knit/nocache");
+        input->val->tag = VALUE_LITERAL;
+        input->val->literal = NULL;
+        input->val->literal_len = 0;
+        if (input_list_insert(&step->inputs, input))
+            return -1;
+    }
+
+    for (struct input_list** input_p = &step->inputs;
+         *input_p; input_p = &(*input_p)->next) {
+        struct value* val = (*input_p)->val;
+        if (val->tag == VALUE_FILENAME && val->file_dir) {
+            expand_input_file_dir(bump_p, input_p, job_inputs);
+            if (!*input_p) // empty expansion
+                break;
+        }
+
+        if (populate_input(*input_p, job_inputs) < 0)
+            return -1;
+    }
+    return 0;
+}
+
 static int finalize_flow_job_plan(struct bump_list** bump_p,
                                   struct step_list* plan,
                                   struct resource_list* job_inputs) {
@@ -579,28 +625,8 @@ static int finalize_flow_job_plan(struct bump_list** bump_p,
         return error("params step does not declare %s", added->name);
 
     for (struct step_list* step = plan; step; step = step->next) {
-        // Represent nocache as a special input so it is part of the job id.
-        if (step->is_nocache) {
-            struct input_list* input = create_input(bump_p, ".knit/nocache");
-            input->val->tag = VALUE_LITERAL;
-            input->val->literal = NULL;
-            input->val->literal_len = 0;
-            if (input_list_insert(&step->inputs, input))
-                return -1;
-        }
-
-        for (struct input_list** input_p = &step->inputs;
-             *input_p; input_p = &(*input_p)->next) {
-            struct value* val = (*input_p)->val;
-            if (val->tag == VALUE_FILENAME && val->file_dir) {
-                expand_input_file_dir(bump_p, input_p, job_inputs);
-                if (!*input_p) // empty expansion
-                    break;
-            }
-
-            if (populate_input(*input_p, job_inputs) < 0)
-                return -1;
-        }
+        if (finalize_flow_job_step(bump_p, step, job_inputs) < 0)
+            return error("in step %s", step->name);
     }
 
     return 0;

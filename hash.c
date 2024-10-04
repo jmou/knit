@@ -121,7 +121,7 @@ struct object_header {
     uint32_t size;
 };
 
-int write_object(uint32_t typesig, void* data, size_t size,
+int write_object(uint32_t typesig, const void* data, size_t size,
                  struct object_id* out_oid) {
     struct object_header hdr = {
         .typesig = ntohl(typesig),

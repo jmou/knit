@@ -1,13 +1,11 @@
 #include "job.h"
 #include "resource.h"
 
-#include <limits.h>
-
-#define MAX_ARGS 512
-
-struct param_arg {
+struct param_arg_list {
+    struct param_arg_list* next;
     char* name;
-    struct resource* res;
+    char* value;
+    unsigned is_path : 1;
 };
 
 struct input_line {
@@ -15,6 +13,18 @@ struct input_line {
     char* filename;
     unsigned file_is_optional : 1;
 };
+
+// Returns <0, 0, or >0 similar to strcmp. If path_or_dir ends in '/' we only
+// compare against the prefix of filepath (that is, is filepath inside
+// path_or_dir); otherwise we compare the entire string. This is particularly
+// useful for matching against param names.
+static int path_or_dir_cmp(const char* path_or_dir, const char* filepath) {
+    size_t path_or_dir_len = strlen(path_or_dir);
+    assert(path_or_dir_len > 0);
+    return path_or_dir[path_or_dir_len - 1] == '/'
+        ? strncmp(path_or_dir, filepath, path_or_dir_len)
+        : strcmp(path_or_dir, filepath);
+}
 
 static struct input_line* parse_lines(char* buf, size_t size, size_t* num_lines) {
     char* p = buf;
@@ -58,12 +68,12 @@ static struct input_line* parse_lines(char* buf, size_t size, size_t* num_lines)
     return lines;
 }
 
-static int add_param_arg(const struct param_arg* arg,
+static int add_param_arg(const struct param_arg_list* arg,
                          struct input_line* lines, size_t num_lines,
                          struct resource_list** inputs_p) {
     size_t j;
     for (j = 0; j < num_lines; j++) {
-        if (!strcmp(lines[j].param, arg->name))
+        if (lines[j].param && !path_or_dir_cmp(lines[j].param, arg->name))
             break;
     }
     if (j == num_lines)
@@ -72,12 +82,36 @@ static int add_param_arg(const struct param_arg* arg,
     // the file unless it is referenced elsewhere.
     lines[j].filename = NULL;
 
-    char input_name[strlen(arg->name) + 8];
+    size_t name_len = strlen(arg->name);
+    int is_prefix = arg->name[name_len - 1] == '/';
+
+    if (arg->next && !path_or_dir_cmp(arg->name, arg->next->name))
+        return error("overlapping params %s and %s",
+                     arg->name, arg->next->name);
+
+    char input_name[name_len + 8];
     stpcpy(stpcpy(input_name, "params/"), arg->name);
-    struct resource_list* inserted =
-        resource_list_insert(inputs_p, input_name, arg->res);
-    if (inserted->next && !strcmp(inserted->name, inserted->next->name))
-        return error("duplicate param %s", arg->name);
+
+    struct resource* res;
+    if (!arg->is_path) {
+        if (is_prefix)
+            return error("param ending in '/' should be a directory; use -P");
+        res = store_resource(arg->value, strlen(arg->value));
+    } else if (!is_prefix) {
+        res = store_resource_file(arg->value);
+    } else {
+        int num_added =
+            resource_list_insert_dir_files(inputs_p, arg->value, input_name);
+        if (num_added < 0)
+            return error_errno("directory traversal failed on %s", arg->value);
+        if (num_added == 0)
+            warning("empty directory for param %s", arg->name);
+        return 0;
+    }
+    if (!res)
+        return -1;
+    resource_list_insert(inputs_p, input_name, res);
+
     return 0;
 }
 
@@ -108,39 +142,38 @@ static int add_file(const char* name, const char* basedir,
 }
 
 static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s [(-p|-P) <param>=<value>]... <plan>\n", arg0);
+    fprintf(stderr, "usage: %s [(-p|-P) <param>=<value>]... <plan> < <params-files>\n", arg0);
     exit(1);
 }
 
 int main(int argc, char** argv) {
-    struct param_arg args[MAX_ARGS];
-    size_t num_args = 0;
+    struct param_arg_list* args = NULL;
 
     int opt;
     while ((opt = getopt(argc, argv, "p:P:")) != -1) {
         char* value;
-        struct param_arg* arg;
+        struct param_arg_list* arg;
+        struct param_arg_list** list_p;
         switch (opt) {
         case 'p':
         case 'P':
-            if (num_args == MAX_ARGS)
-                die("too many param args");
-            arg = &args[num_args++];
-
             if (!(value = strpbrk(optarg, "=")))
                 die("missing = after param name");
             *value++ = '\0';
 
+            arg = xmalloc(sizeof(*arg));
             arg->name = optarg;
             if (!*arg->name)
                 die("missing param name");
+            arg->value = value;
+            arg->is_path = opt == 'P';
 
-            if (opt == 'p')
-                arg->res = store_resource(value, strlen(value));
-            else
-                arg->res = store_resource_file(value);
-            if (!arg->res)
-                exit(1);
+            // Sorted insert into args.
+            list_p = &args;
+            while (*list_p && strcmp((*list_p)->name, arg->name) < 0)
+                list_p = &(*list_p)->next;
+            arg->next = *list_p;
+            *list_p = arg;
             break;
 
         default:
@@ -165,8 +198,8 @@ int main(int argc, char** argv) {
     if (!lines)
         exit(1);
 
-    for (size_t i = 0; i < num_args; i++) {
-        if (add_param_arg(&args[i], lines, num_lines, &inputs) < 0)
+    for (struct param_arg_list* arg = args; arg; arg = arg->next) {
+        if (add_param_arg(arg, lines, num_lines, &inputs) < 0)
             exit(1);
     }
 
@@ -189,6 +222,7 @@ int main(int argc, char** argv) {
 
     // The flow plan may include distinct references to the same file; dedupe
     // them here.
+    // TODO dedupe earlier to avoid loading files more than once
     for (struct resource_list* curr = inputs; curr && curr->next; curr = curr->next) {
         if (!strcmp(curr->name, curr->next->name)) {
             assert(curr->res == curr->next->res);

@@ -18,7 +18,7 @@ int parse_resource(struct resource* res) {
     return 0;
 }
 
-struct resource* store_resource(void* data, size_t size) {
+struct resource* store_resource(const void* data, size_t size) {
     struct object_id oid;
     if (write_object(OBJ_RESOURCE, data, size, &oid))
         return NULL;
