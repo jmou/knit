@@ -18,6 +18,6 @@ done
 set -o pipefail
 
 job=$(knit-parse-plan --emit-params-files "$plan" | knit-plan-job "$@" "$plan")
-
-# TODO cache top-level flow jobs
-exec knit-invoke-flow $verbose "$job"
+prd=$(knit-dispatch-job $verbose "$job")
+# TODO truncate history
+echo "$prd" | tee -a "$KNIT_DIR/history"

@@ -24,7 +24,6 @@ session="$(knit-parse-plan --job-to-session "$flow_job" | knit-build-session)"
 echo "Session $session" >&3
 
 declare -A steps_started
-declare -A jobs_dispatched
 while [[ $(knit-list-steps --available --blocked "$session" | wc -l) -gt 0 ]]; do
     unset has_scheduled
 
@@ -33,18 +32,11 @@ while [[ $(knit-list-steps --available --blocked "$session" | wc -l) -gt 0 ]]; d
         steps_started[$step]=1
         has_scheduled=1
 
-        echo "Step $name" >&3
-
-        if prd=$(knit-cache "$job"); then
-            echo "Cache hit $job -> $prd" >&3
+        echo "Dispatch $job step $name" >&3
+        {
+            prd=$(knit-dispatch-job $verbose "$job")
             knit-complete-job "$session" "$job" "$prd"
-        elif [[ -n ${jobs_dispatched[$job]} ]]; then
-            echo "Redundant $job" >&3
-        else
-            echo "Dispatch $job" >&3
-            jobs_dispatched[$job]=1
-            knit-dispatch-job $verbose "$session" "$job" &
-        fi
+        } &
     done < <(knit-list-steps --available --porcelain "$session")
 
     # When we have scheduled everything we can, wait for knit-dispatch-job.

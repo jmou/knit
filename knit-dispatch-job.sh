@@ -11,13 +11,14 @@ else
     exec 3> /dev/null
 fi
 
-[[ $# -eq 2 ]]
-session="$1"
-job="$2"
+[[ $# -eq 1 ]]
+job="$1"
 
 scratch="$KNIT_DIR/scratch/$job"
 
-empty_res=$(knit-hash-object -t resource -w /dev/null)
+empty_res() {
+    knit-hash-object -t resource -w /dev/null
+}
 
 lock_scratch() {
     if [[ -s "$scratch.lock" ]]; then
@@ -27,7 +28,7 @@ lock_scratch() {
     flock 4
     trap 'rm "$scratch.lock"' EXIT
     # TODO handle manual processes
-    echo "PID $$ session $session" >&4
+    echo "PID $$" >&4
 }
 
 unpack_job() {
@@ -61,7 +62,7 @@ process_cmd() {
     res="$(knit-hash-object -t resource -w --stdin <<< $rc)"
     remix_opts+=(--set-output ".knit/exitcode=$res")
     if [[ $rc -eq 0 ]]; then
-        remix_opts+=(--set-output ".knit/ok=$empty_res")
+        remix_opts+=(--set-output ".knit/ok=$(empty_res)")
     fi
 
     knit-remix-production "${remix_opts[@]}"
@@ -72,9 +73,16 @@ finish() {
     if [[ -z $nocache ]]; then
         knit-cache "$job" "$prd"
     fi
-    knit-complete-job "$session" "$job" "$prd"
+    echo "$prd"
     exit
 }
+
+unset prd
+if prd=$(knit-cache "$job"); then
+    echo "Cache hit $job -> $prd" >&3
+    echo "$prd"
+    exit
+fi
 
 # This quick-and-dirty invocation of knit-cat-file could be optimized away, but
 # it would require more lines of code :)
@@ -83,14 +91,13 @@ if knit-cat-file -p "$job" | cut -f2- | grep -qxF .knit/nocache; then
     nocache=1
 fi
 
-unset prd
 while read -r input; do
     if [[ $input == .knit/cmd ]]; then
         lock_scratch
         if prd=$(knit-cache "$job"); then
             echo "Cache hit (locked) $job -> $prd" >&3
-            knit-complete-job "$session" "$job" "$prd"
             rm "$scratch.lock"
+            echo "$prd"
             exit
         fi
         unpack_job
@@ -106,7 +113,7 @@ while read -r input; do
         finish
     elif [[ $input == .knit/identity ]]; then
         prd=$(knit-remix-production --set-job "$job" --copy-job-inputs "$job" \
-            --remove-prefix .knit/ --set-output ".knit/ok=$empty_res")
+            --remove-prefix .knit/ --set-output ".knit/ok=$(empty_res)")
         finish
     fi
 done < <(knit-cat-file -p "$job" | cut -f2-)

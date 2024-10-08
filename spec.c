@@ -180,7 +180,7 @@ static struct object* peel_step_pos(char* spec, size_t len) {
 }
 
 static struct object* peel_chain(char* spec, size_t len) {
-    unsigned depth = 1;
+    unsigned depth = 0;
     int inner_len = find_sigil_numeric(spec, len, '~', &depth);
     if (inner_len < 0)
         return NULL;
@@ -198,8 +198,8 @@ static struct object* peel_chain(char* spec, size_t len) {
             return NULL;
         inv = (struct invocation*)deref_type(&prd->object, OBJ_INVOCATION);
         if (!inv) {
-            die("cannot unwrap %u invocations for invocation %s",
-                depth, oid_to_hex(&inv->object.oid));
+            die("cannot unwrap invocation of depth %u from %.*s",
+                depth, inner_len, spec);
         }
     }
     return &inv->object;
@@ -253,7 +253,7 @@ static struct object* peel_path(char* spec, size_t len) {
         delim + 1, strtypesig(inner->typesig), oid_to_hex(&inner->oid));
 }
 
-static struct object* invocation_history_last() {
+static struct object* production_history_last() {
     char filename[PATH_MAX];
     if (snprintf(filename, PATH_MAX, "%s/history", get_knit_dir()) >= PATH_MAX)
         die("path too long");
@@ -283,8 +283,8 @@ static struct object* invocation_history_last() {
 
     struct object_id oid;
     if (hex_to_oid(buf, &oid) < 0)
-        die("bad invocation history hash");
-    return &get_invocation(&oid)->object;
+        die("bad production history hash");
+    return &get_production(&oid)->object;
 }
 
 static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
@@ -319,7 +319,7 @@ static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
         return get_object(&oid, typesig);
 
     if (len == 1 && spec[0] == '@')
-        return invocation_history_last();
+        return production_history_last();
 
     return NULL;
 }

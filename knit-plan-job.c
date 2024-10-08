@@ -12,7 +12,15 @@ struct input_line {
     char* param;
     char* filename;
     unsigned file_is_optional : 1;
+    unsigned is_nocache : 1;
 };
+
+static struct resource* get_empty_resource() {
+    static struct resource* empty_res = NULL;
+    if (!empty_res)
+        empty_res = store_resource(NULL, 0);
+    return empty_res;
+}
 
 // Returns <0, 0, or >0 similar to strcmp. If path_or_dir ends in '/' we only
 // compare against the prefix of filepath (that is, is filepath inside
@@ -58,6 +66,8 @@ static struct input_line* parse_lines(char* buf, size_t size, size_t* num_lines)
             line->file_is_optional = 1;
         } else if (!strncmp(p, "file ./", 7)) {
             line->filename = p + 7;
+        } else if (!strcmp(p, "nocache")) {
+            line->is_nocache = 1;
         } else {
             error("cannot parse line %s", p);
             return NULL;
@@ -197,6 +207,13 @@ int main(int argc, char** argv) {
     struct input_line* lines = parse_lines(bb.data, bb.size, &num_lines);
     if (!lines)
         exit(1);
+
+    for (size_t i = 0; i < num_lines; i++) {
+        if (lines[i].is_nocache) {
+            resource_list_insert(&inputs, JOB_INPUT_NOCACHE, get_empty_resource());
+            break;
+        }
+    }
 
     for (struct param_arg_list* arg = args; arg; arg = arg->next) {
         if (add_param_arg(arg, lines, num_lines, &inputs) < 0)

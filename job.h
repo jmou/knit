@@ -26,3 +26,4 @@ struct job_input {
 #define JOB_INPUT_CMD ".knit/cmd"
 #define JOB_INPUT_FLOW ".knit/flow"
 #define JOB_INPUT_IDENTITY ".knit/identity"
+#define JOB_INPUT_NOCACHE ".knit/nocache"

@@ -48,10 +48,10 @@ step asomewhatlongstepname: partial bash
     lines = f:combined
 EOF
 
-inv=$(expect_ok knit-run-plan)
+prd=$(expect_ok knit-run-plan)
 expect_ok test $(knit-run-plan -v -p limit=3 2>&1 | grep 'Cache hit' | wc -l) -eq 8
-inv2=$(expect_ok knit-run-plan -p limit=3)
-expect_ok test "$inv" == "$inv2"
+prd2=$(expect_ok knit-run-plan -p limit=3)
+expect_ok test "$(knit-peel-spec $prd^{invocation})" == "$(knit-peel-spec $prd2^{invocation})"
 expect_ok knit-run-plan -p limit=5
 
 diff - <(knit-cat-file -p @:data) <<'EOF'
@@ -68,6 +68,6 @@ step sub: flow ./plan.knit
     files/ = ./
 EOF
 
-inv=$(expect_ok knit-run-plan -f super.knit)
-inv2=$(expect_ok knit-run-plan -p limit=5)
-expect_ok test "$(knit-peel-spec $inv^{production}^{invocation})" == "$inv2"
+prd=$(expect_ok knit-run-plan -f super.knit)
+prd2=$(expect_ok knit-run-plan -p limit=5)
+expect_ok test "$(knit-peel-spec $prd^{invocation}^{production}^{invocation})" == "$(knit-peel-spec $prd2^{invocation})"

@@ -17,8 +17,6 @@ fi
     knit-list-steps --porcelain --reverse "$session" | while read -r step state job prd name; do
         echo "$state $job $prd $name"
     done
-} | knit-hash-object -t invocation -w --stdin >> "$KNIT_DIR/history"
-# TODO truncate history
-tail -n1 "$KNIT_DIR/history"
+} | knit-hash-object -t invocation -w --stdin
 
 rm "$KNIT_DIR/sessions/$session"

@@ -589,7 +589,7 @@ static int finalize_flow_job_step(struct bump_list** bump_p,
                                   struct resource_list* job_inputs) {
     // Represent nocache as a special input so it is part of the job id.
     if (step->is_nocache) {
-        struct input_list* input = create_input(bump_p, ".knit/nocache");
+        struct input_list* input = create_input(bump_p, JOB_INPUT_NOCACHE);
         input->val->tag = VALUE_LITERAL;
         input->val->literal = NULL;
         input->val->literal_len = 0;
@@ -706,6 +706,8 @@ int main(int argc, char** argv) {
             exit(1);
     } else {
         for (struct step_list* step = plan; step; step = step->next) {
+            if (step->is_nocache)
+                printf("nocache\n");
             if (step->is_params)
                 emit_params(step);
             else
