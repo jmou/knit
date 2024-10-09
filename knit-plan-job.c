@@ -99,9 +99,6 @@ static int add_param_arg(const struct param_arg_list* arg,
         return error("overlapping params %s and %s",
                      arg->name, arg->next->name);
 
-    char input_name[name_len + 8];
-    stpcpy(stpcpy(input_name, "params/"), arg->name);
-
     struct resource* res;
     if (!arg->is_path) {
         if (is_prefix)
@@ -111,7 +108,7 @@ static int add_param_arg(const struct param_arg_list* arg,
         res = store_resource_file(arg->value);
     } else {
         int num_added =
-            resource_list_insert_dir_files(inputs_p, arg->value, input_name);
+            resource_list_insert_dir_files(inputs_p, arg->value, arg->name);
         if (num_added < 0)
             return error_errno("directory traversal failed on %s", arg->value);
         if (num_added == 0)
@@ -120,7 +117,7 @@ static int add_param_arg(const struct param_arg_list* arg,
     }
     if (!res)
         return -1;
-    resource_list_insert(inputs_p, input_name, res);
+    resource_list_insert(inputs_p, arg->name, res);
 
     return 0;
 }
@@ -132,12 +129,12 @@ static int add_file(const char* name, const char* basedir,
     char path[strlen(basedir) + strlen(name) + 1];
     stpcpy(stpcpy(path, basedir), name);
 
-    size_t name_len = strlen(name);
-    char input_name[name_len + 7];
-    stpcpy(stpcpy(input_name, "files/"), name);
+    size_t input_name_len = strlen(JOB_INPUT_FILES_PREFIX) + strlen(name);
+    char input_name[input_name_len + 1];
+    stpcpy(stpcpy(input_name, JOB_INPUT_FILES_PREFIX), name);
 
     // If a directory, add every file inside.
-    if (name_len == 0 || name[name_len - 1] == '/') {
+    if (input_name[input_name_len - 1] == '/') {
         int rc = resource_list_insert_dir_files(inputs_p, path, input_name);
         if (rc < 0)
             return error_errno("directory traversal failed on %s", path);

@@ -23,6 +23,7 @@ struct job_input {
 };
 
 #define JOB_INPUT_RESERVED_PREFIX ".knit/"
+#define JOB_INPUT_FILES_PREFIX ".knit/files/"
 #define JOB_INPUT_CMD ".knit/cmd"
 #define JOB_INPUT_FLOW ".knit/flow"
 #define JOB_INPUT_IDENTITY ".knit/identity"

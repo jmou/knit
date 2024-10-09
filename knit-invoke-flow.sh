@@ -16,10 +16,6 @@ flow_job="$1"
 
 set -o pipefail
 
-if knit-cat-file -p "$flow_job" | cut -f2- | grep -vE '^(\.knit|files|params)/' >&2; then
-    echo "warning: flow input is not files/ or params/ in job $flow_job" >&2
-fi
-
 session="$(knit-parse-plan --job-to-session "$flow_job" | knit-build-session)"
 echo "Session $session" >&3
 

@@ -49,7 +49,6 @@ struct step_list {
     // When modifying flags, be sure to consider propagation through partials.
     unsigned is_params : 1;
     unsigned is_nocache : 1;
-    unsigned is_raw_flow : 1;
 };
 
 static struct step_list* find_step(struct step_list* step, const char* name) {
@@ -229,7 +228,6 @@ static int parse_process_partial(struct parse_context* ctx, struct step_list* st
     step->inputs = partial->inputs;
     assert(!partial->is_params);
     step->is_nocache = partial->is_nocache;
-    step->is_raw_flow = partial->is_raw_flow;
     return 0;
 }
 
@@ -272,11 +270,8 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
         return 0;
 
     case TOKEN_FLOW:
-        // Raw flow inputs will be rewritten to a files/ and params/ structure.
-        step->is_raw_flow = 1;
         step->inputs = create_input(ctx->bump_p, JOB_INPUT_FLOW);
-        // JOB_INPUT_RESERVED_PREFIX will be stripped during rewrite.
-        context_input = create_input(ctx->bump_p, JOB_INPUT_RESERVED_PREFIX "files/");
+        context_input = create_input(ctx->bump_p, JOB_INPUT_FILES_PREFIX);
         if (lex(in) != TOKEN_SPACE)
             return error("expected space");
         if (parse_value(ctx, context_input->val) < 0)
@@ -393,29 +388,6 @@ static struct input_list* parse_input(struct parse_context* ctx) {
     }
 }
 
-static void rewrite_raw_flow_inputs(struct bump_list** bump_p,
-                                    struct step_list* step) {
-    assert(step->inputs && step->inputs->next);
-    // .knit/files/ -> files/
-    struct input_list* files_input = step->inputs;
-    assert(!strcmp(files_input->name, JOB_INPUT_RESERVED_PREFIX "files/"));
-    files_input->name += strlen(JOB_INPUT_RESERVED_PREFIX);
-    struct input_list* flow_input = step->inputs->next;
-    assert(!strcmp(flow_input->name, JOB_INPUT_FLOW));
-    // <input> -> params/<input>
-    // Note universally prefixing maintains sorted order.
-    step->inputs = step->inputs->next->next;
-    for (struct input_list* param = step->inputs; param; param = param->next) {
-        char* input_name = param->name;
-        param->name = bump_alloc(bump_p, strlen(input_name) + 8);
-        stpcpy(stpcpy(param->name, "params/"), input_name);
-    }
-    // Add back files/ and .knit/flow inputs in sorted order.
-    input_list_insert(&step->inputs, files_input);
-    input_list_insert(&step->inputs, flow_input);
-    step->is_raw_flow = 0;
-}
-
 static int parse_plan_internal(struct parse_context* ctx) {
     struct step_list** plan_p = &ctx->plan;
     struct step_list** partials_p = &ctx->partials;
@@ -485,9 +457,6 @@ static int parse_plan_internal(struct parse_context* ctx) {
 
         input_list_override(ctx->bump_p, &step->inputs, inputs);
 
-        if (step->is_raw_flow)
-            rewrite_raw_flow_inputs(ctx->bump_p, step);
-
         for (struct input_list* input = step->inputs;
              input && input->next; input = input->next) {
             if (is_dir(input->name) &&
@@ -556,15 +525,12 @@ static struct input_list* job_params_to_inputs(struct bump_list** bump_p,
     struct input_list* ret = NULL;
     struct input_list** inputs_p = &ret;
     for (; job_inputs; job_inputs = job_inputs->next) {
-        const char prefix[] = "params/";
-        int cmp = strncmp(job_inputs->name, prefix, strlen(prefix));
-        if (cmp < 0)
+        if (!strncmp(job_inputs->name, JOB_INPUT_RESERVED_PREFIX,
+                     strlen(JOB_INPUT_RESERVED_PREFIX)))
             continue;
-        if (cmp > 0)
-            break;
 
         struct input_list* input = bump_alloc(bump_p, sizeof(*input));
-        input->name = job_inputs->name + strlen(prefix);
+        input->name = job_inputs->name;
         input->val = bump_alloc(bump_p, sizeof(*input->val));
         input->val->tag = VALUE_FILENAME;
         input->val->path = job_inputs->name;
@@ -576,13 +542,6 @@ static struct input_list* job_params_to_inputs(struct bump_list** bump_p,
     return ret;
 }
 
-static char* joindir(const char* dir, char* filename) {
-    static char buf[PATH_MAX];
-    if (snprintf(buf, PATH_MAX, "%s/%s", dir, filename) >= PATH_MAX)
-        die("path too long");
-    return buf;
-}
-
 static struct resource* find_resource(struct resource_list* list, const char* name) {
     for (; list; list = list->next) {
         int cmp = strcmp(list->name, name);
@@ -592,6 +551,13 @@ static struct resource* find_resource(struct resource_list* list, const char* na
             return NULL;
     }
     return list ? list->res : NULL;
+}
+
+static struct resource* find_file_resource(struct resource_list* list,
+                                           const char* filename) {
+    char buf[strlen(JOB_INPUT_FILES_PREFIX) + strlen(filename) + 1];
+    stpcpy(stpcpy(buf, JOB_INPUT_FILES_PREFIX), filename);
+    return find_resource(list, buf);
 }
 
 static int populate_input(struct input_list* input, struct resource_list* job_inputs) {
@@ -608,7 +574,7 @@ static int populate_input(struct input_list* input, struct resource_list* job_in
         val->res = store_resource(val->literal, val->literal_len);
         break;
     case VALUE_FILENAME:
-        val->res = find_resource(job_inputs, joindir("files", val->path));
+        val->res = find_file_resource(job_inputs, val->path);
         if (!val->res)
             return error("missing job input file %s", val->path);
         break;
@@ -630,9 +596,9 @@ static void expand_input_file_dir(struct bump_list** bump_p,
     // Remove dir_input (that is, *input_p) from the step.
     *input_p = dir_input->next;
 
-    size_t prefix_len = strlen(dir_input->val->path) + 6;
+    size_t prefix_len = strlen(JOB_INPUT_FILES_PREFIX) + strlen(dir_input->val->path);
     char prefix[prefix_len + 1];
-    stpcpy(stpcpy(prefix, "files/"), dir_input->val->path);
+    stpcpy(stpcpy(prefix, JOB_INPUT_FILES_PREFIX), dir_input->val->path);
 
     // Add an expanded step input for each job input in the directory of the
     // dir_input value.
