@@ -47,8 +47,10 @@ struct step_list {
     ssize_t pos;
     struct input_list* inputs;
     struct step_list* next;
+    // When modifying flags, be sure to consider propagation through partials.
     unsigned is_params : 1;
     unsigned is_nocache : 1;
+    unsigned is_raw_flow : 1;
 };
 
 static struct step_list* find_step(struct step_list* step, const char* name) {
@@ -195,6 +197,7 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         if (lex_path_or_empty(in) < 0)
             return -1;
         out->dep_output = lex_stuff_null(in);
+        out->dep_prefix = is_dir(out->dep_output);
         dep = find_step(ctx->plan, out->dep_step);
         if (!dep)
             return error("dependency on not yet defined step %s", out->dep_step);
@@ -205,6 +208,7 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         if (lex_path_or_empty(in) < 0)
             return -1;
         out->filename = lex_stuff_null(in);
+        out->file_dir = is_dir(out->filename);
         return 0;
     default:
         return error("expected value");
@@ -224,12 +228,40 @@ static int parse_process_partial(struct parse_context* ctx, struct step_list* st
         return error("unknown partial %s", ident);
 
     step->inputs = partial->inputs;
+    assert(!partial->is_params);
+    step->is_nocache = partial->is_nocache;
+    step->is_raw_flow = partial->is_raw_flow;
     return 0;
+}
+
+static int val_is_dir(const struct value* val) {
+    switch (val->tag) {
+    case VALUE_DEPENDENCY:
+        return val->dep_prefix;
+    case VALUE_FILENAME:
+        return val->file_dir;
+    default:
+        return 0;
+    }
+}
+
+static void append_value_suffix(struct parse_context* ctx, const struct value* in,
+                                const char* suffix, struct value* out) {
+    memcpy(out, in, sizeof(*out));
+    if (in->tag == VALUE_DEPENDENCY) {
+        out->dep_output = bump_alloc(ctx->bump_p, strlen(in->dep_output) + strlen(suffix) + 1);
+        stpcpy(stpcpy(out->dep_output, in->dep_output), suffix);
+        out->dep_prefix = is_dir(out->dep_output);
+    } else {
+        assert(in->tag == VALUE_FILENAME);
+        out->filename = bump_alloc(ctx->bump_p, strlen(in->filename) + strlen(suffix) + 1);
+        stpcpy(stpcpy(out->filename, in->filename), suffix);
+        out->file_dir = is_dir(out->filename);
+    }
 }
 
 static int parse_process(struct parse_context* ctx, struct step_list* step) {
     struct lex_input* in = &ctx->in;
-    char* input_name;
 
     enum token tok = lex_keyword(&ctx->in);
     if (tok == TOKEN_NOCACHE) {
@@ -239,21 +271,48 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
         tok = lex_keyword(&ctx->in);
     }
 
+    struct input_list* context_input;
     switch (tok) {
     case TOKEN_CMD:
-        input_name = JOB_INPUT_CMD;
-        goto parse_process_value;
-    case TOKEN_FLOW:
-        input_name = JOB_INPUT_FLOW;
-parse_process_value:
-        step->inputs = create_input(ctx->bump_p, input_name);
+        step->inputs = create_input(ctx->bump_p, JOB_INPUT_CMD);
         if (lex(in) != TOKEN_SPACE)
             return error("expected space");
         if (parse_value(ctx, step->inputs->val) < 0)
             return -1;
-        if (step->inputs->val->tag == VALUE_DEPENDENCY &&
-                is_dir(step->inputs->val->dep_output))
-            return error("cmd/flow dependency output must be a file");
+        if (val_is_dir(step->inputs->val))
+            return error("cmd dependency output or filename cannot end in '/'");
+        return 0;
+
+    case TOKEN_FLOW:
+        // Raw flow inputs will be rewritten to a files/ and params/ structure.
+        step->is_raw_flow = 1;
+        step->inputs = create_input(ctx->bump_p, JOB_INPUT_FLOW);
+        // JOB_INPUT_RESERVED_PREFIX will be stripped during rewrite.
+        context_input = create_input(ctx->bump_p, JOB_INPUT_RESERVED_PREFIX "files/");
+        if (lex(in) != TOKEN_SPACE)
+            return error("expected space");
+        if (parse_value(ctx, context_input->val) < 0)
+            return -1;
+        if (!val_is_dir(context_input->val))
+            return error("flow context must be dependency output or filename ending in '/'");
+        if (try_read_token(in, TOKEN_SPACE)) {
+            if (try_read_token(in, TOKEN_COLON)) {
+                if (lex_path_or_empty(in) < 0)
+                    return -1;
+                char* suffix = lex_stuff_null(in);
+                append_value_suffix(ctx, context_input->val, suffix,
+                                    step->inputs->val);
+            } else if (parse_value(ctx, step->inputs->val) < 0) {
+                return -1;
+            }
+        } else {
+            append_value_suffix(ctx, context_input->val, "plan.knit",
+                                step->inputs->val);
+        }
+        if (val_is_dir(step->inputs->val))
+            return error("flow plan dependency output or filename cannot end in '/'");
+        if (input_list_insert(&step->inputs, context_input) < 0)
+            return -1;
         return 0;
 
     case TOKEN_PARAMS:
@@ -299,12 +358,11 @@ static struct input_list* parse_input(struct parse_context* ctx) {
         input->val->dep_optional = is_optional;
         input->val->dep_implicit_ok = !suppress_implicit_ok;
         if (is_dir(input->name)) {
-            if (!is_dir(input->val->dep_output)) {
+            if (!input->val->dep_prefix) {
                 error("input name ends in '/' but dependency output is not directory prefix");
                 return NULL;
             }
-            input->val->dep_prefix = 1;
-        } else if (is_dir(input->val->dep_output)) {
+        } else if (input->val->dep_prefix) {
             error("dependency output is directory prefix but input name does not end in '/'");
             return NULL;
         }
@@ -313,13 +371,12 @@ static struct input_list* parse_input(struct parse_context* ctx) {
         return NULL;
     } else if (input->val->tag == VALUE_FILENAME) {
         if (is_dir(input->name)) {
-            if (!is_dir(input->val->filename)) {
+            if (!input->val->file_dir) {
                 error("input name ends in '/' but filename does not");
                 return NULL;
             }
-            input->val->file_dir = 1;
             input->val->file_optional = is_optional;
-        } else if (is_dir(input->val->filename)) {
+        } else if (input->val->file_dir) {
             error("filename ends in '/' but input name does not");
             return NULL;
         } else if (is_optional) {
@@ -345,6 +402,29 @@ static struct input_list* parse_input(struct parse_context* ctx) {
         error("expected newline");
         return NULL;
     }
+}
+
+static void rewrite_raw_flow_inputs(struct bump_list** bump_p,
+                                    struct step_list* step) {
+    assert(step->inputs && step->inputs->next);
+    // .knit/files/ -> files/
+    struct input_list* files_input = step->inputs;
+    assert(!strcmp(files_input->name, JOB_INPUT_RESERVED_PREFIX "files/"));
+    files_input->name += strlen(JOB_INPUT_RESERVED_PREFIX);
+    struct input_list* flow_input = step->inputs->next;
+    assert(!strcmp(flow_input->name, JOB_INPUT_FLOW));
+    // <input> -> params/<input>
+    // Note universally prefixing maintains sorted order.
+    step->inputs = step->inputs->next->next;
+    for (struct input_list* param = step->inputs; param; param = param->next) {
+        char* input_name = param->name;
+        param->name = bump_alloc(bump_p, strlen(input_name) + 8);
+        stpcpy(stpcpy(param->name, "params/"), input_name);
+    }
+    // Add back files/ and .knit/flow inputs in sorted order.
+    input_list_insert(&step->inputs, files_input);
+    input_list_insert(&step->inputs, flow_input);
+    step->is_raw_flow = 0;
 }
 
 static int parse_plan_internal(struct parse_context* ctx) {
@@ -387,7 +467,7 @@ static int parse_plan_internal(struct parse_context* ctx) {
             return -1;
 
         if (step->is_params && step->pos != 0)
-            return error("params step must be first");
+            return error("params must be first step");
 
         switch (lex(in)) {
         case TOKEN_NEWLINE:
@@ -415,6 +495,9 @@ static int parse_plan_internal(struct parse_context* ctx) {
         }
 
         input_list_override(ctx->bump_p, &step->inputs, inputs);
+
+        if (step->is_raw_flow)
+            rewrite_raw_flow_inputs(ctx->bump_p, step);
 
         for (struct input_list* input = step->inputs;
              input && input->next; input = input->next) {

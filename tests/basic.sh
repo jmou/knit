@@ -63,9 +63,8 @@ diff - <(knit-cat-file -p @:data) <<'EOF'
 EOF
 
 cat <<'EOF' > super.knit
-step sub: flow ./plan.knit
-    params/limit = "5"
-    files/ = ./
+step sub: flow ./ :plan.knit
+    limit = "5"
 EOF
 
 prd=$(expect_ok knit-run-plan -f super.knit)
