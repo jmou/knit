@@ -16,21 +16,20 @@ struct value {
     enum value_tag tag;
     union {
         struct {
-            char* filename;
-            unsigned file_optional : 1;
-            unsigned file_dir : 1;
-        };
-        struct {
+            // For VALUE_LITERAL.
             char* literal;
             size_t literal_len;
         };
         struct {
+            // For both VALUE_DEPENDENCY and VALUE_FILENAME.
+            // path may be a dependency output or filename respectively.
+            char* path;
+            unsigned path_dir : 1;
+            unsigned path_optional : 1;
+            // For only VALUE_DEPENDENCY.
             char* dep_step;
             size_t dep_pos;
-            char* dep_output;
-            unsigned dep_optional : 1;
             unsigned dep_implicit_ok : 1;
-            unsigned dep_prefix : 1;
         };
     };
     struct resource* res;
@@ -196,8 +195,8 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
             return error("expected :");
         if (lex_path_or_empty(in) < 0)
             return -1;
-        out->dep_output = lex_stuff_null(in);
-        out->dep_prefix = is_dir(out->dep_output);
+        out->path = lex_stuff_null(in);
+        out->path_dir = is_dir(out->path);
         dep = find_step(ctx->plan, out->dep_step);
         if (!dep)
             return error("dependency on not yet defined step %s", out->dep_step);
@@ -207,8 +206,8 @@ static int parse_value(struct parse_context* ctx, struct value* out) {
         out->tag = VALUE_FILENAME;
         if (lex_path_or_empty(in) < 0)
             return -1;
-        out->filename = lex_stuff_null(in);
-        out->file_dir = is_dir(out->filename);
+        out->path = lex_stuff_null(in);
+        out->path_dir = is_dir(out->path);
         return 0;
     default:
         return error("expected value");
@@ -235,29 +234,18 @@ static int parse_process_partial(struct parse_context* ctx, struct step_list* st
 }
 
 static int val_is_dir(const struct value* val) {
-    switch (val->tag) {
-    case VALUE_DEPENDENCY:
-        return val->dep_prefix;
-    case VALUE_FILENAME:
-        return val->file_dir;
-    default:
+    if (val->tag != VALUE_DEPENDENCY && val->tag != VALUE_FILENAME)
         return 0;
-    }
+    return val->path_dir;
 }
 
 static void append_value_suffix(struct parse_context* ctx, const struct value* in,
                                 const char* suffix, struct value* out) {
+    assert(in->tag == VALUE_DEPENDENCY || in->tag == VALUE_FILENAME);
     memcpy(out, in, sizeof(*out));
-    if (in->tag == VALUE_DEPENDENCY) {
-        out->dep_output = bump_alloc(ctx->bump_p, strlen(in->dep_output) + strlen(suffix) + 1);
-        stpcpy(stpcpy(out->dep_output, in->dep_output), suffix);
-        out->dep_prefix = is_dir(out->dep_output);
-    } else {
-        assert(in->tag == VALUE_FILENAME);
-        out->filename = bump_alloc(ctx->bump_p, strlen(in->filename) + strlen(suffix) + 1);
-        stpcpy(stpcpy(out->filename, in->filename), suffix);
-        out->file_dir = is_dir(out->filename);
-    }
+    out->path = bump_alloc(ctx->bump_p, strlen(in->path) + strlen(suffix) + 1);
+    stpcpy(stpcpy(out->path, in->path), suffix);
+    out->path_dir = is_dir(out->path);
 }
 
 static int parse_process(struct parse_context* ctx, struct step_list* step) {
@@ -280,7 +268,7 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
         if (parse_value(ctx, step->inputs->val) < 0)
             return -1;
         if (val_is_dir(step->inputs->val))
-            return error("cmd dependency output or filename cannot end in '/'");
+            return error("cmd path cannot end in '/'");
         return 0;
 
     case TOKEN_FLOW:
@@ -294,7 +282,7 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
         if (parse_value(ctx, context_input->val) < 0)
             return -1;
         if (!val_is_dir(context_input->val))
-            return error("flow context must be dependency output or filename ending in '/'");
+            return error("flow context path must end in '/'");
         if (try_read_token(in, TOKEN_SPACE)) {
             if (try_read_token(in, TOKEN_COLON)) {
                 if (lex_path_or_empty(in) < 0)
@@ -310,7 +298,7 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
                                 step->inputs->val);
         }
         if (val_is_dir(step->inputs->val))
-            return error("flow plan dependency output or filename cannot end in '/'");
+            return error("flow plan path cannot end in '/'");
         if (input_list_insert(&step->inputs, context_input) < 0)
             return -1;
         return 0;
@@ -354,40 +342,41 @@ static struct input_list* parse_input(struct parse_context* ctx) {
 
     if (parse_value(ctx, input->val) < 0)
         return NULL;
-    if (input->val->tag == VALUE_DEPENDENCY) {
-        input->val->dep_optional = is_optional;
+
+    switch (input->val->tag) {
+    case VALUE_DEPENDENCY:
         input->val->dep_implicit_ok = !suppress_implicit_ok;
+        // fall through
+    case VALUE_FILENAME:
         if (is_dir(input->name)) {
-            if (!input->val->dep_prefix) {
-                error("input name ends in '/' but dependency output is not directory prefix");
+            if (!input->val->path_dir) {
+                error("input name ends in '/' but input value path does not");
                 return NULL;
             }
-        } else if (input->val->dep_prefix) {
-            error("dependency output is directory prefix but input name does not end in '/'");
+        } else if (input->val->path_dir) {
+            error("input value path ends in '/' but input name does not");
             return NULL;
-        }
-    } else if (suppress_implicit_ok) {
-        error("input suppressing implicit ok must be a dependency");
-        return NULL;
-    } else if (input->val->tag == VALUE_FILENAME) {
-        if (is_dir(input->name)) {
-            if (!input->val->file_dir) {
-                error("input name ends in '/' but filename does not");
-                return NULL;
-            }
-            input->val->file_optional = is_optional;
-        } else if (input->val->file_dir) {
-            error("filename ends in '/' but input name does not");
-            return NULL;
-        } else if (is_optional) {
+        } else if (input->val->tag == VALUE_FILENAME && is_optional) {
             error("optional file input must end in '/'");
             return NULL;
         }
-    } else if (is_optional) {
-        error("optional input must be a dependency or file");
-        return NULL;
-    } else if (is_dir(input->name) && input->val->tag != VALUE_HOLE) {
-        error("input name ending in '/' cannot be a string literal");
+        input->val->path_optional = is_optional;
+        break;
+
+    case VALUE_LITERAL:
+        if (is_dir(input->name)) {
+            error("input name ending in '/' cannot be a string literal");
+            return NULL;
+        }
+        // fall through
+    case VALUE_HOLE:
+        if (is_optional) {
+            error("optional input must be a dependency or file");
+            return NULL;
+        }
+    }
+    if (input->val->tag != VALUE_DEPENDENCY && suppress_implicit_ok) {
+        error("input suppressing implicit ok must be a dependency");
         return NULL;
     }
 
@@ -529,9 +518,9 @@ static int print_value(FILE* fh, const struct value* val) {
     switch (val->tag) {
     case VALUE_DEPENDENCY:
         fprintf(fh, "dependency input %s%s %zu %s\n",
-                val->dep_optional ? "optional" : "required",
-                val->dep_prefix ? " prefix" : "",
-                val->dep_pos, val->dep_output);
+                val->path_optional ? "optional" : "required",
+                val->path_dir ? " prefix" : "",
+                val->dep_pos, val->path);
         // We could deduplicate implicit dependencies to reduce session size and
         // reduce work in knit-complete-job, but it probably has a minor impact.
         if (val->dep_implicit_ok)
@@ -578,7 +567,7 @@ static struct input_list* job_params_to_inputs(struct bump_list** bump_p,
         input->name = job_inputs->name + strlen(prefix);
         input->val = bump_alloc(bump_p, sizeof(*input->val));
         input->val->tag = VALUE_FILENAME;
-        input->val->filename = job_inputs->name;
+        input->val->path = job_inputs->name;
         input->val->res = job_inputs->res;
         input->next = NULL;
         *inputs_p = input;
@@ -619,9 +608,9 @@ static int populate_input(struct input_list* input, struct resource_list* job_in
         val->res = store_resource(val->literal, val->literal_len);
         break;
     case VALUE_FILENAME:
-        val->res = find_resource(job_inputs, joindir("files", val->filename));
+        val->res = find_resource(job_inputs, joindir("files", val->path));
         if (!val->res)
-            return error("missing job input file %s", val->filename);
+            return error("missing job input file %s", val->path);
         break;
     }
     return val->res ? 0 : -1;
@@ -641,9 +630,9 @@ static void expand_input_file_dir(struct bump_list** bump_p,
     // Remove dir_input (that is, *input_p) from the step.
     *input_p = dir_input->next;
 
-    size_t prefix_len = strlen(dir_input->val->filename) + 6;
+    size_t prefix_len = strlen(dir_input->val->path) + 6;
     char prefix[prefix_len + 1];
-    stpcpy(stpcpy(prefix, "files/"), dir_input->val->filename);
+    stpcpy(stpcpy(prefix, "files/"), dir_input->val->path);
 
     // Add an expanded step input for each job input in the directory of the
     // dir_input value.
@@ -659,8 +648,8 @@ static void expand_input_file_dir(struct bump_list** bump_p,
         char* step_input_name = make_joined_str(bump_p, dir_input->name, suffix);
         struct input_list* inserted = create_input(bump_p, step_input_name);
         inserted->val->tag = VALUE_FILENAME;
-        inserted->val->filename =
-            make_joined_str(bump_p, dir_input->val->filename, suffix);
+        inserted->val->path =
+            make_joined_str(bump_p, dir_input->val->path, suffix);
         inserted->next = *input_p;
         *input_p = inserted;
         input_p = &inserted->next;
@@ -683,7 +672,7 @@ static int finalize_flow_job_step(struct bump_list** bump_p,
     for (struct input_list** input_p = &step->inputs;
          *input_p; input_p = &(*input_p)->next) {
         struct value* val = (*input_p)->val;
-        if (val->tag == VALUE_FILENAME && val->file_dir) {
+        if (val->tag == VALUE_FILENAME && val->path_dir) {
             expand_input_file_dir(bump_p, input_p, job_inputs);
             if (!*input_p) // empty expansion
                 break;
@@ -722,7 +711,7 @@ static void emit_params(struct step_list* step) {
             continue;
         printf("param %s", input->name);
         if (input->val->tag == VALUE_FILENAME)
-            printf("=./%s\n", input->val->filename);
+            printf("=./%s\n", input->val->path);
         else
             printf("\n");
     }
@@ -732,8 +721,8 @@ static void emit_files(struct step_list* step) {
     for (struct input_list* input = step->inputs; input; input = input->next)
         if (input->val->tag == VALUE_FILENAME)
             printf("file%s ./%s\n",
-                   input->val->file_optional ? " optional" : "",
-                   input->val->filename);
+                   input->val->path_optional ? " optional" : "",
+                   input->val->path);
 }
 
 static void die_usage(const char* arg0) {
