@@ -4,6 +4,7 @@
 #include "lexer.h"
 #include "resource.h"
 #include "spec.h"
+#include "util.h"
 
 enum value_tag {
     VALUE_DEPENDENCY,
@@ -227,6 +228,8 @@ static int parse_process_partial(struct parse_context* ctx, struct step_list* st
 
     step->inputs = partial->inputs;
     assert(!partial->is_params);
+    if (step->is_nocache && partial->is_nocache)
+        warning("both step and partial are marked nocache");
     step->is_nocache = partial->is_nocache;
     return 0;
 }
@@ -249,12 +252,12 @@ static void append_value_suffix(struct parse_context* ctx, const struct value* i
 static int parse_process(struct parse_context* ctx, struct step_list* step) {
     struct lex_input* in = &ctx->in;
 
-    enum token tok = lex_keyword(&ctx->in);
+    enum token tok = lex_keyword(in);
     if (tok == TOKEN_NOCACHE) {
         if (lex(in) != TOKEN_SPACE)
             return error("expected space");
         step->is_nocache = 1;
-        tok = lex_keyword(&ctx->in);
+        tok = lex_keyword(in);
     }
 
     struct input_list* context_input;
@@ -302,6 +305,8 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
         step->is_params = 1;
         // fall through
     case TOKEN_IDENTITY:
+        if (step->is_nocache)
+            return error("identity and params cannot be nocache");
         step->inputs = create_input(ctx->bump_p, JOB_INPUT_IDENTITY);
         step->inputs->val->tag = VALUE_LITERAL;
         step->inputs->val->literal = NULL;
