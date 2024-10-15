@@ -63,3 +63,18 @@ prd2=$(expect_ok knit-run-plan)
 # The flow jobs will differ, but they should interpret to the same session (and
 # thus invocation).
 expect_ok test "$(knit-peel-spec $prd^{invocation})" == "$(knit-peel-spec $prd2^{invocation})"
+
+## No context
+
+cat <<\EOF > subflow.knit
+step params: params
+    result = !
+EOF
+
+cat <<\EOF > plan.knit
+step subflow: flow ./subflow.knit
+    result = "hi"
+EOF
+
+prd=$(expect_ok knit-run-plan)
+expect_ok test "$(knit-cat-file -p $prd:result)" == hi

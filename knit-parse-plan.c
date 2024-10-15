@@ -279,8 +279,10 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
             return error("expected space");
         if (parse_value(ctx, context_input->val) < 0)
             return -1;
-        if (!val_is_dir(context_input->val))
-            return error("flow context path must end in '/'");
+        if (!val_is_dir(context_input->val)) {
+            step->inputs->val = context_input->val;
+            return 0;
+        }
         if (try_read_token(in, TOKEN_SPACE)) {
             if (try_read_token(in, TOKEN_COLON)) {
                 if (lex_path_or_empty(in) < 0)
