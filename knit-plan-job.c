@@ -238,7 +238,7 @@ int main(int argc, char** argv) {
     // them here.
     // TODO dedupe earlier to avoid loading files more than once
     for (struct resource_list* curr = inputs; curr && curr->next; curr = curr->next) {
-        if (!strcmp(curr->name, curr->next->name)) {
+        while (!strcmp(curr->name, curr->next->name)) {
             assert(curr->res == curr->next->res);
             resource_list_remove_and_free(&curr->next);
         }
