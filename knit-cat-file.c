@@ -30,7 +30,7 @@ int main(int argc, char** argv) {
 
     struct object* obj = peel_spec(argv[2], strlen(argv[2]));
     if (!obj)
-        exit(1);
+        die("invalid spec %s", argv[2]);
 
     if (!strcmp(argv[1], "-p")) {
         if (obj->typesig == OBJ_RESOURCE || obj->typesig == OBJ_INVOCATION) {

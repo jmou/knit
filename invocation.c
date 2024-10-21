@@ -38,8 +38,10 @@ int parse_invocation_bytes(struct invocation* inv, void* data, size_t size) {
         char* eol = memchr(p, '\n', end - p);
         if (!eol)
             return error("unterminated invocation entry");
-        entry->name = xmalloc(eol - &p[132]);
-        memcpy(entry->name, &p[132], eol - &p[132]);
+        int name_len = eol - &p[132];
+        entry->name = xmalloc(name_len + 1);
+        memcpy(entry->name, &p[132], name_len);
+        entry->name[name_len] = '\0';
 
         p = eol + 1;
         *entry_p = entry;

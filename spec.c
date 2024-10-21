@@ -133,14 +133,18 @@ static struct object* peel_type(char* spec, size_t len) {
     return peel_spec_and_deref(spec, inner_len, typesig);
 }
 
-static struct object* peel_type_job(char* spec, size_t len) {
-    if (len < 1 || spec[len - 1] != '^')
+static struct object* peel_type_shorthand(char* spec, size_t len) {
+    if (len < 1)
         return NULL;
-    return peel_spec_and_deref(spec, len - 1, OBJ_JOB);
+    if (spec[len - 1] == '^')
+        return peel_spec_and_deref(spec, len - 1, OBJ_JOB);
+    if (spec[len - 1] == '~')
+        return peel_spec_and_deref(spec, len - 1, OBJ_INVOCATION);
+    return NULL;
 }
 
 static struct object* peel_step_name(char* spec, size_t len) {
-    int inner_len = find_sigil_braced(spec, len, '=');
+    int inner_len = find_sigil_braced(spec, len, '~');
     if (inner_len < 0 || inner_len == (int)len)
         return NULL;
     char* step = &spec[inner_len + 2];
@@ -148,18 +152,19 @@ static struct object* peel_step_name(char* spec, size_t len) {
 
     struct invocation* inv = peel_spec_and_deref_invocation(spec, inner_len);
     if (!inv)
-        return NULL;
+        die("cannot lookup step in non-invocation %.*s", inner_len, spec);
 
     for (struct invocation_entry_list* entry = inv->entries; entry; entry = entry->next) {
         if (strlen(entry->name) == step_len && !memcmp(entry->name, step, step_len))
             return &entry->prd->object;
     }
-    return NULL;
+    die("invocation %s has no such step %.*s",
+        oid_to_hex(&inv->object.oid), (int)step_len, step);
 }
 
 static struct object* peel_step_pos(char* spec, size_t len) {
     unsigned pos = 1;
-    int inner_len = find_sigil_numeric(spec, len, '=', &pos);
+    int inner_len = find_sigil_numeric(spec, len, '~', &pos);
     if (inner_len < 0)
         return NULL;
     if (pos == 0)
@@ -167,7 +172,7 @@ static struct object* peel_step_pos(char* spec, size_t len) {
 
     struct invocation* inv = peel_spec_and_deref_invocation(spec, inner_len);
     if (!inv)
-        return NULL;
+        die("cannot lookup step in non-invocation %.*s", inner_len, spec);
 
     struct invocation_entry_list* entry = inv->entries;
     for (unsigned i = 1; i < pos && entry; i++) // pos is 1-indexed
@@ -177,32 +182,6 @@ static struct object* peel_step_pos(char* spec, size_t len) {
             pos, oid_to_hex(&inv->object.oid));
     }
     return &entry->prd->object;
-}
-
-static struct object* peel_chain(char* spec, size_t len) {
-    unsigned depth = 0;
-    int inner_len = find_sigil_numeric(spec, len, '~', &depth);
-    if (inner_len < 0)
-        return NULL;
-
-    struct invocation* inv = peel_spec_and_deref_invocation(spec, inner_len);
-    if (!inv)
-        return NULL;
-
-    for (unsigned i = 0; i < depth; i++) {
-        if (parse_invocation(inv) < 0)
-            return NULL;
-        struct production* prd =
-            (struct production*)deref_type(&inv->object, OBJ_PRODUCTION);
-        if (!prd || parse_production(prd) < 0)
-            return NULL;
-        inv = (struct invocation*)deref_type(&prd->object, OBJ_INVOCATION);
-        if (!inv) {
-            die("cannot unwrap invocation of depth %u from %.*s",
-                depth, inner_len, spec);
-        }
-    }
-    return &inv->object;
 }
 
 static struct object* peel_path(char* spec, size_t len) {
@@ -299,8 +278,8 @@ static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
     if ((ret = peel_type(spec, len)))
         return ret;
 
-    // Shorthand of ^ for ^{job}.
-    if ((ret = peel_type_job(spec, len)))
+    // Shorthand of ^ for ^{job} or = for ^{invocation}.
+    if ((ret = peel_type_shorthand(spec, len)))
         return ret;
 
     // Production from invocation step of the form ={step}.
@@ -309,10 +288,6 @@ static struct object* peel_spec_fast(char* spec, size_t len, uint32_t typesig) {
 
     // Production from invocation step by = optionally followed by a number.
     if ((ret = peel_step_pos(spec, len)))
-        return ret;
-
-    // Chain of invocations by ~ optionally followed by a number.
-    if ((ret = peel_chain(spec, len)))
         return ret;
 
     if (len == KNIT_HASH_HEXSZ && !hex_to_oid(spec, &oid))
