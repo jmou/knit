@@ -106,6 +106,9 @@ static int add_param_arg(const struct param_arg_list* arg,
         res = store_resource(arg->value, strlen(arg->value));
     } else if (!is_prefix) {
         res = store_resource_file(arg->value);
+    } else if (!strcmp(arg->value, "/")) {
+        return error("cowardly refusing to store resources for directory %s",
+                     arg->value);
     } else {
         int num_added =
             resource_list_insert_dir_files(inputs_p, arg->value, arg->name);
