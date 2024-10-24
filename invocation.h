@@ -8,8 +8,7 @@
 struct invocation_entry_list {
     struct invocation_entry_list* next;
     char* name;
-    // job and prd will be NULL if the step has unmet dependencies.
-    struct job* job;
+    // prd will be NULL if the step has unmet dependencies.
     struct production* prd;
 };
 

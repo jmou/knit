@@ -17,8 +17,15 @@ int parse_invocation_bytes(struct invocation* inv, void* data, size_t size) {
     p += 2;
 
     struct invocation_entry_list** entry_p = &inv->entries;
-    while (p + 132 < end) {
-        if (p[1] != ' ' || p[66] != ' ' || p[131] != ' ')
+    // Each invocation entry is at least 68 bytes, consisting of (start:len):
+    //   0:1  status
+    //   1:1  SP
+    //   2:64 hex production hash
+    //  66:1  SP
+    //  67:*  name (variable length)
+    //   *:1  NL
+    while (p + 68 < end) {
+        if (p[1] != ' ' || p[66] != ' ')
             return error("bad invocation entry");
         struct invocation_entry_list* entry = xmalloc(sizeof(*entry));
         memset(entry, 0, sizeof(*entry));
@@ -26,9 +33,6 @@ int parse_invocation_bytes(struct invocation* inv, void* data, size_t size) {
         if (p[0] == 'f') {
             struct object_id oid;
             if (hex_to_oid(&p[2], &oid) < 0)
-                return error("invalid job hash");
-            entry->job = get_job(&oid);
-            if (hex_to_oid(&p[67], &oid) < 0)
                 return error("invalid production hash");
             entry->prd = get_production(&oid);
         } else if (p[0] != 'u') {
@@ -38,9 +42,9 @@ int parse_invocation_bytes(struct invocation* inv, void* data, size_t size) {
         char* eol = memchr(p, '\n', end - p);
         if (!eol)
             return error("unterminated invocation entry");
-        int name_len = eol - &p[132];
+        int name_len = eol - &p[67];
         entry->name = xmalloc(name_len + 1);
-        memcpy(entry->name, &p[132], name_len);
+        memcpy(entry->name, &p[67], name_len);
         entry->name[name_len] = '\0';
 
         p = eol + 1;
