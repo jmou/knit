@@ -10,12 +10,12 @@ knit-dispatch-job
 knit-exec-cmd
 knit-hash-object
 knit-init
-knit-invoke-flow
 knit-list-steps
 knit-parse-plan
 knit-peel-spec
 knit-plan-job
 knit-remix-production
+knit-resume-session
 knit-run-plan
 knit-unpack-job
 lexer.c

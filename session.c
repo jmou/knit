@@ -209,7 +209,7 @@ int new_session(const char* sessname) {
 
     struct stat st;
     if (stat(session_filepath, &st) == 0)
-        return error("existing session %s", session_name);
+        return 1;
     return 0;
 }
 

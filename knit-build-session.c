@@ -31,8 +31,18 @@ int main(int argc, char** argv) {
 
         char* s = line;
         if (removeprefix(&s, "session ")) {
-            if (new_session(s) < 0)
+            int rc = new_session(s);
+            if (rc < 0)
                 exit(1);
+            if (rc == 1) {
+                // This assumes the session name is the flow job id, and any
+                // existing session is from a previous identical
+                // knit-build-session command. This feels a little sloppy but
+                // lets us easily resume any existing session.
+                warning("existing session %s", s);
+                puts(get_session_name());
+                return 0;
+            }
         } else if (removeprefix(&s, "step ")) {
             if (should_compile_job && compile_job_for_step(step_pos) < 0)
                 exit(1);

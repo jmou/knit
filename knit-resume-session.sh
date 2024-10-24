@@ -12,11 +12,8 @@ else
 fi
 
 [[ $# -eq 1 ]]
-flow_job="$1"
+session="$1"
 
-set -o pipefail
-
-session="$(knit-parse-plan --job-to-session "$flow_job" | knit-build-session)"
 echo "Session $session" >&3
 
 declare -A steps_started

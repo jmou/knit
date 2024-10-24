@@ -108,7 +108,9 @@ while read -r input; do
         rm -rf "$scratch"
         finish
     elif [[ $input == .knit/flow ]]; then
-        inv=$(knit-invoke-flow $verbose "$job")
+        set -o pipefail
+        session="$(knit-parse-plan --job-to-session "$job" | knit-build-session)"
+        inv=$(knit-resume-session $verbose "$session")
         prd=$(knit-remix-production --set-job "$job" --wrap-invocation "$inv")
         finish
     elif [[ $input == .knit/identity ]]; then
