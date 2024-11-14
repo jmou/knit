@@ -91,8 +91,6 @@ size_t add_session_fanout_step();
 
 extern size_t num_active_fanout;
 
-const char* get_session_name();
-// Returns < 0 on error, 0 on success, and 1 if the session already exists.
 int new_session(const char* sessname);
 int load_session(const char* sessname);
 int save_session();

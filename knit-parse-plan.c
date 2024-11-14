@@ -511,9 +511,7 @@ static int print_value(FILE* fh, const struct value* val) {
     }
 }
 
-static int print_build_instructions(FILE* fh, const struct job* job,
-                                    const struct step_list* step) {
-    fprintf(fh, "session %s\n", oid_to_hex(&job->object.oid));
+static int print_build_instructions(FILE* fh, const struct step_list* step) {
     for (; step; step = step->next) {
         fprintf(fh, "step %s\n", step->name);
         for (const struct input_list* input = step->inputs;
@@ -699,7 +697,7 @@ static void emit_files(struct step_list* step) {
 }
 
 static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s --job-to-session <job>\n", arg0);
+    fprintf(stderr, "usage: %s --build-instructions <job>\n", arg0);
     fprintf(stderr, "       %s --emit-params-files <plan>\n", arg0);
     exit(1);
 }
@@ -710,7 +708,7 @@ int main(int argc, char** argv) {
 
     if (argc != 3)
         die_usage(argv[0]);
-    if (!strcmp(argv[1], "--job-to-session")) {
+    if (!strcmp(argv[1], "--build-instructions")) {
         job = peel_job(argv[2]);
         if (!job || parse_job(job) < 0)
             exit(1);
@@ -747,7 +745,7 @@ int main(int argc, char** argv) {
             error("in job %s", oid_to_hex(&job->object.oid));
             exit(1);
         }
-        if (print_build_instructions(stdout, job, plan) < 0)
+        if (print_build_instructions(stdout, plan) < 0)
             exit(1);
     } else {
         for (struct step_list* step = plan; step; step = step->next) {

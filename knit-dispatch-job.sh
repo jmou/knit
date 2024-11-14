@@ -109,7 +109,16 @@ while read -r input; do
         finish
     elif [[ $input == .knit/flow ]]; then
         set -o pipefail
-        session="$(knit-parse-plan --job-to-session "$job" | knit-build-session)"
+        # By convention, the session name is the same as the flow job; any
+        # existing session should be from a previous identical
+        # knit-build-session command. This feels a little sloppy but lets us
+        # easily resume existing sessions.
+        session="$job"
+        if [[ -e "$KNIT_DIR/sessions/$session" ]]; then
+            echo "warning: existing session $session" >&2
+        else
+            knit-parse-plan --build-instructions "$job" | knit-build-session "$session"
+        fi
         inv=$(knit-resume-session $verbose "$session")
         prd=$(knit-remix-production --set-job "$job" --wrap-invocation "$inv")
         finish

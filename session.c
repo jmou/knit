@@ -138,12 +138,6 @@ static char session_filepath[PATH_MAX];
 static char session_lockfile[PATH_MAX];
 static const char* session_name;
 
-const char* get_session_name() {
-    if (!session_name)
-        die("no session persisted");
-    return session_name;
-}
-
 static void unlock_session() {
     unlink(session_lockfile);
 }
@@ -209,7 +203,7 @@ int new_session(const char* sessname) {
 
     struct stat st;
     if (stat(session_filepath, &st) == 0)
-        return 1;
+        return error("existing session %s", session_name);
     return 0;
 }
 
