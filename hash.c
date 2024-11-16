@@ -5,7 +5,7 @@
 #define OPENSSL_SUPPRESS_DEPRECATED
 #include <openssl/sha.h>
 
-struct object_id* oid_of_hash(uint8_t* hash) {
+struct object_id* oid_of_hash(const uint8_t* hash) {
     static struct object_id oid;
     memcpy(oid.hash, hash, KNIT_HASH_RAWSZ);
     return &oid;
@@ -34,7 +34,7 @@ int hex_to_oid(const char* hex, struct object_id* oid) {
     return 0;
 }
 
-const char* oid_to_hex(const struct object_id* oid) {
+char* oid_to_hex(const struct object_id* oid) {
     const char HEX_DIGITS[] = "0123456789abcdef";
     static char bufs[4][KNIT_HASH_HEXSZ + 1];
     static int i;
