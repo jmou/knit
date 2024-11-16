@@ -1,6 +1,7 @@
 #pragma once
 
 #include "hash.h"
+#include "resource.h"
 
 struct session_step {
     uint8_t job_hash[KNIT_HASH_RAWSZ];
@@ -80,21 +81,26 @@ size_t create_session_dependency(size_t input_pos,
 
 extern struct session_step** active_steps;
 extern size_t num_active_steps;
+extern size_t num_active_fanout;
 extern struct session_input** active_inputs;
 extern size_t num_active_inputs;
 extern struct session_dependency** active_deps;
 extern size_t num_active_deps;
 
-// add_session_fanout_step() must be called after all normal steps have been
-// created; its returned step position is always greater than num_active_steps.
-size_t add_session_fanout_step();
-
-extern size_t num_active_fanout;
-
 int new_session(const char* sessname);
 int load_session(const char* sessname);
+void close_session();
 int save_session();
 // Cannot be used to save_session() later.
 int load_session_nolock(const char* sessname);
 
+// Any step that is available to run must have its job compiled. We compile jobs
+// when building an initial session for any steps without inputs, and when
+// resolving dependencies for a completed step.
 int compile_job_for_step(size_t step_pos);
+
+// Match production outputs to dependencies and finalize corresponding inputs
+// and dependent steps. This effectively copies output resources to inputs. When
+// all of a step's dependencies are fulfilled, we compile its job; if a required
+// dependency is missing, the step will finish with unmet requirements.
+void resolve_dependencies(size_t step_pos, const struct resource_list* outputs);

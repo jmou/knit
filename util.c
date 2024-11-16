@@ -104,6 +104,7 @@ void cleanup_bytebuf(struct bytebuf* bbuf) {
         free(bbuf->data);
     if (bbuf->should_munmap)
         munmap(bbuf->data, bbuf->size);
+    memset(bbuf, 0, sizeof(*bbuf));
 }
 
 void ensure_bytebuf_null_terminated(struct bytebuf* bb) {
