@@ -8,6 +8,7 @@ knit-close-session
 knit-complete-job
 knit-dispatch-job
 knit-exec-cmd
+knit-filter-status
 knit-hash-object
 knit-init
 knit-list-steps

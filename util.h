@@ -15,6 +15,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 [[gnu::format(printf, 1, 2)]]

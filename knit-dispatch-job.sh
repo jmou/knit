@@ -2,15 +2,6 @@
 
 . knit-bash-setup
 
-unset verbose
-if [[ $1 == -v ]]; then
-    verbose=-v
-    exec 3>&2
-    shift
-else
-    exec 3> /dev/null
-fi
-
 [[ $# -eq 1 ]]
 job="$1"
 
@@ -24,11 +15,11 @@ lock_scratch() {
     if [[ -s "$scratch.lock" ]]; then
         echo "warning: existing lockfile $scratch.lock: $(< $scratch.lock)" >&2
     fi
-    exec 4> "$scratch.lock"
-    flock 4
+    exec {lock}> "$scratch.lock"
+    flock $lock
     trap 'rm "$scratch.lock"' EXIT
     # TODO handle manual processes
-    echo "PID $$" >&4
+    echo "PID $$" >&$lock
 }
 
 unpack_job() {
@@ -46,7 +37,7 @@ process_cmd() {
 
     set +e
     # TODO disambiguate errors from knit-exec-cmd and .knit/cmd
-    knit-exec-cmd "$scratch" "$scratch/work/in/.knit/cmd" 3>&- 4>&- > "$scratch/out.knit/log"
+    knit-exec-cmd "$scratch" "$scratch/work/in/.knit/cmd" {lock}>&- > "$scratch/out.knit/log"
     rc=$?
     set -e
 
@@ -69,7 +60,6 @@ process_cmd() {
 }
 
 finish() {
-    echo "Complete $job -> $prd" >&3
     if [[ -z $nocache ]]; then
         knit-cache "$job" "$prd"
     fi
@@ -79,7 +69,7 @@ finish() {
 
 unset prd
 if prd=$(knit-cache "$job"); then
-    echo "Cache hit $job -> $prd" >&3
+    echo -e "!!cache-hit\t$job\t$prd" >&2
     echo "$prd"
     exit
 fi
@@ -95,7 +85,7 @@ while read -r input; do
     if [[ $input == .knit/cmd ]]; then
         lock_scratch
         if prd=$(knit-cache "$job"); then
-            echo "Cache hit (locked) $job -> $prd" >&3
+            echo -e "!!cache-hit-slow\t$job\t$prd" >&2
             rm "$scratch.lock"
             echo "$prd"
             exit
@@ -119,7 +109,7 @@ while read -r input; do
         else
             knit-parse-plan --build-instructions "$job" | knit-build-session "$session"
         fi
-        inv=$(knit-resume-session $verbose "$session")
+        inv=$(knit-resume-session "$session")
         prd=$(knit-remix-production --set-job "$job" --wrap-invocation "$inv")
         finish
     elif [[ $input == .knit/identity ]]; then

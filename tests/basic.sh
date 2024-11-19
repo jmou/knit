@@ -49,7 +49,7 @@ step asomewhatlongstepname: partial bash
 EOF
 
 prd=$(expect_ok knit-run-plan)
-expect_ok test $(knit-run-plan -v -p limit=3 2>&1 | grep 'Cache hit' | wc -l) -eq 8
+expect_ok test $(knit-run-plan --no-filter -p limit=3 2>&1 | grep ^!!cache-hit | wc -l) -eq 8
 prd2=$(expect_ok knit-run-plan -p limit=3)
 expect_ok test "$(knit-peel-spec $prd^{invocation})" == "$(knit-peel-spec $prd2^{invocation})"
 expect_ok knit-run-plan -p limit=5

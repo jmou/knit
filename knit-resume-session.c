@@ -1,28 +1,30 @@
+#include "hash.h"
 #include "session.h"
 #include "production.h"
+
+#include <getopt.h>
 
 struct child {
     pid_t pid;
     int fd;
 };
 
-static int verbose;
 static char* session_name;
 
-[[gnu::format(printf, 1, 2)]]
-static void verbose_print(const char* format, ...) {
-    if (!verbose)
-        return;
-    va_list argp;
-    va_start(argp, format);
-    vfprintf(stderr, format, argp);
-    fputc('\n', stderr);
-    va_end(argp);
+static void step_status(const struct session_step* ss,
+                        const struct production* prd) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    unsigned long long ns = ts.tv_sec * 1000000000 + ts.tv_nsec;
+
+    struct job* job = get_job(oid_of_hash(ss->job_hash));
+    fprintf(stderr, "!!step\t%llu\t%s\t%s\t%s\t%s\n",
+            ns, session_name, oid_to_hex(&job->object.oid),
+            prd ? oid_to_hex(&prd->object.oid) : "-", ss->name);
 }
 
 static void dispatch(const struct session_step* ss, pid_t* pid, int* readfd) {
-    struct job* job = get_job(oid_of_hash(ss->job_hash));
-    verbose_print("Dispatch %s step %s", oid_to_hex(&job->object.oid), ss->name);
+    step_status(ss, NULL);
 
     int fd[2];
     if (pipe(fd) < 0)
@@ -36,13 +38,9 @@ static void dispatch(const struct session_step* ss, pid_t* pid, int* readfd) {
         close(STDIN_FILENO);
         close(fd[0]);
         close(fd[1]);
-        char* argv[4];
-        char** p = argv;
-        *p++ = "knit-dispatch-job";
-        if (verbose)
-            *p++ = "-v";
-        *p++ = oid_to_hex(&job->object.oid);
-        *p = NULL;
+        char* argv[] = {
+            "knit-dispatch-job", oid_to_hex(oid_of_hash(ss->job_hash)), NULL
+        };
         execvp(argv[0], argv);
         die("execvp failed");
     }
@@ -132,26 +130,15 @@ static struct production* read_production(int fd) {
 }
 
 static void die_usage(const char* arg0) {
-    fprintf(stderr, "usage: %s [-v] <session>\n", arg0);
+    fprintf(stderr, "usage: %s <session>\n", arg0);
     exit(1);
 }
 
 int main(int argc, char** argv) {
-    int opt;
-    while ((opt = getopt(argc, argv, "v")) != -1) {
-        switch (opt) {
-        case 'v':
-            verbose = 1;
-            break;
-        default:
-            die_usage(argv[0]);
-        }
-    }
     if (argc != optind + 1)
         die_usage(argv[0]);
     session_name = argv[optind];
 
-    verbose_print("Session %s", session_name);
     if (load_session(session_name) < 0)
         exit(1);
 
@@ -170,6 +157,8 @@ int main(int argc, char** argv) {
             die("step %s already finished", ss->name);
         memcpy(ss->prd_hash, prd->object.oid.hash, KNIT_HASH_RAWSZ);
         ss_setflag(ss, SS_FINAL);
+
+        step_status(ss, prd);
 
         resolve_dependencies(step_pos, prd->outputs);
 
