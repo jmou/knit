@@ -1,9 +1,7 @@
 #pragma once
 
-#include "job.h"
 #include "object.h"
 #include "production.h"
-#include "resource.h"
 
 struct invocation_entry_list {
     struct invocation_entry_list* next;

@@ -2,7 +2,7 @@
 #include "spec.h"
 
 static void die_usage(char* arg0) {
-    fprintf(stderr, "usage: %s <spec>", arg0);
+    fprintf(stderr, "usage: %s <spec>\n", arg0);
     exit(1);
 }
 
