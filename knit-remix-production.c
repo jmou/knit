@@ -50,7 +50,7 @@ int main(int argc, char** argv) {
     if (argc < 2)
         die_usage(argv[0]);
 
-    struct invocation* final_inv;
+    struct invocation* final_inv = NULL;
     struct job* final_job = NULL;
     struct resource_list* outputs = NULL;
 
