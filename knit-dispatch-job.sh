@@ -11,6 +11,7 @@ empty_res() {
     knit-hash-object -t resource -w /dev/null
 }
 
+# TODO probably has concurrency bugs when lock file is removed
 lock_scratch() {
     if [[ -s "$scratch.lock" ]]; then
         echo "warning: existing lockfile $scratch.lock: $(< $scratch.lock)" >&2
@@ -86,7 +87,6 @@ while read -r input; do
         lock_scratch
         if prd=$(knit-cache "$job"); then
             echo -e "!!cache-hit-slow\t$job\t$prd" >&2
-            rm "$scratch.lock"
             echo "$prd"
             exit
         fi
