@@ -7,7 +7,7 @@ echo -n 3 > limit
 mkdir empty
 
 cat <<'EOF' > plan.knit
-partial bash: cmd "bash\0in/script"
+partial bash: cmd "bash" "in/script"
     script = !
 
 step params: params

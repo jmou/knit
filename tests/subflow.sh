@@ -10,7 +10,7 @@ cat <<\EOF > hello/plan.knit
 step world: params
     subject = "World"
 
-partial bash: cmd "/bin/bash\0-e\0in/script"
+partial bash: cmd "/bin/bash" "-e" "in/script"
     script = !
 
 step hello: partial bash

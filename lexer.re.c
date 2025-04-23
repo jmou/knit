@@ -119,16 +119,16 @@ static int lex_string_internal(struct lex_input* in, char* buf, ssize_t* size) {
     int rc;
     int needs_copy = 0;
     size_t i = 0;
+    char* marker;
     for (char c;; i++) {
         c = *in->curr;
         /*!re2c
             ["] { rc = 0; in->curr--; break; }
             [^"\\\n\x00] { goto append; }
+            ["][ ]+["] { c = '\0';  needs_copy = 1; goto append; }
             "\\\"" { c = '"';  needs_copy = 1; goto append; }
             "\\\\" { c = '\\'; needs_copy = 1; goto append; }
             "\\n"  { c = '\n'; needs_copy = 1; goto append; }
-            "\\0" [0]?[0]? { c = '\0';  needs_copy = 1; goto append; }
-            [\\][0]?[0]?[1-7] { rc = error("unsupported octal escape"); break; }
             [\\][^\x00] { rc = error("invalid string escape"); break; }
             * { rc = error("unterminated string"); break; }
         */

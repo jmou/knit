@@ -3,7 +3,7 @@
 . test-setup.sh
 
 cat <<'EOF' > plan.knit
-step random: nocache cmd "bash\0-c\0echo $RANDOM > out/result"
+step random: nocache cmd "bash" "-c" "echo $RANDOM > out/result"
 EOF
 
 prd=$(expect_ok knit-run-plan)
