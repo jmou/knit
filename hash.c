@@ -12,7 +12,7 @@ struct object_id* oid_of_hash(const uint8_t* hash) {
 }
 
 int hex_to_oid(const char* hex, struct object_id* oid) {
-    unsigned char byte;
+    unsigned char byte = 0;
     for (int i = 0; i < KNIT_HASH_HEXSZ; i++) {
         char c = hex[i];
         unsigned char nibble;
@@ -59,12 +59,12 @@ uint32_t make_typesig(const char* type) {
     } else if (!strcmp(type, "invocation")) {
         return OBJ_INVOCATION;
     } else {
-        uint32_t u32;
         if (!strcmp(type, "res") || !strcmp(type, "prd") || !strcmp(type, "inv"))
             warning("use longhand type instead of '%s'", type);
         else
             warning("nonstandard type '%s'", type);
-        strncpy((char*)&u32, type, 4); // pad NUL to 4 bytes
+        uint32_t u32 = 0;
+        memccpy((char*)&u32, type, '\0', 4);
         return ntohl(u32);
     }
 }
