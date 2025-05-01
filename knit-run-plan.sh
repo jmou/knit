@@ -26,7 +26,7 @@ job=$(knit-parse-plan --emit-params-files "$plan" | knit-plan-job "$@" "$plan")
 # We do some crazy file descriptor juggling to filter stderr.
 # See https://stackoverflow.com/a/52575213/13773246
 # The `|| true` prevents grep's exit code from terminating the entire script.
-prd=$({ knit-dispatch-job "$job" 2>&1 >&3 3>&- | { $filter || true; } >&2 3>&-; } 3>&1)
+prd=$({ knit-schedule-jobs "$job" 2>&1 >&3 3>&- | { $filter || true; } >&2 3>&-; } 3>&1)
 # TODO truncate history
 echo "$prd" | tee -a "$KNIT_DIR/history"
 

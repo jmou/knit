@@ -109,9 +109,8 @@ while read -r input; do
         else
             knit-parse-plan --build-instructions "$job" | knit-build-session "$session"
         fi
-        inv=$(knit-resume-session "$session")
-        prd=$(knit-remix-production --set-job "$job" --wrap-invocation "$inv")
-        finish
+        echo session
+        exit
     elif [[ $input == .knit/identity ]]; then
         prd=$(knit-remix-production --set-job "$job" --copy-job-inputs "$job" \
             --remove-prefix .knit/ --set-output ".knit/ok=$(empty_res)")

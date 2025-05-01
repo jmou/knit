@@ -1,12 +1,15 @@
 #include "hash.h"
-#include "session.h"
+#include "job.h"
 #include "production.h"
+#include "session.h"
+#include "util.h"
 
 #include <getopt.h>
 
-struct child {
-    pid_t pid;
-    int fd;
+// Steps corresponding to jobs are stored in the job object extra field.
+struct step_list {
+    size_t step_pos;
+    struct step_list* next;
 };
 
 static char* session_name;
@@ -23,110 +26,86 @@ static void step_status(const struct session_step* ss,
             prd ? oid_to_hex(&prd->object.oid) : "-", ss->name);
 }
 
-static void dispatch(const struct session_step* ss, pid_t* pid, int* readfd) {
+static void dispatch_step(size_t step_pos) {
+    const struct session_step* ss = active_steps[step_pos];
     step_status(ss, NULL);
-
-    int fd[2];
-    if (pipe(fd) < 0)
-        die_errno("pipe failed");
-
-    *pid = fork();
-    if (*pid < 0)
-        die_errno("fork failed");
-    if (!*pid) {
-        dup2(fd[1], STDOUT_FILENO);
-        close(STDIN_FILENO);
-        close(fd[0]);
-        close(fd[1]);
-        char* argv[] = {
-            "knit-dispatch-job", oid_to_hex(oid_of_hash(ss->job_hash)), NULL
-        };
-        execvp(argv[0], argv);
-        die("execvp failed");
-    }
-    *readfd = fd[0];
-    close(fd[1]);
+    struct job* job = get_job(oid_of_hash(ss->job_hash));
+    struct step_list* tail = job->object.extra;
+    if (!tail)
+        puts(oid_to_hex(&job->object.oid));
+    struct step_list* head = xmalloc(sizeof(*head));
+    head->step_pos = step_pos;
+    head->next = tail;
+    job->object.extra = head;
 }
 
-int schedule_children(struct child* children) {
-    int settling = 1;
+int schedule_steps(int* steps_dispatched) {
     int unfinished = 0;
-    while (settling) {
-        settling = 0;
-        for (size_t i = 0; i < num_active_steps; i++) {
-            struct session_step* ss = active_steps[i];
-            if (!ss_hasflag(ss, SS_FINAL)) {
-                unfinished = 1;
-                if (ss_hasflag(ss, SS_JOB) && !children[i].pid) {
-                    settling = 1;
-                    dispatch(ss, &children[i].pid, &children[i].fd);
-                }
+    for (size_t i = 0; i < num_active_steps; i++) {
+        struct session_step* ss = active_steps[i];
+        if (!ss_hasflag(ss, SS_FINAL)) {
+            unfinished = 1;
+            if (ss_hasflag(ss, SS_JOB) && !steps_dispatched[i]) {
+                dispatch_step(i);
+                steps_dispatched[i] = 1;
             }
         }
     }
     return unfinished;
 }
 
-size_t wait_for_child(const struct child* children) {
+static struct production* read_production() {
     size_t orig_num_active_steps = num_active_steps;
     close_session();
 
-    pid_t pid;
-    while (1) {
-        // We wait for child processes before reading their output; the pipe
-        // buffer should be large enough to hold the production hash.
-        int status;
-        pid = waitpid(-1, &status, 0);
-        if (pid < 0) {
-            if (errno == EINTR || errno == EAGAIN)
-                continue;
-            die_errno("waitpid failed");
-        }
-
-        if (WIFEXITED(status)) {
-            int code = WEXITSTATUS(status);
-            if (code)
-                die("knit-dispatch-job died with error code %d", code);
-            break;
-        } else if (WIFSIGNALED(status)) {
-            die("knit-dispatch-job died of signal %d", WTERMSIG(status));
-        }
+    char buf[KNIT_HASH_HEXSZ + 2];
+    errno = 0;
+    if (!fgets(buf, sizeof(buf), stdin)) {
+        if (errno)
+            die_errno("cannot read stdin");
+        die("stdin prematurely closed");
     }
+    if (strlen(buf) != KNIT_HASH_HEXSZ + 1 || buf[KNIT_HASH_HEXSZ] != '\n')
+        die("malformed line");
+
+    struct object_id oid;
+    if (hex_to_oid(buf, &oid) < 0)
+        die("invalid production hash");
+    struct production* prd = get_production(&oid);
+    if (parse_production(prd) < 0)
+        die("could not parse production %s", oid_to_hex(&oid));
 
     if (load_session(session_name) < 0)
         exit(1);
     if (orig_num_active_steps != num_active_steps)
         die("session %s changed while lock released", session_name);
 
-    for (size_t i = 0; i < num_active_steps; i++) {
-        if (children[i].pid == pid)
-            return i;
-    }
-    die("unknown child process");
+    return prd;
 }
 
-static struct production* read_production(int fd) {
-    char buf[KNIT_HASH_HEXSZ + 2];
-    ssize_t nread;
-    while ((nread = read(fd, buf, sizeof(buf))) < 0) {
-        if (errno == EINTR || errno == EAGAIN)
-            continue;
-        die_errno("read failed");
+static void complete_steps(struct production* prd) {
+    struct step_list* list = prd->job->object.extra;
+    if (!list) {
+        die("cannot complete unscheduled job %s",
+            oid_to_hex(&prd->job->object.oid));
     }
-    if (nread != KNIT_HASH_HEXSZ + 1)
-        die("expected %d bytes, got %zd", KNIT_HASH_HEXSZ + 1, nread);
-    close(fd);
 
-    if (buf[KNIT_HASH_HEXSZ] != '\n')
-        die("expected trailing newline");
-    struct object_id oid;
-    if (hex_to_oid(buf, &oid) < 0)
-        die("illegal production %.*s", KNIT_HASH_HEXSZ, buf);
+    while (list) {
+        struct session_step* ss = active_steps[list->step_pos];
+        if (ss_hasflag(ss, SS_FINAL))
+            die("step %s already finished", ss->name);
+        memcpy(ss->prd_hash, prd->object.oid.hash, KNIT_HASH_RAWSZ);
+        ss_setflag(ss, SS_FINAL);
 
-    struct production* prd = get_production(&oid);
-    if (parse_production(prd) < 0)
-        die("could not parse production %s", oid_to_hex(&oid));
-    return prd;
+        step_status(ss, prd);
+
+        resolve_dependencies(list->step_pos, prd->outputs);
+
+        struct step_list* tmp = list;
+        list = tmp->next;
+        free(tmp);
+    }
+    prd->job->object.extra = NULL;
 }
 
 static void die_usage(const char* arg0) {
@@ -142,33 +121,17 @@ int main(int argc, char** argv) {
     if (load_session(session_name) < 0)
         exit(1);
 
-    struct child children[num_active_steps];
-    memset(children, 0, sizeof(children));
+    setlinebuf(stdout);
 
-    while (schedule_children(children)) {
-        size_t step_pos = wait_for_child(children);
+    int steps_dispatched[num_active_steps];
+    memset(steps_dispatched, 0, sizeof(steps_dispatched));
 
-        struct production* prd = read_production(children[step_pos].fd);
-        children[step_pos].pid = 0;
-        children[step_pos].fd = 0;
-
-        struct session_step* ss = active_steps[step_pos];
-        if (ss_hasflag(ss, SS_FINAL))
-            die("step %s already finished", ss->name);
-        memcpy(ss->prd_hash, prd->object.oid.hash, KNIT_HASH_RAWSZ);
-        ss_setflag(ss, SS_FINAL);
-
-        step_status(ss, prd);
-
-        resolve_dependencies(step_pos, prd->outputs);
-
+    while (schedule_steps(steps_dispatched)) {
+        struct production* prd = read_production();
+        complete_steps(prd);
         if (save_session() < 0)
             exit(1);
     }
 
     close_session();
-
-    char* args[] = { "knit-close-session", session_name, NULL };
-    execvp(args[0], args);
-    die("execvp failed");
 }
