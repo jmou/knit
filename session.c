@@ -1,8 +1,8 @@
 #include "session.h"
 
 #include "alloc.h"
-#include "hash.h"
 #include "job.h"
+#include "util.h"
 
 static struct bytebuf session_bb;
 static struct bump_list* session_bump;
@@ -180,12 +180,6 @@ static int set_session_name(const char* sessname) {
 }
 
 static int set_session_name_and_lock(const char* sessname) {
-    static int is_rand_seeded = 0;
-    if (!is_rand_seeded) {
-        srand(getpid());
-        is_rand_seeded = 1;
-    }
-
     if (set_session_name(sessname) < 0)
         return -1;
 
@@ -193,19 +187,8 @@ static int set_session_name_and_lock(const char* sessname) {
                  "%s.lock", session_filepath) >= PATH_MAX)
         return error("lock path too long");
 
-    int fd;
-    long backoff_ms = 1;
-    while ((fd = open(session_lockfile, O_WRONLY | O_CREAT | O_EXCL, 0666)) < 0) {
-        if (errno != EEXIST)
-            return error_errno("open error %s", session_lockfile);
-
-        backoff_ms *= 2;
-        if (backoff_ms > 10000)
-            return error("lockfile timed out: %s", session_lockfile);
-        // Randomly perturb backoff by +/-25% and scale to microseconds.
-        long sleep_us = backoff_ms * (750 + rand() % 500);
-        usleep(sleep_us);
-    }
+    if (acquire_lockfile(session_lockfile) < 0)  // leaks returned fd
+        return -1;;
 
     if (!unlock_session_atexit) {
         atexit(unlock_session);

@@ -71,3 +71,6 @@ int slurp_file(const char* filename, struct bytebuf* out);
 int slurp_fd(int fd, struct bytebuf* out);
 
 int mmap_or_slurp_file(const char* filename, struct bytebuf* out);
+
+// Atomically open a lock file and return its file descriptor, or -1 on error.
+int acquire_lockfile(const char* lockfile);

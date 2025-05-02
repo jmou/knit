@@ -221,3 +221,28 @@ int mmap_or_slurp_file(const char* filename, struct bytebuf* out) {
     close(fd);
     return 0;
 }
+
+int acquire_lockfile(const char* lockfile) {
+    static int is_rand_seeded = 0;
+    if (!is_rand_seeded) {
+        srand(getpid());
+        is_rand_seeded = 1;
+    }
+
+    int fd;
+    long backoff_ms = 1;
+    while ((fd = open(lockfile,
+                      O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666)) < 0) {
+        if (errno != EEXIST)
+            return error_errno("open error %s", lockfile);
+
+        backoff_ms *= 2;
+        if (backoff_ms > 5000)
+            return error("lockfile timed out: %s", lockfile);
+        // Randomly perturb backoff by +/-25% and scale to microseconds.
+        long sleep_us = backoff_ms * (750 + rand() % 500);
+        usleep(sleep_us);
+    }
+
+    return fd;
+}

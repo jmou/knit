@@ -22,33 +22,6 @@
 #define MAX_DISPATCHES 1024
 #define MAX_DISPATCHES_PER_SESSION 8
 
-// Atomically open a lock file and return its file descriptor, or -1 on error.
-// TODO refactor session.c
-static int acquire_lockfile(const char* lockfile) {
-    static int is_rand_seeded = 0;
-    if (!is_rand_seeded) {
-        srand(getpid());
-        is_rand_seeded = 1;
-    }
-
-    int fd;
-    long backoff_ms = 1;
-    while ((fd = open(lockfile,
-                      O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0666)) < 0) {
-        if (errno != EEXIST)
-            return error_errno("open error %s", lockfile);
-
-        backoff_ms *= 2;
-        if (backoff_ms > 5000)
-            return error("lockfile timed out: %s", lockfile);
-        // Randomly perturb backoff by +/-25% and scale to microseconds.
-        long sleep_us = backoff_ms * (750 + rand() % 500);
-        usleep(sleep_us);
-    }
-
-    return fd;
-}
-
 static char sched_lockfile[PATH_MAX];
 
 static void unlock_sched() { unlink(sched_lockfile); }
@@ -378,7 +351,7 @@ int main(int argc, char** argv) {
     if (snprintf(sched_lockfile, PATH_MAX,
                  "%s/scheduler.lock", get_knit_dir()) >= PATH_MAX)
         die("lock path too long");
-    if (acquire_lockfile(sched_lockfile) < 0)
+    if (acquire_lockfile(sched_lockfile) < 0)  // leaks returned fd
         return -1;
     atexit(unlock_sched);
 
