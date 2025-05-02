@@ -20,6 +20,7 @@
 #include <signal.h>
 
 #define MAX_DISPATCHES 1024
+#define MAX_DISPATCHES_PER_SESSION 8
 
 // Atomically open a lock file and return its file descriptor, or -1 on error.
 // TODO refactor session.c
@@ -77,7 +78,12 @@ struct notify_list {
 struct dispatch {
     enum dispatch_state state;
     pid_t pid;
-    int writefd;  // for DS_SESSION state
+
+    // For state == DS_SESSION.
+    int writefd;
+    int num_outstanding;
+    int* pfdp;
+
     struct notify_list* notify;
     char buf[KNIT_HASH_HEXSZ + 20];
 };
@@ -151,6 +157,9 @@ static void dispatch_job(struct job* job, int* fd) {
     dispatch->state = DS_RUNNING;
     char* argv[] = { "knit-dispatch-job", oid_to_hex(&job->object.oid), NULL };
     *fd = spawn(dispatch, argv, 0);
+    // This violates encapsulation, but it lets us easily reactivate a pollfd
+    // from its dispatch.
+    dispatch->pfdp = fd;
 }
 
 static int handle_eof(struct job* job, int* fd) {
@@ -196,6 +205,11 @@ static int notify_completion(const char* prd_hex, struct notify_list** list_p) {
         assert(dispatch->writefd >= 0);
         if (dprintf(dispatch->writefd, "%s\n", prd_hex) < 0)
             ret = error_errno("cannot notify session of completion");
+
+        if (dispatch->num_outstanding-- == MAX_DISPATCHES_PER_SESSION) {
+            assert(*dispatch->pfdp < 0);
+            *dispatch->pfdp = ~*dispatch->pfdp;  // enable pollfd
+        }
 
         struct notify_list* tmp = (*list_p)->next;
         free(*list_p);
@@ -327,10 +341,17 @@ static int poll_tick(struct pollfd* pfds, struct job** jobs,
                 req_dispatch = req_job->object.extra;
             }
             dispatch_add_session(req_dispatch, jobs[i]);
+            dispatch->num_outstanding++;
         }
         size_t off = nl + 1 - dispatch->buf;
         memmove(dispatch->buf, dispatch->buf + off, size - off);
         size -= off;
+
+        if (dispatch->num_outstanding >= MAX_DISPATCHES_PER_SESSION) {
+            assert(pfds[i].fd >= 0);
+            pfds[i].fd = ~pfds[i].fd;  // disable pollfd
+            break;  // stop processing this fd
+        }
     }
 
     if (size >= sizeof(dispatch->buf))
