@@ -11,8 +11,10 @@
 // Each outstanding job, or dispatch, maintains which sessions are waiting upon
 // it. Upon completion, we notify these sessions of the resulting production.
 
+#include "cache.h"
 #include "hash.h"
 #include "job.h"
+#include "production.h"
 #include "spec.h"
 #include "util.h"
 
@@ -128,8 +130,20 @@ static void dispatch_job(struct job* job, int* fd) {
     struct dispatch* dispatch = job->object.extra;
     assert(dispatch);
     dispatch->state = DS_RUNNING;
-    char* argv[] = { "knit-dispatch-job", oid_to_hex(&job->object.oid), NULL };
-    *fd = spawn(dispatch, argv, 0);
+
+    *fd = open_cache_file(job);
+    if (*fd < 0) {
+        // Copy from job_process_name() for const correctness.
+        char process[20];
+        if (!memccpy(process, job_process_name(job->process),
+                     '\0', sizeof(process)))
+            die("process name overflow");
+
+        char* argv[] = {
+            "knit-dispatch-job", process, oid_to_hex(&job->object.oid), NULL
+        };
+        *fd = spawn(dispatch, argv, 0);
+    }
     // This violates encapsulation, but it lets us easily reactivate a pollfd
     // from its dispatch.
     dispatch->pfdp = fd;
@@ -169,15 +183,22 @@ static int handle_eof(struct job* job, int* fd) {
     return 0;
 }
 
+static int write_production_to_session(const struct dispatch* dispatch,
+                                       const char* prd_hex) {
+    assert(dispatch->state == DS_SESSION);
+    assert(dispatch->writefd >= 0);
+    if (dprintf(dispatch->writefd, "%s\n", prd_hex) < 0)
+        return error_errno("cannot notify session of completion");
+    return 0;
+}
+
 static int notify_completion(const char* prd_hex, struct notify_list** list_p) {
     int ret = 0;
     while (*list_p) {
         struct dispatch* dispatch = (*list_p)->flow_job->object.extra;
         assert(dispatch);
-        assert(dispatch->state == DS_SESSION);
-        assert(dispatch->writefd >= 0);
-        if (dprintf(dispatch->writefd, "%s\n", prd_hex) < 0)
-            ret = error_errno("cannot notify session of completion");
+        if (write_production_to_session(dispatch, prd_hex) < 0)
+            ret = -1;
 
         if (dispatch->num_outstanding-- == MAX_DISPATCHES_PER_SESSION) {
             assert(*dispatch->pfdp < 0);
@@ -201,6 +222,20 @@ static int handle_output(struct job* job, const char* line,
         if (!strcmp(line, "session")) {
             dispatch->state = DS_PENDING_SESSION;
         } else {
+            // If we were running a process (knit-dispatch-job) then we should
+            // cache the result. Otherwise the result itself was from the cache.
+            if (dispatch->pid) {
+                struct object_id oid;
+                if (strlen(line) != KNIT_HASH_HEXSZ || hex_to_oid(line, &oid) < 0)
+                    return error("invalid production hash");
+                struct production* prd = get_production(&oid);
+                if (write_cache(job, prd) < 0)
+                    return -1;
+            } else {
+                fprintf(stderr, "!!cache-hit\t%s\t%s\n",
+                        oid_to_hex(&job->object.oid), line);
+            }
+
             dispatch->state = DS_LAMEDUCK;
             // If no one is waiting for this dispatch, assume it is the root job
             // and emit its production.
@@ -240,8 +275,13 @@ static int cleanup_dispatch_process(struct dispatch* dispatch,
                                     struct pollfd* pfd) {
     close(pfd->fd);
     pfd->fd = -1;
-    close(dispatch->writefd);
-    dispatch->writefd = -1;
+    if (dispatch->writefd >= 0) {
+        close(dispatch->writefd);
+        dispatch->writefd = -1;
+    }
+
+    if (!dispatch->pid)  // no process (read from cache file)
+        return 0;
 
     int status;
     int rc;
@@ -308,6 +348,8 @@ static int poll_tick(struct pollfd* pfds, struct job** jobs,
         if (handle_output(jobs[i], dispatch->buf, &req_job) < 0)
             return -1;
         if (req_job) {
+            if (parse_job(req_job) < 0)
+                return -1;
             struct dispatch* req_dispatch = req_job->object.extra;
             if (!req_dispatch) {
                 create_dispatch_and_pollfd(req_job, pfds, jobs, nfds);
@@ -344,7 +386,7 @@ int main(int argc, char** argv) {
         die_usage(argv[0]);
 
     struct job* job = peel_job(argv[1]);
-    if (!job)
+    if (!job || parse_job(job) < 0)
         exit(1);
 
     // To avoid races only one instance may be running for any knit directory.
@@ -352,7 +394,7 @@ int main(int argc, char** argv) {
                  "%s/scheduler.lock", get_knit_dir()) >= PATH_MAX)
         die("lock path too long");
     if (acquire_lockfile(sched_lockfile) < 0)  // leaks returned fd
-        return -1;
+        exit(1);
     atexit(unlock_sched);
 
     struct sigaction act = { .sa_handler = sighandler };

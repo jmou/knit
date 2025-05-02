@@ -11,6 +11,6 @@ if [[ $# -eq 1 && $KNIT_DIR != /* ]]; then
     KNIT_DIR="$1/$KNIT_DIR"
 fi
 
-mkdir -p "$KNIT_DIR"/{objects,scratch,sessions}
+mkdir -p "$KNIT_DIR"/{cache,objects,scratch,sessions}
 
 echo Initialized Knit repository in "$KNIT_DIR" >&2

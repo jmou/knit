@@ -3,9 +3,20 @@
 #include "object.h"
 #include "resource.h"
 
+enum job_process {
+    JOB_PROCESS_INVALID = 0,  // never used by parsed jobs
+    JOB_PROCESS_CMD,
+    JOB_PROCESS_FLOW,
+    JOB_PROCESS_IDENTITY,
+};
+
+const char* job_process_name(enum job_process process);
+
 struct job {
     struct object object;
     struct resource_list* inputs;
+    enum job_process process;
+    unsigned is_nocache : 1;
 };
 
 struct job* get_job(const struct object_id* oid);

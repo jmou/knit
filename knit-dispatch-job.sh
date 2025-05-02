@@ -2,8 +2,9 @@
 
 . knit-bash-setup
 
-[[ $# -eq 1 ]]
-job="$1"
+[[ $# -eq 2 ]]
+process="$1"
+job="$2"
 
 scratch="$KNIT_DIR/scratch/$job"
 
@@ -60,44 +61,17 @@ process_cmd() {
     knit-remix-production "${remix_opts[@]}"
 }
 
-finish() {
-    if [[ -z $nocache ]]; then
-        knit-cache "$job" "$prd"
-    fi
-    echo "$prd"
-    exit
-}
-
-unset prd
-if prd=$(knit-cache "$job"); then
-    echo -e "!!cache-hit\t$job\t$prd" >&2
-    echo "$prd"
-    exit
-fi
-
-# This quick-and-dirty invocation of knit-cat-file could be optimized away, but
-# it would require more lines of code :)
-unset nocache
-if knit-cat-file -p "$job" | cut -f2- | grep -qxF .knit/nocache; then
-    nocache=1
-fi
-
-while read -r input; do
-    if [[ $input == .knit/cmd ]]; then
+case $process in
+    cmd)
         lock_scratch
-        if prd=$(knit-cache "$job"); then
-            echo -e "!!cache-hit-slow\t$job\t$prd" >&2
-            echo "$prd"
-            exit
-        fi
         unpack_job
 
         prd=$(process_cmd)
 
         # TODO when to keep scratch dir?
         rm -rf "$scratch"
-        finish
-    elif [[ $input == .knit/flow ]]; then
+        ;;
+    flow)
         set -o pipefail
         # By convention, the session name is the same as the flow job; any
         # existing session should be from a previous identical
@@ -111,12 +85,14 @@ while read -r input; do
         fi
         echo session
         exit
-    elif [[ $input == .knit/identity ]]; then
+        ;;
+    identity)
         prd=$(knit-remix-production --set-job "$job" --copy-job-inputs "$job" \
             --remove-prefix .knit/ --set-output ".knit/ok=$(empty_res)")
-        finish
-    fi
-done < <(knit-cat-file -p "$job" | cut -f2-)
+        ;;
+    *)
+        echo "Unsupported process $process" >&2
+        exit 1
+esac
 
-echo "Unsupported job $job" >&2
-exit 1
+echo "$prd"

@@ -1,5 +1,19 @@
 #include "job.h"
 
+const char* job_process_name(enum job_process process) {
+    switch (process) {
+    case JOB_PROCESS_CMD:
+        return "cmd";
+    case JOB_PROCESS_FLOW:
+        return "flow";
+    case JOB_PROCESS_IDENTITY:
+        return "identity";
+    case JOB_PROCESS_INVALID:
+        break;
+    }
+    die("invalid job process");
+}
+
 struct job* get_job(const struct object_id* oid) {
     return intern_object(oid, OBJ_JOB, sizeof(struct job));
 }
@@ -28,12 +42,32 @@ int parse_job_bytes(struct job* job, void* data, size_t size) {
         list->name = strdup(in->name);
         list->next = NULL;
 
+        enum job_process process = JOB_PROCESS_INVALID;
+        if (!strcmp(list->name, JOB_INPUT_NOCACHE)) {
+            job->is_nocache = 1;
+        } else if (!strcmp(list->name, JOB_INPUT_CMD)) {
+            process = JOB_PROCESS_CMD;
+        } else if (!strcmp(list->name, JOB_INPUT_FLOW)) {
+            process = JOB_PROCESS_FLOW;
+        } else if (!strcmp(list->name, JOB_INPUT_IDENTITY)) {
+            process = JOB_PROCESS_IDENTITY;
+        }
+
+        if (process != JOB_PROCESS_INVALID) {
+            if (job->process != JOB_PROCESS_INVALID)
+                return error("job has multiple processes");
+            job->process = process;
+        }
+
         off += sizeof(*in) + pathlen + 1;
         *list_p = list;
         list_p = &list->next;
     }
     if (off != size)
         return error("trailing job data");
+
+    if (job->process == JOB_PROCESS_INVALID)
+        return error("job missing process");
 
     job->object.is_parsed = 1;
     return 0;
