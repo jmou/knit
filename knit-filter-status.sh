@@ -23,12 +23,10 @@ num_final=0
 first_ns=
 last_ns=
 
+prelude=
 while read -r line; do
-    # \e[K is ANSI Erase in Line (to right).
-    echo -ne '\r\e[K'
-
     if [[ $line != !!* ]]; then
-        echo "$line"
+        echo "$prelude$line"
         continue
     elif [[ $line != !!step$'\t'* ]]; then
         continue
@@ -44,7 +42,8 @@ while read -r line; do
 
     if [[ $all_sessions != *:$session:* ]]; then
         if [[ $all_sessions == : ]]; then
-            echo "Session $session"
+            echo "${prelude}Session $session"
+            prelude=
         fi
         all_sessions=":$session$all_sessions" # newest sessions first
     fi
@@ -74,15 +73,16 @@ while read -r line; do
     fi
 
     # Keep the cursor on this line so it will be replaced on the next iteration.
-    echo -n "$msg"
+    echo -n "$prelude$msg"
+    # \e[K is ANSI Erase in Line (to right).
+    prelude=$'\r\e[K'
 done
 
 if [[ $num_final -gt 0 ]]; then
-    echo -ne '\r\e[K'
     plural=
     if [[ $num_final -gt 1 ]]; then
         plural=s
     fi
-    echo "Ran $num_final uncached job$plural in" \
+    echo "${prelude}Ran $num_final uncached job$plural in" \
         "$(round1 $(( $last_ns - $first_ns )) 1000000000) seconds"
 fi
