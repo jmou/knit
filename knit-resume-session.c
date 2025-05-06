@@ -21,7 +21,7 @@ static void step_status(const struct session_step* ss,
     unsigned long long ns = ts.tv_sec * 1000000000 + ts.tv_nsec;
 
     struct job* job = get_job(oid_of_hash(ss->job_hash));
-    fprintf(stderr, "!!step\t%llu\t%s\t%s\t%s\t%s\n",
+    dprintf(STDERR_FILENO, "!!step\t%llu\t%s\t%s\t%s\t%s\n",
             ns, session_name, oid_to_hex(&job->object.oid),
             prd ? oid_to_hex(&prd->object.oid) : "-", ss->name);
 }
