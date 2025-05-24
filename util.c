@@ -58,8 +58,16 @@ void warning_errno(const char* fmt, ...) {
     va_end(argp);
 }
 
+ssize_t xread(int fd, void* buf, size_t len) {
+    ssize_t ret;
+    do {
+        ret = read(fd, buf, len);
+    } while (ret < 0 && (errno == EAGAIN || errno == EINTR));
+    return ret;
+}
+
 ssize_t xwrite(int fd, const void* buf, size_t len) {
-    int ret;
+    ssize_t ret;
     do {
         ret = write(fd, buf, len);
     } while (ret < 0 && (errno == EAGAIN || errno == EINTR));

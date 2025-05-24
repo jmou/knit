@@ -47,6 +47,7 @@ static inline void* xrealloc(void* ptr, size_t size) {
     return buf;
 }
 
+ssize_t xread(int fd, void* buf, size_t len);
 // xwrite retries on EAGAIN and EINTR but does not ensure len bytes are written.
 ssize_t xwrite(int fd, const void* buf, size_t len);
 
