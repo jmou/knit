@@ -8,6 +8,8 @@ const char* job_process_name(enum job_process process) {
         return "flow";
     case JOB_PROCESS_IDENTITY:
         return "identity";
+    case JOB_PROCESS_EXTERNAL:
+        return "external";
     case JOB_PROCESS_INVALID:
         break;
     }
@@ -51,6 +53,8 @@ int parse_job_bytes(struct job* job, void* data, size_t size) {
             process = JOB_PROCESS_FLOW;
         } else if (!strcmp(list->name, JOB_INPUT_IDENTITY)) {
             process = JOB_PROCESS_IDENTITY;
+        } else if (!strcmp(list->name, JOB_INPUT_EXTERNAL)) {
+            process = JOB_PROCESS_EXTERNAL;
         }
 
         if (process != JOB_PROCESS_INVALID) {

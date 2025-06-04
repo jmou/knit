@@ -8,6 +8,7 @@ enum job_process {
     JOB_PROCESS_CMD,
     JOB_PROCESS_FLOW,
     JOB_PROCESS_IDENTITY,
+    JOB_PROCESS_EXTERNAL,
 };
 
 const char* job_process_name(enum job_process process);
@@ -38,4 +39,5 @@ struct job_input {
 #define JOB_INPUT_CMD ".knit/cmd"
 #define JOB_INPUT_FLOW ".knit/flow"
 #define JOB_INPUT_IDENTITY ".knit/identity"
+#define JOB_INPUT_EXTERNAL ".knit/external"
 #define JOB_INPUT_NOCACHE ".knit/nocache"

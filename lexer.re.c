@@ -74,13 +74,14 @@ enum token lex_keyword(struct lex_input* in) {
     char* marker;
     while (1) {
         /*!use:re2c
-            "partial" { token = TOKEN_PARTIAL; break; }
-            "step" { token = TOKEN_STEP; break; }
             "cmd" { token = TOKEN_CMD; break; }
+            "external" { token = TOKEN_EXTERNAL; break; }
+            "flow" { token = TOKEN_FLOW; break; }
             "identity" { token = TOKEN_IDENTITY; break; }
             "nocache" { token = TOKEN_NOCACHE; break; }
             "params" { token = TOKEN_PARAMS; break; }
-            "flow" { token = TOKEN_FLOW; break; }
+            "partial" { token = TOKEN_PARTIAL; break; }
+            "step" { token = TOKEN_STEP; break; }
         */
     }
     post_lex(in);

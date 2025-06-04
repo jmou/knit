@@ -23,10 +23,27 @@ done
 set -o pipefail
 
 job=$(knit-parse-plan --emit-params-files "$plan" | knit-plan-job "$@" "$plan")
+
+if [[ ! -p "$KNIT_DIR/run.pipe" ]]; then
+    mkfifo "$KNIT_DIR/run.pipe"
+fi
+
+# TODO process substitution obscures any failure exit status
+while read -r word oid; do
+    if [[ $word == ok ]]; then
+        prd="$oid"
+    elif [[ $word == external ]]; then
+        echo "External job $oid" >&2
+    else
+        echo "Unrecognized word $word" >&2
+    fi
+# Open run.pipe for read/write to prevent waiting for writer.
+# See https://unix.stackexchange.com/a/496812
 # We do some crazy file descriptor juggling to filter stderr.
 # See https://stackoverflow.com/a/52575213/13773246
 # The `|| true` prevents grep's exit code from terminating the entire script.
-prd=$({ knit-schedule-jobs "$job" 2>&1 >&3 3>&- | { $filter || true; } >&2 3>&-; } 3>&1)
+done < <({ knit-schedule-jobs "$job" 1<> "$KNIT_DIR/run.pipe" 2>&1 >&3 3>&- | { $filter || true; } >&2 3>&-; } 3>&1)
+
 # TODO truncate history
 echo "$prd" | tee -a "$KNIT_DIR/history"
 

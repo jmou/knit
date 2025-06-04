@@ -315,6 +315,13 @@ static int parse_process(struct parse_context* ctx, struct step_list* step) {
         step->inputs->val->literal_len = 0;
         return 0;
 
+    case TOKEN_EXTERNAL:
+        step->inputs = create_input(ctx->bump_p, JOB_INPUT_EXTERNAL);
+        step->inputs->val->tag = VALUE_LITERAL;
+        step->inputs->val->literal = NULL;
+        step->inputs->val->literal_len = 0;
+        return 0;
+
     case TOKEN_PARTIAL:
         return parse_process_partial(ctx, step);
     default:
@@ -497,8 +504,8 @@ static int print_value(FILE* fh, const struct value* val) {
                 val->path_optional ? "optional" : "required",
                 val->path_dir ? " prefix" : "",
                 val->dep_pos, val->path);
-        // We could deduplicate implicit dependencies to reduce session size and
-        // reduce work in knit-complete-job, but it probably has a minor impact.
+        // We could deduplicate implicit dependencies to reduce session size,
+        // but it probably has a minor impact.
         if (val->dep_implicit_ok)
             fprintf(fh, "dependency step required %zu .knit/ok\n", val->dep_pos);
         return 0;

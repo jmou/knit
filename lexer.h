@@ -16,6 +16,7 @@ enum token {
 
     TOKEN_CMD,
     TOKEN_ENVVAR,
+    TOKEN_EXTERNAL,
     TOKEN_FLOW,
     TOKEN_IDENT,
     TOKEN_IDENTITY,

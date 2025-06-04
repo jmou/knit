@@ -81,7 +81,7 @@ struct dispatch {
 };
 
 struct read_buffer {
-    struct dispatch* dispatch;
+    struct dispatch* dispatch;  // NULL iff on stdin
     size_t size;
     char buf[KNIT_HASH_HEXSZ + 1];
 };
@@ -243,6 +243,21 @@ static int dispatch_line(struct dispatch* dispatch, const char* line,
     return 0;
 }
 
+static int stdin_line(const char* line) {
+    struct production* prd = get_production_hex(line);
+    if (!prd || parse_production(prd) < 0 || parse_job(prd->job) < 0)
+        return -1;
+
+    if (!get_job_extra(prd->job)->requested)
+        return error("job %s not requested", oid_to_hex(&prd->job->object.oid));
+    if (prd->job->process != JOB_PROCESS_EXTERNAL)
+        return error("job %s not external", oid_to_hex(&prd->job->object.oid));
+    if (get_job_extra(prd->job)->prd)
+        return error("job %s already has production", oid_to_hex(&prd->job->object.oid));
+
+    return complete_job(prd->job, prd);
+}
+
 // Returns -1 on error, or the number of bytes processed. Notably, returns 0 if
 // the buffer has no complete lines.
 static ssize_t handle_read(struct read_buffer* readbuf, struct job** req_job) {
@@ -254,8 +269,13 @@ static ssize_t handle_read(struct read_buffer* readbuf, struct job** req_job) {
     }
     *nl = '\0';
 
-    if (dispatch_line(readbuf->dispatch, readbuf->buf, req_job) < 0)
-        return -1;
+    if (readbuf->dispatch) {
+        if (dispatch_line(readbuf->dispatch, readbuf->buf, req_job) < 0)
+            return -1;
+    } else {
+        if (stdin_line(readbuf->buf) < 0)
+            return -1;
+    }
 
     size_t off = nl + 1 - readbuf->buf;
     memmove(readbuf->buf, readbuf->buf + off, readbuf->size - off);
@@ -352,6 +372,19 @@ static int pollfd_ready(struct pollfd* pfd, struct read_buffer* readbuf) {
     }
 }
 
+static void setup_stdin_pollfd(struct pollfd* pfds,
+                               struct read_buffer** readbufs,
+                               nfds_t* nfds) {
+    struct read_buffer* readbuf = malloc(sizeof(*readbuf));
+    readbuf->dispatch = NULL;
+    readbuf->size = 0;
+
+    readbufs[*nfds] = readbuf;
+    pfds[*nfds].fd = STDIN_FILENO;
+    pfds[*nfds].events = POLLIN;
+    (*nfds)++;
+}
+
 static void setup_dispatch(struct job* job,
                            struct pollfd* pfds,
                            struct read_buffer** readbufs,
@@ -360,6 +393,11 @@ static void setup_dispatch(struct job* job,
     if (get_job_extra(job)->requested)
         return;
     get_job_extra(job)->requested = 1;
+
+    if (job->process == JOB_PROCESS_EXTERNAL) {
+        printf("external %s\n", oid_to_hex(&job->object.oid));
+        return;
+    }
 
     if (*nfds + 1 >= MAX_DISPATCHES)
         die("too many dispatches");
@@ -433,12 +471,16 @@ int main(int argc, char** argv) {
     struct pollfd pfds[MAX_DISPATCHES];
     struct read_buffer* readbufs[MAX_DISPATCHES];
     nfds_t nfds = 0;
+
+    setlinebuf(stdout);
+    setup_stdin_pollfd(pfds, readbufs, &nfds);
     setup_dispatch(root_job, pfds, readbufs, &nfds);
 
     nfds_t deletions[MAX_DISPATCHES];
     size_t ndel = 0;
 
-    while (nfds > 0) {
+    // STDIN is always polled; run until all other child processes complete.
+    while (nfds > 1) {
         if (poll(pfds, nfds, -1) < 0) {
             if (errno == EINTR || errno == EAGAIN)
                 continue;
@@ -459,6 +501,7 @@ int main(int argc, char** argv) {
                         exit(1);
 
                     if (req_job) {
+                        assert(readbufs[i]->dispatch);
                         assert(readbufs[i]->dispatch->session);
                         if (setup_dispatch_and_notify(req_job,
                                                       readbufs[i]->dispatch->session,
@@ -470,17 +513,20 @@ int main(int argc, char** argv) {
                 // Since we throttle after draining the subprocess buffer, it is
                 // possible in theory to exceed MAX_DISPATCHES_PER_SESSION. In
                 // practice this is mitigated by the size of our read buffer.
-                maybe_throttle_pollfd(readbufs[i]->dispatch, &pfds[i]);
+                if (readbufs[i]->dispatch)
+                    maybe_throttle_pollfd(readbufs[i]->dispatch, &pfds[i]);
             } else {
                 if (readbufs[i]->size > 0)
                     die("unterminated line");
 
                 // If our fd is ready with no data then we've reached EOF.
-                if (handle_eof(readbufs[i]->dispatch, &pfds[i]) < 0)
+                if (readbufs[i]->dispatch &&
+                        handle_eof(readbufs[i]->dispatch, &pfds[i]) < 0)
                     exit(1);
             }
 
-            if (dispatch_is_dead(readbufs[i]->dispatch)) {
+            if (readbufs[i]->dispatch &&
+                    dispatch_is_dead(readbufs[i]->dispatch)) {
                 assert(ndel < MAX_DISPATCHES);
                 deletions[ndel++] = i;
             }
@@ -489,6 +535,7 @@ int main(int argc, char** argv) {
         // Defer deletion until after iteration.
         for (; ndel > 0; ndel--) {
             size_t i = deletions[ndel - 1];
+            assert(readbufs[i]->dispatch);
             free_dispatch(readbufs[i]->dispatch);
             free(readbufs[i]);
             nfds--;
@@ -506,6 +553,6 @@ int main(int argc, char** argv) {
 
     const struct production* prd = get_job_extra(root_job)->prd;
     assert(prd);
-    puts(oid_to_hex(&prd->object.oid));
+    printf("ok %s\n", oid_to_hex(&prd->object.oid));
     return 0;
 }
