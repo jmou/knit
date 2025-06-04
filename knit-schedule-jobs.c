@@ -42,7 +42,8 @@ struct notify_list {
 // Index the notify_list by job so we can easily add sessions to be notified.
 struct job_extra {
     struct notify_list* notify;
-    unsigned dispatched : 1;
+    struct production* prd;
+    unsigned requested : 1;
 };
 
 struct job_extra* get_job_extra(struct job* job) {
@@ -77,6 +78,10 @@ struct dispatch {
     pid_t pid;
     struct job* job;
     struct dispatch_session* session;  // for DS_SESSION
+};
+
+struct read_buffer {
+    struct dispatch* dispatch;
     size_t size;
     char buf[KNIT_HASH_HEXSZ + 1];
 };
@@ -129,7 +134,52 @@ static int spawn(char** argv, int* readfd, int* writefd) {
     return pid;
 }
 
+static int write_production_to_session(const struct dispatch_session* session,
+                                       const struct production* prd) {
+    if (dprintf(session->writefd, "%s\n", oid_to_hex(&prd->object.oid)) < 0)
+        return error_errno("cannot notify session of completion");
+    return 0;
+}
+
+static int complete_job(struct job* job, struct production* prd) {
+    struct notify_list** list_p = &get_job_extra(job)->notify;
+
+    if (parse_production(prd) < 0)
+        return -1;
+    assert(prd->job == job);
+
+    assert(!get_job_extra(job)->prd);
+    get_job_extra(job)->prd = prd;
+
+    int ret = 0;
+    while (*list_p) {
+        struct dispatch_session* session = (*list_p)->session;
+        if (write_production_to_session(session, prd) < 0)
+            ret = -1;
+
+        if (session->num_outstanding-- == MAX_DISPATCHES_PER_SESSION) {
+            assert(session->pfd->fd < 0);
+            session->pfd->fd = ~session->pfd->fd;  // enable pollfd
+        }
+
+        struct notify_list* tmp = (*list_p)->next;
+        free(*list_p);
+        *list_p = tmp;
+    }
+    return ret;
+}
+
+static void notify_when_complete(struct dispatch_session* session,
+                                 struct job* job) {
+    struct notify_list* list = xmalloc(sizeof(*list));
+    list->session = session;
+    list->next = get_job_extra(job)->notify;
+    get_job_extra(job)->notify = list;
+    session->num_outstanding++;
+}
+
 static void start_dispatch(struct dispatch* dispatch, int* fd) {
+    assert(dispatch->state == DS_INITIAL);
     dispatch->state = DS_CACHE;
 
     *fd = open_cache_file(dispatch->job);
@@ -150,86 +200,38 @@ static void start_dispatch(struct dispatch* dispatch, int* fd) {
     }
 }
 
-static int write_hex_production_to_cache(const struct job* job,
-                                         const char* prd_hex) {
+static struct production* get_production_hex(const char* hex) {
     struct object_id oid;
-    if (strlen(prd_hex) != KNIT_HASH_HEXSZ || hex_to_oid(prd_hex, &oid) < 0)
-        return error("invalid production hash");
-    struct production* prd = get_production(&oid);
-    return write_cache(job, prd);
-}
-
-static void notify_when_complete(struct dispatch_session* session,
-                                 struct job* job) {
-    struct notify_list* list = xmalloc(sizeof(*list));
-    list->session = session;
-    list->next = get_job_extra(job)->notify;
-    get_job_extra(job)->notify = list;
-    session->num_outstanding++;
-}
-
-static int write_production_to_session(const struct dispatch_session* session,
-                                       const char* prd_hex) {
-    if (dprintf(session->writefd, "%s\n", prd_hex) < 0)
-        return error_errno("cannot notify session of completion");
-    return 0;
-}
-
-static int notify_completion(struct dispatch* dispatch, const char* prd_hex) {
-    struct notify_list** list_p = &get_job_extra(dispatch->job)->notify;
-
-    // If no one is waiting for this dispatch, assume it is the root job
-    // and emit its production.
-    if (!*list_p)
-        puts(prd_hex);
-
-    int ret = 0;
-    while (*list_p) {
-        struct dispatch_session* session = (*list_p)->session;
-        if (write_production_to_session(session, prd_hex) < 0)
-            ret = -1;
-
-        if (session->num_outstanding-- == MAX_DISPATCHES_PER_SESSION) {
-            assert(session->pfd->fd < 0);
-            session->pfd->fd = ~session->pfd->fd;  // enable pollfd
-        }
-
-        struct notify_list* tmp = (*list_p)->next;
-        free(*list_p);
-        *list_p = tmp;
+    if (strlen(hex) != KNIT_HASH_HEXSZ || hex_to_oid(hex, &oid) < 0) {
+        error("invalid production hash");
+        return NULL;
     }
-    return ret;
+    struct production* prd = get_production(&oid);
+    return prd;
 }
 
 // Process a line of output from a dispatch process. Sets *req_job to request a
-// job to be scheduled. Returns -1 on error, or the number of bytes processed
-// from dispatch->buf. Notably, returns 0 if the buffer has no complete lines.
-static ssize_t handle_output(struct dispatch* dispatch, struct job** req_job) {
-    char* nl = memchr(dispatch->buf, '\n', dispatch->size);
-    if (!nl) {
-        if (dispatch->size >= sizeof(dispatch->buf))
-            return error("subprocess output line too long");
-        return 0;
-    }
-    *nl = '\0';
-    const char* line = dispatch->buf;
-
+// job to be scheduled.
+static int dispatch_line(struct dispatch* dispatch, const char* line,
+                         struct job** req_job) {
     if (dispatch->state == DS_RUNNING) {
         if (!strcmp(line, "session")) {
             dispatch->state = DS_PENDING_SESSION;
         } else {
-            if (write_hex_production_to_cache(dispatch->job, line) < 0)
+            struct production* prd = get_production_hex(line);
+            if (!prd ||
+                    write_cache(dispatch->job, prd) < 0 ||
+                    complete_job(dispatch->job, prd) < 0)
                 return -1;
             dispatch->state = DS_LAMEDUCK;
-            if (notify_completion(dispatch, line) < 0)
-                return -1;
         }
     } else if (dispatch->state == DS_CACHE) {
         fprintf(stderr, "!!cache-hit\t%s\t%s\n",
                 oid_to_hex(&dispatch->job->object.oid), line);
-        dispatch->state = DS_LAMEDUCK;
-        if (notify_completion(dispatch, line) < 0)
+        struct production* prd = get_production_hex(line);
+        if (!prd || complete_job(dispatch->job, prd) < 0)
             return -1;
+        dispatch->state = DS_LAMEDUCK;
     } else if (dispatch->state == DS_SESSION) {
         struct object_id oid;
         if (strlen(line) != KNIT_HASH_HEXSZ || hex_to_oid(line, &oid) < 0)
@@ -238,10 +240,26 @@ static ssize_t handle_output(struct dispatch* dispatch, struct job** req_job) {
     } else {
         return error("unexpected output");
     }
+    return 0;
+}
 
-    size_t off = nl + 1 - dispatch->buf;
-    memmove(dispatch->buf, dispatch->buf + off, dispatch->size - off);
-    dispatch->size -= off;
+// Returns -1 on error, or the number of bytes processed. Notably, returns 0 if
+// the buffer has no complete lines.
+static ssize_t handle_read(struct read_buffer* readbuf, struct job** req_job) {
+    char* nl = memchr(readbuf->buf, '\n', readbuf->size);
+    if (!nl) {
+        if (readbuf->size >= sizeof(readbuf->buf))
+            return error("subprocess output line too long");
+        return 0;
+    }
+    *nl = '\0';
+
+    if (dispatch_line(readbuf->dispatch, readbuf->buf, req_job) < 0)
+        return -1;
+
+    size_t off = nl + 1 - readbuf->buf;
+    memmove(readbuf->buf, readbuf->buf + off, readbuf->size - off);
+    readbuf->size -= off;
     return off;
 }
 
@@ -286,9 +304,6 @@ static int handle_eof(struct dispatch* dispatch, struct pollfd* pfd) {
     if (cleanup_subprocess(dispatch) < 0)
         return -1;
 
-    if (dispatch->size > 0)
-        return error("unterminated line");
-
     if (dispatch->state == DS_PENDING_SESSION) {
         char* argv[] = {
             "knit-resume-session", oid_to_hex(&dispatch->job->object.oid), NULL
@@ -311,43 +326,40 @@ static int handle_eof(struct dispatch* dispatch, struct pollfd* pfd) {
         dispatch->pid = spawn(argv, &pfd->fd, NULL);
         dispatch->state = DS_RUNNING;
     } else if (dispatch->state == DS_LAMEDUCK) {
-        if (get_job_extra(dispatch->job)->notify) {
-            // We happened to receive requests for this dispatch after sending
-            // notifications. Instead of deallocating our dispatch, run it again
-            // with remaining notifications.
-            start_dispatch(dispatch, &pfd->fd);
-        } else {
-            dispatch->state = DS_DONE;
-        }
+        assert(!get_job_extra(dispatch->job)->notify);
+        dispatch->state = DS_DONE;
     } else {
         return error("unexpected eof");
     }
     return 0;
 }
 
-static int pollfd_ready(struct pollfd* pfd, struct dispatch* dispatch) {
+static int pollfd_ready(struct pollfd* pfd, struct read_buffer* readbuf) {
     if (!pfd->revents)
         return 0;
     assert(!(pfd->revents & POLLNVAL));
 
     // On EOF we observe POLLHUP without POLLIN.
     if (pfd->revents & (POLLIN | POLLHUP)) {
-        ssize_t nr = xread(pfd->fd, dispatch->buf + dispatch->size,
-                           sizeof(dispatch->buf) - dispatch->size);
+        ssize_t nr = xread(pfd->fd, readbuf->buf + readbuf->size,
+                           sizeof(readbuf->buf) - readbuf->size);
         if (nr < 0)
             die_errno("read failed");
-        dispatch->size += nr;
+        readbuf->size += nr;
         return 1;
     } else {
         die("unhandled poll revent");
     }
 }
 
-static void setup_dispatch_and_pollfd(struct job* job, struct pollfd* pfds,
-                                      struct dispatch** dispatches, nfds_t* nfds) {
-    if (get_job_extra(job)->dispatched)
+static void setup_dispatch(struct job* job,
+                           struct pollfd* pfds,
+                           struct read_buffer** readbufs,
+                           nfds_t* nfds) {
+    assert(!get_job_extra(job)->prd);
+    if (get_job_extra(job)->requested)
         return;
-    get_job_extra(job)->dispatched = 1;
+    get_job_extra(job)->requested = 1;
 
     if (*nfds + 1 >= MAX_DISPATCHES)
         die("too many dispatches");
@@ -356,11 +368,32 @@ static void setup_dispatch_and_pollfd(struct job* job, struct pollfd* pfds,
     memset(dispatch, 0, sizeof(*dispatch));
     dispatch->job = job;
 
-    dispatches[*nfds] = dispatch;
+    struct read_buffer* readbuf = malloc(sizeof(*readbuf));
+    readbuf->dispatch = dispatch;
+    readbuf->size = 0;
+
+    readbufs[*nfds] = readbuf;
     pfds[*nfds].events = POLLIN;
     pfds[*nfds].revents = 0;
     start_dispatch(dispatch, &pfds[*nfds].fd);
     (*nfds)++;
+}
+
+static int setup_dispatch_and_notify(struct job* job,
+                                     struct dispatch_session* session,
+                                     struct pollfd* pfds,
+                                     struct read_buffer** readbufs,
+                                     nfds_t* nfds) {
+    if (parse_job(job) < 0)
+        return -1;
+
+    const struct production* prd = get_job_extra(job)->prd;
+    if (prd)
+        return write_production_to_session(session, prd);
+
+    setup_dispatch(job, pfds, readbufs, nfds);
+    notify_when_complete(session, job);
+    return 0;
 }
 
 static void maybe_throttle_pollfd(struct dispatch* dispatch,
@@ -398,9 +431,9 @@ int main(int argc, char** argv) {
     sigaction(SIGTERM, &act, NULL);
 
     struct pollfd pfds[MAX_DISPATCHES];
-    struct dispatch* dispatches[MAX_DISPATCHES];
+    struct read_buffer* readbufs[MAX_DISPATCHES];
     nfds_t nfds = 0;
-    setup_dispatch_and_pollfd(root_job, pfds, dispatches, &nfds);
+    setup_dispatch(root_job, pfds, readbufs, &nfds);
 
     nfds_t deletions[MAX_DISPATCHES];
     size_t ndel = 0;
@@ -413,40 +446,41 @@ int main(int argc, char** argv) {
         }
 
         for (nfds_t i = 0; i < nfds; i++) {
-            if (!pollfd_ready(&pfds[i], dispatches[i]))
+            if (!pollfd_ready(&pfds[i], readbufs[i]))
                 continue;
 
-            if (dispatches[i]->size > 0) {
+            if (readbufs[i]->size > 0) {
                 // Process lines until we run out.
                 int nr;
                 do {
                     struct job* req_job = NULL;
-                    nr = handle_output(dispatches[i], &req_job);
+                    nr = handle_read(readbufs[i], &req_job);
                     if (nr < 0)
                         exit(1);
 
                     if (req_job) {
-                        if (parse_job(req_job) < 0)
+                        assert(readbufs[i]->dispatch->session);
+                        if (setup_dispatch_and_notify(req_job,
+                                                      readbufs[i]->dispatch->session,
+                                                      pfds, readbufs,
+                                                      &nfds) < 0)
                             exit(1);
-                        // Dispatch req_job if needed and notify the requesting
-                        // session when complete.
-                        setup_dispatch_and_pollfd(req_job, pfds,
-                                                  dispatches, &nfds);
-                        assert(dispatches[i]->session);
-                        notify_when_complete(dispatches[i]->session, req_job);
                     }
                 } while (nr > 0);
                 // Since we throttle after draining the subprocess buffer, it is
                 // possible in theory to exceed MAX_DISPATCHES_PER_SESSION. In
                 // practice this is mitigated by the size of our read buffer.
-                maybe_throttle_pollfd(dispatches[i], &pfds[i]);
+                maybe_throttle_pollfd(readbufs[i]->dispatch, &pfds[i]);
             } else {
+                if (readbufs[i]->size > 0)
+                    die("unterminated line");
+
                 // If our fd is ready with no data then we've reached EOF.
-                if (handle_eof(dispatches[i], &pfds[i]) < 0)
+                if (handle_eof(readbufs[i]->dispatch, &pfds[i]) < 0)
                     exit(1);
             }
 
-            if (dispatch_is_dead(dispatches[i])) {
+            if (dispatch_is_dead(readbufs[i]->dispatch)) {
                 assert(ndel < MAX_DISPATCHES);
                 deletions[ndel++] = i;
             }
@@ -455,19 +489,23 @@ int main(int argc, char** argv) {
         // Defer deletion until after iteration.
         for (; ndel > 0; ndel--) {
             size_t i = deletions[ndel - 1];
-            free_dispatch(dispatches[i]);
+            free_dispatch(readbufs[i]->dispatch);
+            free(readbufs[i]);
             nfds--;
             if (i < nfds) {
                 memcpy(&pfds[i], &pfds[nfds], sizeof(*pfds));
-                dispatches[i] = dispatches[nfds];
+                readbufs[i] = readbufs[nfds];
                 // Update any reference to the moved pollfd.
-                if (dispatches[i]->session) {
-                    assert(dispatches[i]->session->pfd == &pfds[nfds]);
-                    dispatches[i]->session->pfd = &pfds[i];
+                if (readbufs[i]->dispatch->session) {
+                    assert(readbufs[i]->dispatch->session->pfd == &pfds[nfds]);
+                    readbufs[i]->dispatch->session->pfd = &pfds[i];
                 }
             }
         }
     }
 
+    const struct production* prd = get_job_extra(root_job)->prd;
+    assert(prd);
+    puts(oid_to_hex(&prd->object.oid));
     return 0;
 }
