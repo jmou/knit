@@ -14,6 +14,7 @@ struct step_list {
 
 static char* session_name;
 
+// TODO this would make more sense in knit-schedule-jobs (and avoid clock skew)
 static void step_status(const struct session_step* ss,
                         const struct production* prd) {
     struct timespec ts;
