@@ -204,11 +204,67 @@ static void format_status(const struct progress* progress,
     buf[off] = '\0';
 }
 
+static void filter_line(char* line, struct progress* progress) {
+    if (!strncmp(line, "!!cache-hit\t", 12)) {
+        progress->num_cached++;
+    } else if (!strncmp(line, "!!step\t", 7)) {
+        struct line_step parsed;
+        if (parse_line_step(line, &parsed) < 0)
+            return;
+        progress_handle_step(progress, &parsed);
+
+        char buf[columns + 1];
+        format_status(progress, buf, sizeof(buf));
+        hardstatus(buf);
+    }
+}
+
 static void print_summary(struct progress* progress) {
     float duration = (float)(progress->last_ns - progress->first_ns) / 1000000000;
     const char* plural = progress->num_final > 1 ? "s" : "";
     statusf("Ran %u job%s (%u cached) in %.1f seconds\n",
             progress->num_final, plural, progress->num_cached, duration);
+}
+
+struct linebuf {
+    size_t off;
+    size_t size;
+    char buf[1024];
+};
+
+static void linebuf_init(struct linebuf* lb) {
+    lb->off = lb->size = 0;
+}
+
+static ssize_t linebuf_read(struct linebuf* lb, int fd) {
+    assert(lb->size < sizeof(lb->buf));
+    ssize_t nr = xread(fd, lb->buf + lb->size, sizeof(lb->buf) - lb->size);
+    if (nr > 0) {
+        if (memchr(lb->buf + lb->size, '\0', nr))
+            warning("illegal NUL byte; line will be truncated");
+        lb->size += nr;
+    }
+    return nr;
+}
+
+static char* linebuf_getline(struct linebuf* lb) {
+    char* start = lb->buf + lb->off;
+    char* nl = memchr(start, '\n', lb->size - lb->off);
+    if (!nl) {
+        if (lb->off == 0 && lb->size == sizeof(lb->buf))
+            die("line too long");
+
+        // Shift remaining to the start of the buffer.
+        memmove(lb->buf, lb->buf + lb->off, lb->size - lb->off);
+        lb->size -= lb->off;
+        lb->off = 0;
+        return NULL;
+    }
+
+    *nl++ = '\0';
+    lb->off = nl - lb->buf;
+    assert(lb->off <= lb->size);
+    return start;
 }
 
 static int spawn(char** argv, int infd, int* errfdp) {
@@ -285,8 +341,6 @@ int main(int argc, char** argv) {
     int child_pid = spawn(&argv[3], infd, &child_errfd);
     close(infd);
 
-    FILE* child_stderr = fdopen(child_errfd, "r");
-
     struct sigaction act = {
         .sa_handler = update_columns,
         // Otherwise getline() is interrupted and not cleanly recoverable.
@@ -295,40 +349,37 @@ int main(int argc, char** argv) {
     sigaction(SIGWINCH, &act, NULL);
     update_columns(SIGWINCH);
 
-    struct progress progress = { 0 };
+    struct progress progress = { 0 };  // .sessions leaked on exit
 
-    char* line = NULL;
-    size_t size = 0;
-    ssize_t nread;
-    while (errno = 0, (nread = getline(&line, &size, child_stderr)) > 0) {
-        // Pass through incomplete lines or not starting with !!
-        if (line[nread - 1] != '\n' || line[0] != '!' || line[1] != '!') {
-            maybe_clear_line(0);
-            fputs(line, stderr);
-            continue;
+    struct linebuf lbuf;
+    linebuf_init(&lbuf);
+
+    while (1) {
+        ssize_t nread = linebuf_read(&lbuf, child_errfd);
+        if (nread < 0)
+            die_errno("cannot read child stderr");
+        if (nread == 0) {
+            if (lbuf.off < lbuf.size)
+                warning("unterminated line");
+            break;
         }
-        line[nread - 1] = '\0';
 
-        if (!strncmp(line, "!!cache-hit\t", 12)) {
-            progress.num_cached++;
-        } else if (!strncmp(line, "!!step\t", 7)) {
-            struct line_step parsed;
-            if (parse_line_step(line, &parsed) < 0)
+        char* line;
+        while ((line = linebuf_getline(&lbuf))) {
+            // Pass through lines not starting with !!
+            if (line[0] != '!' || line[1] != '!') {
+                maybe_clear_line(0);
+                fprintf(stderr, "%s\n", line);
                 continue;
-            progress_handle_step(&progress, &parsed);
+            }
 
-            char buf[columns + 1];
-            format_status(&progress, buf, sizeof(buf));
-            hardstatus(buf);
+            filter_line(line, &progress);
         }
     }
-    if (nread < 0 && errno > 0)
-        die_errno("cannot read stdin");
 
     if (progress.num_final > 0)
         print_summary(&progress);
 
-    fclose(child_stderr);
-    // leak line and sessions
+    close(child_errfd);
     exit_like_child(child_pid);
 }
