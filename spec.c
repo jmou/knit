@@ -129,6 +129,7 @@ static struct object* peel_type(char* spec, size_t len) {
     // Icky NUL termination.
     spec[len - 1] = '\0';
     uint32_t typesig = make_typesig(&spec[inner_len + 2]);
+    spec[len - 1] = '}';
 
     return peel_spec_and_deref(spec, inner_len, typesig);
 }
