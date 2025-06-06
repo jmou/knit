@@ -1,7 +1,11 @@
+#include "hash.h"
 #include "util.h"
 
+#include <poll.h>
 #include <signal.h>
 #include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 static volatile sig_atomic_t columns = 1 << 20;
 
@@ -18,6 +22,7 @@ static void maybe_clear_line(int clear_next) {
     needs_clear = clear_next;
 }
 
+static int hide_filtered;
 static int enable_status;
 
 [[gnu::format(printf, 1, 2)]]
@@ -204,21 +209,6 @@ static void format_status(const struct progress* progress,
     buf[off] = '\0';
 }
 
-static void filter_line(char* line, struct progress* progress) {
-    if (!strncmp(line, "!!cache-hit\t", 12)) {
-        progress->num_cached++;
-    } else if (!strncmp(line, "!!step\t", 7)) {
-        struct line_step parsed;
-        if (parse_line_step(line, &parsed) < 0)
-            return;
-        progress_handle_step(progress, &parsed);
-
-        char buf[columns + 1];
-        format_status(progress, buf, sizeof(buf));
-        hardstatus(buf);
-    }
-}
-
 static void print_summary(struct progress* progress) {
     float duration = (float)(progress->last_ns - progress->first_ns) / 1000000000;
     const char* plural = progress->num_final > 1 ? "s" : "";
@@ -236,15 +226,23 @@ static void linebuf_init(struct linebuf* lb) {
     lb->off = lb->size = 0;
 }
 
-static ssize_t linebuf_read(struct linebuf* lb, int fd) {
+// Read from *fd into linebuf. Returns whether EOF; if so, cleans up *fd.
+static int linebuf_read_is_eof(struct linebuf* lb, int* fd) {
     assert(lb->size < sizeof(lb->buf));
-    ssize_t nr = xread(fd, lb->buf + lb->size, sizeof(lb->buf) - lb->size);
+    ssize_t nr = xread(*fd, lb->buf + lb->size, sizeof(lb->buf) - lb->size);
+    if (nr <= 0) {
+        if (nr < 0)
+            warning_errno("read failed");
+        if (lb->off < lb->size)
+            warning("unexpected EOF");
+        return 1;
+    }
     if (nr > 0) {
         if (memchr(lb->buf + lb->size, '\0', nr))
             warning("illegal NUL byte; line will be truncated");
         lb->size += nr;
     }
-    return nr;
+    return 0;
 }
 
 static char* linebuf_getline(struct linebuf* lb) {
@@ -267,25 +265,151 @@ static char* linebuf_getline(struct linebuf* lb) {
     return start;
 }
 
-static int spawn(char** argv, int infd, int* errfdp) {
-    int fds[2];
-    if (pipe(fds) < 0)
-        die_errno("pipe failed");
-    fcntl(fds[0], F_SETFD, FD_CLOEXEC);
-    fcntl(fds[1], F_SETFD, FD_CLOEXEC);
+// Returns -1 if the fd should be closed, or 0 to remain open.
+static int child_ready(struct pollfd* pfd, struct linebuf* lbuf,
+                       struct progress* progress) {
+    if (linebuf_read_is_eof(lbuf, &pfd->fd))
+        return -1;
+
+    char* line;
+    while ((line = linebuf_getline(lbuf))) {
+        // Pass through lines not starting with !!
+        if (line[0] != '!' || line[1] != '!') {
+            maybe_clear_line(0);
+            fprintf(stderr, "%s\n", line);
+            continue;
+        }
+
+        if (!hide_filtered)
+            fprintf(stderr, "%s\n", line);
+
+        if (!strncmp(line, "!!cache-hit\t", 12)) {
+            progress->num_cached++;
+        } else if (!strncmp(line, "!!step\t", 7)) {
+            struct line_step parsed;
+            if (parse_line_step(line, &parsed) < 0) {
+                warning("could not parse !!step");
+                return 0;
+            }
+            progress_handle_step(progress, &parsed);
+
+            char buf[columns + 1];
+            format_status(progress, buf, sizeof(buf));
+            hardstatus(buf);
+        }
+    }
+    return 0;
+}
+
+static int write_line(int fd, const char* s) {
+    size_t size = strlen(s);
+    char buf[size + 1];
+    memcpy(buf, s, size);
+    buf[size++] = '\n';
+
+    size_t off = 0;
+    while (off < size) {
+        int n = xwrite(fd, buf + off, size - off);
+        if (n < 0)
+            return -1;
+        off += n;
+    }
+    return 0;
+}
+
+// Returns -1 if the fd should be closed, or 0 to remain open.
+static int client_ready(struct pollfd* pfd, struct linebuf* lbuf,
+                        int child_infd) {
+    if (linebuf_read_is_eof(lbuf, &pfd->fd))
+        return -1;
+
+    char* line;
+    while ((line = linebuf_getline(lbuf))) {
+        if (!strncmp(line, "production ", 11)) {
+            line += 11;
+            struct object_id oid;
+            if (strlen(line) != KNIT_HASH_HEXSZ || hex_to_oid(line, &oid) < 0) {
+                warning("invalid production hash");
+                continue;
+            }
+            if (write_line(child_infd, oid_to_hex(&oid)) < 0)
+                die_errno("write failed");
+        } else {
+            warning("unknown command");
+        }
+    }
+    return 0;
+}
+
+static int poll_enabled(struct pollfd* pfd) {
+    return pfd->fd >= 0;
+}
+
+static int poll_any(struct pollfd* pfds, nfds_t nfds) {
+    for (nfds_t i = 0; i < nfds; i++) {
+        if (poll_enabled(&pfds[i]))
+            return 1;
+    }
+    return 0;
+}
+
+// Returns nfds if all pfds are in use.
+static nfds_t poll_next_available(struct pollfd* pfds, nfds_t nfds) {
+    for (nfds_t i = 0; i < nfds; i++) {
+        if (!poll_enabled(&pfds[i]))
+            return i;
+    }
+    return nfds;
+}
+
+static int poll_full(struct pollfd* pfds, nfds_t nfds) {
+    return poll_next_available(pfds, nfds) == nfds;
+}
+
+static int create_run_socket() {
+    int sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (sockfd < 0)
+        die_errno("socket failed");
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    if (snprintf(addr.sun_path, sizeof(addr.sun_path) - 1,
+                 "%s/run.sock", get_knit_dir()) >= (int)sizeof(addr.sun_path))
+        die("run socket path too long");
+
+    unlink(addr.sun_path);
+    if (bind(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0)
+        die_errno("bind failed");
+    if (listen(sockfd, 4) < 0)
+        die_errno("listen failed");
+
+    return sockfd;
+}
+
+static int spawn(char** argv, int* infdp, int* errfdp) {
+    int fds[2][2];
+    for (size_t i = 0; i < 2; i++) {
+        if (pipe(fds[i]) < 0)
+            die_errno("pipe failed");
+        fcntl(fds[i][0], F_SETFD, FD_CLOEXEC);
+        fcntl(fds[i][1], F_SETFD, FD_CLOEXEC);
+    }
 
     pid_t pid = fork();
     if (pid < 0)
         die_errno("fork failed");
     if (!pid) {
-        dup2(infd, STDIN_FILENO);
-        dup2(fds[1], STDERR_FILENO);
+        dup2(fds[0][0], STDIN_FILENO);
+        dup2(fds[1][1], STDERR_FILENO);
         execvp(argv[0], argv);
         die_errno("execvp failed");
     }
 
-    close(fds[1]);
-    *errfdp = fds[0];
+    close(fds[0][0]);
+    close(fds[1][1]);
+    *infdp = fds[0][1];
+    *errfdp = fds[1][0];
     return pid;
 }
 
@@ -308,7 +432,7 @@ static void exit_like_child(int pid) {
 
 static void die_usage(const char* arg0) {
     int len = strlen(arg0);
-    fprintf(stderr, "usage: %*s [--off|--dumb|--on] <input-pipe>\n", len, arg0);
+    fprintf(stderr, "usage: %*s [--off|--dumb|--on]\n", len, arg0);
     fprintf(stderr, "       %*s <child-process> [<args>]...\n", len, "");
     exit(1);
 }
@@ -317,29 +441,18 @@ int main(int argc, char** argv) {
     if (argc < 4)
         die_usage(argv[0]);
 
-    // Open input pipe for read/write to prevent waiting for writer.
-    // See https://unix.stackexchange.com/a/496812
-    int infd = open(argv[2], O_RDWR);
-    if (infd < 0)
-        die_errno("cannot open input pipe %s", argv[2]);
-    fcntl(infd, F_SETFD, FD_CLOEXEC);
-
     if (!strcmp(argv[1], "--off")) {
-        // Do not filter, just exec the child (with the input pipe set).
-        dup2(infd, STDIN_FILENO);
-        execvp(argv[3], &argv[3]);
-        die_errno("execvp failed");
+        hide_filtered = 0;
+        enable_status = 0;
     } else if (!strcmp(argv[1], "--dumb")) {
+        hide_filtered = 1;
         enable_status = 0;
     } else if (!strcmp(argv[1], "--on")) {
+        hide_filtered = 1;
         enable_status = 1;
     } else {
         die_usage(argv[0]);
     }
-
-    int child_errfd;
-    int child_pid = spawn(&argv[3], infd, &child_errfd);
-    close(infd);
 
     struct sigaction act = {
         .sa_handler = update_columns,
@@ -349,37 +462,77 @@ int main(int argc, char** argv) {
     sigaction(SIGWINCH, &act, NULL);
     update_columns(SIGWINCH);
 
+    enum {
+        POLL_CLIENT_MAX = 7,
+        POLL_CHILD,
+        POLL_SOCKET,  // needs no linebuf; must immediately precede POLL_NUM_FDS
+        POLL_NUM_FDS,
+    };
+
+    struct linebuf lbufs[POLL_SOCKET];
+    struct pollfd pfds[POLL_NUM_FDS];
+    for (size_t i = 0; i <= POLL_CLIENT_MAX; i++) {
+        pfds[i].fd = -1;
+        pfds[i].events = POLLIN;
+    }
+
+    pfds[POLL_SOCKET].fd = create_run_socket();
+    pfds[POLL_SOCKET].events = POLLIN;
+
+    int child_infd;
+    int child_pid = spawn(&argv[2], &child_infd, &pfds[POLL_CHILD].fd);
+    pfds[POLL_CHILD].events = POLLIN;
+    linebuf_init(&lbufs[POLL_CHILD]);
+
     struct progress progress = { 0 };  // .sessions leaked on exit
 
-    struct linebuf lbuf;
-    linebuf_init(&lbuf);
-
-    while (1) {
-        ssize_t nread = linebuf_read(&lbuf, child_errfd);
-        if (nread < 0)
-            die_errno("cannot read child stderr");
-        if (nread == 0) {
-            if (lbuf.off < lbuf.size)
-                warning("unterminated line");
-            break;
+    // Loop until all fds are idle, except for the listening socket.
+    while (poll_any(pfds, POLL_SOCKET)) {
+        if (poll(pfds, POLL_NUM_FDS, -1) < 0) {
+            if (errno == EINTR)
+                continue;
+            die_errno("poll failed");
         }
 
-        char* line;
-        while ((line = linebuf_getline(&lbuf))) {
-            // Pass through lines not starting with !!
-            if (line[0] != '!' || line[1] != '!') {
-                maybe_clear_line(0);
-                fprintf(stderr, "%s\n", line);
-                continue;
+        for (size_t i = 0; i < POLL_NUM_FDS; i++) {
+            if (pfds[i].revents & (POLLIN | POLLHUP)) {
+                if (i == POLL_CHILD) {
+                    if (child_ready(&pfds[i], &lbufs[i], &progress) < 0) {
+                        close(pfds[i].fd);
+                        pfds[i].fd = -1;
+                    }
+                } else if (i == POLL_SOCKET) {
+                    assert(!poll_full(pfds, POLL_CLIENT_MAX + 1));
+                    int fd = accept(pfds[i].fd, NULL, NULL);
+                    if (fd < 0) {
+                        warning_errno("accept failed");
+                        continue;
+                    }
+                    nfds_t c = poll_next_available(pfds, POLL_CLIENT_MAX + 1);
+                    pfds[c].fd = fd;
+                    linebuf_init(&lbufs[c]);
+                    // Disable accepting new connections if full.
+                    if (poll_full(pfds, POLL_CLIENT_MAX + 1)) {
+                        assert(poll_enabled(&pfds[POLL_SOCKET]));
+                        pfds[POLL_SOCKET].fd = ~pfds[POLL_SOCKET].fd;
+                    }
+                } else {
+                    assert(i <= POLL_CLIENT_MAX);
+                    if (client_ready(&pfds[i], &lbufs[i], child_infd) < 0) {
+                        close(pfds[i].fd);
+                        pfds[i].fd = -1;
+                        // Enable accepting new connections if disabled.
+                        if (!poll_enabled(&pfds[POLL_SOCKET]))
+                            pfds[POLL_SOCKET].fd = ~pfds[POLL_SOCKET].fd;
+                    }
+                }
             }
-
-            filter_line(line, &progress);
         }
     }
+    close(pfds[POLL_SOCKET].fd);
 
     if (progress.num_final > 0)
         print_summary(&progress);
 
-    close(child_errfd);
     exit_like_child(child_pid);
 }

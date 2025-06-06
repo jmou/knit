@@ -28,4 +28,6 @@ if [[ -z $fail ]]; then
     cmd+=(--set-output ".knit/ok=$(empty_res)")
 fi
 
-"${cmd[@]}" > "$KNIT_DIR/run.pipe"
+prd="$("${cmd[@]}")"
+# TODO should be more portable
+echo "production $prd" | ncat -U "$KNIT_DIR/run.sock"

@@ -24,10 +24,6 @@ set -o pipefail
 
 job=$(knit-parse-plan --emit-params-files "$plan" | knit-plan-job "$@" "$plan")
 
-if [[ ! -p "$KNIT_DIR/run.pipe" ]]; then
-    mkfifo "$KNIT_DIR/run.pipe"
-fi
-
 # TODO process substitution obscures any failure exit status
 while read -r word oid; do
     if [[ $word == ok ]]; then
@@ -37,7 +33,7 @@ while read -r word oid; do
     else
         echo "Unrecognized word $word" >&2
     fi
-done < <(knit-filter-status $filter "$KNIT_DIR/run.pipe" knit-schedule-jobs "$job")
+done < <(knit-filter-status $filter knit-schedule-jobs "$job")
 
 # TODO truncate history
 echo "$prd" | tee -a "$KNIT_DIR/history"
