@@ -42,6 +42,7 @@ int parse_production_bytes(struct production* prd, void* data, size_t size) {
     }
 
     struct resource_list** list_p = &prd->outputs;
+    const char* prev_name = "";
     for (uint32_t i = 0; i < num_outputs; i++) {
         struct output* out = (struct output*)((char*)data + off);
         ssize_t nrem = size - off - sizeof(*out);
@@ -55,6 +56,10 @@ int parse_production_bytes(struct production* prd, void* data, size_t size) {
         list->res = get_resource(oid_of_hash(out->res_hash));
         list->name = strdup(out->name);
         list->next = NULL;
+
+        if (strcmp(prev_name, list->name) >= 0)
+            return error("production output names not in strict lexicographical order");
+        prev_name = list->name;
 
         off += sizeof(*out) + pathlen + 1;
         *list_p = list;
@@ -107,7 +112,14 @@ struct production* store_production(struct job* job, struct invocation* inv,
     }
 
     uint32_t count = 0;
+    const char* prev_name = "";
     for (const struct resource_list* curr = outputs; curr; curr = curr->next) {
+        if (strcmp(prev_name, curr->name) >= 0) {
+            error("job input names not in strict lexicographical order");
+            return NULL;
+        }
+        prev_name = curr->name;
+
         struct output* out = (struct output*)p;
         memcpy(out->res_hash, curr->res->object.oid.hash, KNIT_HASH_RAWSZ);
         size_t pathsize = strlen(curr->name) + 1;

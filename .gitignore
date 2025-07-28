@@ -1,6 +1,7 @@
 *.o
 knit
 knit-bash-setup
+knit-build-objects
 knit-build-session
 knit-cache
 knit-cat-file

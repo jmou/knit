@@ -16,6 +16,20 @@ const char* job_process_name(enum job_process process) {
     die("invalid job process");
 }
 
+static enum job_process parse_job_process(const char* s) {
+    if (!strcmp(s, JOB_INPUT_CMD)) {
+        return JOB_PROCESS_CMD;
+    } else if (!strcmp(s, JOB_INPUT_FLOW)) {
+        return JOB_PROCESS_FLOW;
+    } else if (!strcmp(s, JOB_INPUT_IDENTITY)) {
+        return JOB_PROCESS_IDENTITY;
+    } else if (!strcmp(s, JOB_INPUT_EXTERNAL)) {
+        return JOB_PROCESS_EXTERNAL;
+    } else {
+        return JOB_PROCESS_INVALID;
+    }
+}
+
 struct job* get_job(const struct object_id* oid) {
     return intern_object(oid, OBJ_JOB, sizeof(struct job));
 }
@@ -30,6 +44,7 @@ int parse_job_bytes(struct job* job, void* data, size_t size) {
     size_t num_inputs = ntohl(hdr->num_inputs);
 
     struct resource_list** list_p = &job->inputs;
+    const char* prev_name = "";
     for (uint32_t i = 0; i < num_inputs; i++) {
         struct job_input* in = (struct job_input*)((char*)data + off);
         ssize_t nrem = size - off - sizeof(*in);
@@ -44,19 +59,16 @@ int parse_job_bytes(struct job* job, void* data, size_t size) {
         list->name = strdup(in->name);
         list->next = NULL;
 
+        if (strcmp(prev_name, list->name) >= 0)
+            return error("job input names not in strict lexicographical order");
+        prev_name = list->name;
+
         enum job_process process = JOB_PROCESS_INVALID;
         if (!strcmp(list->name, JOB_INPUT_NOCACHE)) {
             job->is_nocache = 1;
-        } else if (!strcmp(list->name, JOB_INPUT_CMD)) {
-            process = JOB_PROCESS_CMD;
-        } else if (!strcmp(list->name, JOB_INPUT_FLOW)) {
-            process = JOB_PROCESS_FLOW;
-        } else if (!strcmp(list->name, JOB_INPUT_IDENTITY)) {
-            process = JOB_PROCESS_IDENTITY;
-        } else if (!strcmp(list->name, JOB_INPUT_EXTERNAL)) {
-            process = JOB_PROCESS_EXTERNAL;
+        } else {
+            process = parse_job_process(list->name);
         }
-
         if (process != JOB_PROCESS_INVALID) {
             if (job->process != JOB_PROCESS_INVALID)
                 return error("job has multiple processes");
@@ -104,12 +116,32 @@ struct job* store_job(struct resource_list* inputs) {
     hdr->num_inputs = htonl(num_inputs);
     char* p = buf + sizeof(*hdr);
 
+    int has_process = 0;
+    const char* prev_name = "";
     for (struct resource_list* curr = inputs; curr; curr = curr->next) {
+        if (strcmp(prev_name, curr->name) >= 0) {
+            error("job input names not in strict lexicographical order");
+            return NULL;
+        }
+        prev_name = curr->name;
+
+        if (parse_job_process(curr->name) != JOB_PROCESS_INVALID) {
+            if (has_process) {
+                error("job has multiple processes");
+                return NULL;
+            }
+            has_process = 1;
+        }
+
         struct job_input* in = (struct job_input*)p;
         memcpy(in->res_hash, curr->res->object.oid.hash, KNIT_HASH_RAWSZ);
         size_t pathsize = strlen(curr->name) + 1;
         memcpy(in->name, curr->name, pathsize);
         p += sizeof(*in) + pathsize;
+    }
+    if (!has_process) {
+        error("job missing process");
+        return NULL;
     }
 
     struct object_id oid;

@@ -27,6 +27,8 @@ int main(int argc, char** argv) {
     size_t size = 0;
     ssize_t nread;
     while (errno = 0, (nread = getline(&line, &size, stdin)) >= 0) {
+        if (memchr(line, '\0', nread))
+            die("illegal NUL byte in instruction");
         if (line[nread - 1] != '\n')
             die("unterminated line");
         line[nread - 1] = '\0';

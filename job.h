@@ -23,6 +23,7 @@ struct job {
 struct job* get_job(const struct object_id* oid);
 int parse_job(struct job* job);
 int parse_job_bytes(struct job* job, void* data, size_t size);
+// Caller should free inputs.
 struct job* store_job(struct resource_list* inputs);
 
 struct job_header {

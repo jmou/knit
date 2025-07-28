@@ -252,6 +252,6 @@ int main(int argc, char** argv) {
         exit(1);
 
     puts(oid_to_hex(&job->object.oid));
-    // leak bb and lines
+    // leak bb, lines, and inputs
     return 0;
 }
