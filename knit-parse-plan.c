@@ -711,7 +711,7 @@ static void die_usage(const char* arg0) {
 
 int main(int argc, char** argv) {
     struct job* job = NULL;
-    struct bytebuf bb;
+    struct bytebuf bb = { };
 
     if (argc != 3)
         die_usage(argv[0]);
