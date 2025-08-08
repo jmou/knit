@@ -1,0 +1,32 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get install -y re2c
+      if: runner.os == 'Linux'
+
+    - name: Install dependencies
+      run: brew install re2c
+      if: runner.os == 'macOS'
+
+    - name: make
+      run: make
+    - name: make test
+      run: make test
