@@ -19,3 +19,5 @@ int parse_production_bytes(struct production* prd, void* data, size_t size);
 // Caller should free outputs.
 struct production* store_production(struct job* job, struct invocation* inv,
                                     struct resource_list* outputs);
+
+#define PRODUCTION_OUTPUT_OK ".knit/ok"

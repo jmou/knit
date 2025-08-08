@@ -11,6 +11,8 @@ int parse_resource(struct resource* res);
 struct resource* store_resource(const void* data, size_t size);
 struct resource* store_resource_file(const char* filename);
 
+struct resource* get_empty_resource();
+
 struct resource_list {
     char* name;
     struct resource* res;

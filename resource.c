@@ -33,6 +33,13 @@ struct resource* store_resource_file(const char* filename) {
     return res;
 }
 
+struct resource* get_empty_resource() {
+    static struct resource* empty_res = NULL;
+    if (!empty_res)
+        empty_res = store_resource(NULL, 0);
+    return empty_res;
+}
+
 struct resource_list* resource_list_insert(struct resource_list** list_p,
                                            const char* name,
                                            struct resource* res) {

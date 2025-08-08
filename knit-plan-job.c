@@ -15,13 +15,6 @@ struct input_line {
     unsigned is_nocache : 1;
 };
 
-static struct resource* get_empty_resource() {
-    static struct resource* empty_res = NULL;
-    if (!empty_res)
-        empty_res = store_resource(NULL, 0);
-    return empty_res;
-}
-
 // Returns <0, 0, or >0 similar to strcmp. If path_or_dir ends in '/' we only
 // compare against the prefix of filepath (that is, is filepath inside
 // path_or_dir); otherwise we compare the entire string. This is particularly
