@@ -1,0 +1,82 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get install -y libssl-dev pkg-config re2c
+      if: runner.os == 'Linux'
+
+    - name: Install dependencies
+      run: brew install -q openssl pkg-config re2c
+      if: runner.os == 'macOS'
+
+    - name: make
+      run: make
+
+    - name: make test
+      run: make test
+
+    - name: Install to fake root
+      run: make install DESTDIR=install-root
+
+    - name: Archive to preserve permissions
+      run: tar cf rootfs.tar -C install-root .
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.os }}
+        path: rootfs.tar
+
+  latest:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+
+    permissions:
+      contents: write
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v5
+      with:
+        path: artifacts
+
+    - name: Create tarballs
+      run: |
+        cd artifacts
+        for dir in */; do
+          target="knit-${dir%-*}-latest"
+          mkdir "$target"
+          tar xf "$dir/rootfs.tar" -C "$target" --strip-components=3 ./usr/bin/
+          tar czf "$target.tar.gz" "$target"
+        done
+
+    - name: Move latest tag
+      run: gh api /repos/${{ github.repository }}/git/refs/tags/latest -f sha=${{ github.sha }}
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload release artifacts
+      run: gh release upload latest --clobber artifacts/*.tar.gz
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
