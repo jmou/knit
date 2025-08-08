@@ -1,4 +1,6 @@
 #pragma once
 
-#define _DEFAULT_SOURCE 1
+#ifndef __APPLE__
+#define _DEFAULT_SOURCE
 #define _XOPEN_SOURCE 500
+#endif

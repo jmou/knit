@@ -1,4 +1,4 @@
-CFLAGS = -std=c2x -Wall -Wextra -ggdb
+CFLAGS = -std=gnu2x -Wall -Wextra -ggdb
 
 INSTALL = install
 PKGCONFIG = pkg-config
@@ -13,7 +13,7 @@ LIBCRYPTO_LIBS = $(shell $(PKGCONFIG) --libs libcrypto)
 -include config.mk
 
 CFLAGS += $(LIBCRYPTO_CFLAGS)
-LDFLAGS += $(LIBCRYPTO_LIBS)
+LDLIBS += $(LIBCRYPTO_LIBS)
 
 BIN = knit $(patsubst %.c,%,$(wildcard knit-*.c))
 
@@ -29,7 +29,7 @@ lexer.c: lexer.re.c
 	$(RE2C) -W -Werror -o $@ $<
 
 knit-%: knit-%.o $(OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(patsubst %.c,%.o,$(wildcard *.c)): $(wildcard *.h)
 
@@ -40,7 +40,7 @@ knit-%: knit-%.pl
 	ln -sf $< $@
 
 knit: knit.o util.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 test: all
 	$(MAKE) -C tests

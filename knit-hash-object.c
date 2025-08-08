@@ -1,3 +1,4 @@
+#include "compat.h"
 #include <getopt.h>
 
 #include "hash.h"
