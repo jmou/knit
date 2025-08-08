@@ -1,6 +1,5 @@
-CFLAGS = -Wall -Wextra -ggdb
+CFLAGS = -std=c2x -Wall -Wextra -ggdb
 
-CC = gcc
 INSTALL = install
 PKGCONFIG = pkg-config
 RE2C = re2c

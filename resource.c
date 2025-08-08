@@ -1,4 +1,4 @@
-#define _XOPEN_SOURCE 500 // for nftw
+#include "compat.h"
 #include <ftw.h>
 
 #include "resource.h"
