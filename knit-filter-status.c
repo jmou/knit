@@ -306,15 +306,7 @@ static int write_line(int fd, const char* s) {
     char buf[size + 1];
     memcpy(buf, s, size);
     buf[size++] = '\n';
-
-    size_t off = 0;
-    while (off < size) {
-        int n = xwrite(fd, buf + off, size - off);
-        if (n < 0)
-            return -1;
-        off += n;
-    }
-    return 0;
+    return write_fully(fd, buf, size);
 }
 
 // Returns -1 if the fd should be closed, or 0 to remain open.

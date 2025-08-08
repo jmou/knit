@@ -53,6 +53,17 @@ ssize_t xread(int fd, void* buf, size_t len);
 // xwrite retries on EAGAIN and EINTR but does not ensure len bytes are written.
 ssize_t xwrite(int fd, const void* buf, size_t len);
 
+static inline ssize_t write_fully(int fd, const void* buf, size_t size) {
+    size_t off = 0;
+    while (off < size) {
+        int n = xwrite(fd, (char*)buf + off, size - off);
+        if (n < 0)
+            return n;
+        off += n;
+    }
+    return 0;
+}
+
 const char* get_knit_dir();
 
 struct bytebuf {

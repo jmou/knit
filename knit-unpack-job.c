@@ -30,24 +30,13 @@ static int mkparents(const char* dir, const char* filename) {
     return 0;
 }
 
-static int write_in_full(int fd, const char* buf, size_t size) {
-    size_t offset = 0;
-    while (offset < size) {
-        int n = xwrite(fd, buf + offset, size - offset);
-        if (n < 0)
-            return -1;
-        offset += n;
-    }
-    return 0;
-}
-
 static int write_environ(int fd, const char* name, const char* buf, size_t size) {
     if (memchr(buf, '\0', size))
         die("NUL in environment variable %s", name);
-    if (write_in_full(fd, name, strlen(name)) < 0 ||
-        write_in_full(fd, "=", 1) < 0 ||
-        write_in_full(fd, buf, size) < 0 ||
-        write_in_full(fd, "", 1) < 0)
+    if (write_fully(fd, name, strlen(name)) < 0 ||
+        write_fully(fd, "=", 1) < 0 ||
+        write_fully(fd, buf, size) < 0 ||
+        write_fully(fd, "", 1) < 0)
         die_errno("write failed to environ");
     return 0;
 }
@@ -59,7 +48,7 @@ static int write_input(const char* inputs_dir, const char* name,
     int fd = creat(joindir(inputs_dir, name), 0666);
     if (fd < 0)
         return error_errno("cannot open %s/%s", inputs_dir, name);
-    if (write_in_full(fd, buf, size) < 0)
+    if (write_fully(fd, buf, size) < 0)
         return error_errno("write failed %s/%s", inputs_dir, name);
     if (close(fd) < 0)
         return error_errno("close failed %s/%s", inputs_dir, name);

@@ -3,6 +3,7 @@
 #include "job.h"
 #include "production.h"
 #include "spec.h"
+#include "util.h"
 
 static void pretty_job(const struct job* job) {
     for (struct resource_list* in = job->inputs; in; in = in->next)
@@ -65,13 +66,8 @@ int main(int argc, char** argv) {
     if (!buf)
         exit(1);
 
-    char* end = buf + size;
-    while (buf < end) {
-        int nwritten = xwrite(STDOUT_FILENO, buf, end - buf);
-        if (nwritten < 0)
-            die_errno("write failed");
-        buf += nwritten;
-    }
+    if (write_fully(STDOUT_FILENO, buf, size) < 0)
+        die_errno("write failed");
 
     return 0;
 }
