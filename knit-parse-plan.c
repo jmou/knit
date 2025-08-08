@@ -410,9 +410,7 @@ static int parse_plan_internal(struct parse_context* ctx) {
     while (1) {
         int is_partial;
         char* block_decl = in->curr;
-        enum token kw = lex_keyword(in);
-        fprintf(stderr, "@%.20s|%d|\n", block_decl, kw);
-        switch (kw) { //(lex_keyword(in)) {
+        switch (lex_keyword(in)) {
         case TOKEN_STEP:    is_partial = 0; break;
         case TOKEN_PARTIAL: is_partial = 1; break;
         case TOKEN_NEWLINE: continue;

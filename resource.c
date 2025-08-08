@@ -1,7 +1,6 @@
-#include "compat.h"
-#include <ftw.h>
-
 #include "resource.h"
+
+#include <ftw.h>
 
 struct resource* get_resource(const struct object_id* oid) {
     return intern_object(oid, OBJ_RESOURCE, sizeof(struct resource));

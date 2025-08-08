@@ -1,7 +1,6 @@
-#include "compat.h"
-#include <getopt.h>
-
 #include "hash.h"
+
+#include <getopt.h>
 
 static void die_usage(const char* arg0) {
     fprintf(stderr, "usage: %s -t <type> -w [--stdin] <file>...\n", arg0);
