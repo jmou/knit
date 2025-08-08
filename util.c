@@ -84,7 +84,10 @@ static int valid_knit_dir(const char* dirname) {
     int needs_entries = 2;
     struct dirent* dent;
     while (errno = 0, needs_entries > 0 && (dent = readdir(dir))) {
-        if (dent->d_type == DT_DIR || dent->d_type == DT_UNKNOWN) {
+#if defined(_DIRENT_HAVE_D_TYPE) || defined(__APPLE__)
+        if (dent->d_type == DT_DIR || dent->d_type == DT_UNKNOWN)
+#endif
+        {
             if (!strcmp(dent->d_name, "objects") || !strcmp(dent->d_name, "sessions"))
                 needs_entries--;
         }

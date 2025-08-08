@@ -27,7 +27,7 @@ process_cmd() {
 
     set +e
     # TODO disambiguate errors from knit-exec-cmd and .knit/cmd
-    knit-exec-cmd "$scratch" "$scratch/work/in/.knit/cmd" {lock}>&- > "$scratch/out.knit/log"
+    knit-exec-cmd "$scratch" "$scratch/work/in/.knit/cmd" 3>&- > "$scratch/out.knit/log"
     rc=$?
     set -e
 

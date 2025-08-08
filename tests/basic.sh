@@ -44,7 +44,7 @@ step f: partial bash
     e2/ = e:2/
 
 step asomewhatlongstepname: partial bash
-    script = "tac in/lines > out/data"
+    script = "tr '[1-5]' '[a-e]' < in/lines > out/data"
     lines = f:combined
 EOF
 
@@ -55,11 +55,11 @@ expect_ok test "$(knit-peel-spec $prd^{invocation})" == "$(knit-peel-spec $prd2^
 expect_ok knit-run-plan -p limit=5
 
 diff - <(knit-cat-file -p @:data) <<'EOF'
-5
-4
-3
-2
-1
+a
+b
+c
+d
+e
 EOF
 
 cat <<'EOF' > super.knit

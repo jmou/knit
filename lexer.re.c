@@ -1,6 +1,5 @@
-#include <string.h>
-
 #include "lexer.h"
+
 #include "util.h"
 
 void lex_input_init(struct lex_input* in, char* buf) {

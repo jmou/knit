@@ -1,5 +1,7 @@
 #pragma once
 
+#include "compat.h"
+
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
