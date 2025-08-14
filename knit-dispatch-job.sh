@@ -12,18 +12,6 @@ empty_res() {
     knit-hash-object -t resource -w /dev/null
 }
 
-# TODO probably has concurrency bugs when lock file is removed
-lock_scratch() {
-    if [[ -s "$scratch.lock" ]]; then
-        echo "warning: existing lockfile $scratch.lock: $(< $scratch.lock)" >&2
-    fi
-    exec {lock}> "$scratch.lock"
-    flock $lock
-    trap 'rm "$scratch.lock"' EXIT
-    # TODO handle manual processes
-    echo "PID $$" >&$lock
-}
-
 unpack_job() {
     if [[ -e $scratch ]]; then
         echo "warning: removing $scratch" >&2
@@ -63,7 +51,6 @@ process_cmd() {
 
 case $process in
     cmd)
-        lock_scratch
         unpack_job
 
         prd=$(process_cmd)
