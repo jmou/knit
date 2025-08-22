@@ -20,5 +20,5 @@ knit-remix-production
 knit-resume-session
 knit-run-plan
 knit-schedule-jobs
-knit-unpack-job
+knit-unpack
 lexer.c

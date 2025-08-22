@@ -18,7 +18,13 @@ unpack_job() {
         rm -rf "$scratch"
     fi
 
-    knit-unpack-job --scratch "$job" "$scratch"
+    mkdir "$scratch"
+    mkdir "$scratch/out.knit"
+    knit-unpack job "$job" "$scratch/work"
+    if [[ -e "$scratch/work/environ" ]]; then
+        mv "$scratch/work/environ" "$scratch/environ"
+    fi
+    mkdir "$scratch/work/out"
 }
 
 process_cmd() {
